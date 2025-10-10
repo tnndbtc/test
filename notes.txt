@@ -1,0 +1,3 @@
+./configure --generator="Unix Makefiles"
+cd build
+make

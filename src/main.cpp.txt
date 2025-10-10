@@ -1,0 +1,47 @@
+// ============= main.cpp =============
+#include "Blockweave.h"
+#include "Wallet.h"
+#include <iostream>
+#include <string>
+#include <vector>
+
+int main() {
+    std::cout << "=== Arweave-like Blockweave System ===\n\n";
+    
+    Blockweave weave;
+    
+    Wallet alice, bob, miner;
+    std::cout << "Alice's address: " << alice.getAddress().substr(0, 16) << "...\n";
+    std::cout << "Bob's address: " << bob.getAddress().substr(0, 16) << "...\n\n";
+    
+    std::string data1 = "Hello, permanent storage!";
+    std::vector<uint8_t> bytes1(data1.begin(), data1.end());
+    auto tx1 = alice.createTransaction(bob.getAddress(), bytes1, 100);
+    weave.addTransaction(tx1);
+    
+    std::string data2 = "This data will last forever on the blockweave";
+    std::vector<uint8_t> bytes2(data2.begin(), data2.end());
+    auto tx2 = bob.createTransaction(alice.getAddress(), bytes2, 150);
+    weave.addTransaction(tx2);
+    
+    weave.mineBlock(miner.getAddress());
+    
+    std::string data3 = "Another piece of permanent data";
+    std::vector<uint8_t> bytes3(data3.begin(), data3.end());
+    auto tx3 = alice.createTransaction(bob.getAddress(), bytes3, 200);
+    weave.addTransaction(tx3);
+    
+    weave.mineBlock(miner.getAddress());
+    
+    weave.printChain();
+    
+    std::cout << "Retrieving data from transaction 1...\n";
+    auto retrievedData = weave.getData(tx1->id);
+    if(!retrievedData.empty()) {
+        std::string retrieved(retrievedData.begin(), retrievedData.end());
+        std::cout << "Retrieved: " << retrieved << "\n";
+    }
+    
+    return 0;
+}
+

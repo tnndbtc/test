@@ -1,0 +1,16 @@
+local variable: snake_case
+Functions or Method: CamelCase
+Classes or Structs: 'C' + CapitalizedName
+Global variables: 'g_' prefix
+File naming: snake_case
+Interfaces or Abstract: 'I' + CapitalizedName
+Static variables: 's_' prefix
+Constants: ALL_CAPS_WITH_UNDERSCORES
+Enums or Enum members: CamelCase for type, ALL_CAPS for members
+Member variables: 'm_' prefix
+Boolean variables: 'f' prefix
+Numeric variables: 'n' prefix
+String variables: 'str' prefix
+Set: 'set' prefix
+Map: 'map' prefix
+Critical Section or Mutex: 'cs_' prefix
