@@ -26,18 +26,27 @@ endif()
 
 include_directories(include src ${OPENSSL_INCLUDE_DIR})
 
-# Main executable: blockweave
+# Main executable: rest_daemon
 add_executable(rest_daemon
     src/main.cpp
     src/block.cpp
     src/blockweave.cpp
     src/hash.cpp
     src/transaction.cpp
-    src/wallet.cpp
+    src/wallet/wallet.cpp
+)
+
+# Wallet executable
+add_executable(wallet
+    src/wallet/wallet_main.cpp
+    src/wallet/wallet.cpp
+    src/hash.cpp
+    src/transaction.cpp
 )
 
 # Link OpenSSL
 target_link_libraries(rest_daemon OpenSSL::SSL OpenSSL::Crypto)
+target_link_libraries(wallet OpenSSL::SSL OpenSSL::Crypto)
 
 # Platform-specific libraries
 if(WIN32)
@@ -53,10 +62,12 @@ endif()
 if(MSVC)
     # Visual Studio
     target_compile_options(rest_daemon PRIVATE /W4)
+    target_compile_options(wallet PRIVATE /W4)
 else()
     # GCC/Clang
     target_compile_options(rest_daemon PRIVATE -Wall -Wextra -pedantic)
+    target_compile_options(wallet PRIVATE -Wall -Wextra -pedantic)
 endif()
 
 # Installation
-install(TARGETS rest_daemon DESTINATION bin)
+install(TARGETS rest_daemon wallet DESTINATION bin)
