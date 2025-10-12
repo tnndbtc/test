@@ -2,7 +2,7 @@
 #ifndef TRANSACTION_H
 #define TRANSACTION_H
 
-#include "hash.h"
+#include "utils/hash.h"
 #include <string>
 #include <vector>
 #include <cstdint>

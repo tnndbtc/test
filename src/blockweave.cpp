@@ -4,7 +4,7 @@
 #include <random>
 #include <algorithm>
 
-CBlockweave::CBlockweave() {
+CBlockweave::CBlockweave() : f_mining_enabled(false), f_stop_mining(false) {
     m_genesis_block = std::make_shared<CBlock>(CHash(), 0, "genesis");
     m_genesis_block->Mine();
 
@@ -29,11 +29,18 @@ CHash CBlockweave::SelectRecallBlock(int64_t n_current_height) {
 }
 
 void CBlockweave::AddTransaction(std::shared_ptr<CTransaction> tx) {
+    std::lock_guard<std::mutex> lock(cs_blockweave);
     m_mempool.push_back(tx);
     std::cout << "Transaction added to mempool: " << tx->m_id.m_str_data.substr(0, 16) << "...\n";
 }
 
 void CBlockweave::MineBlock(const std::string& str_miner_address) {
+    std::lock_guard<std::mutex> lock(cs_blockweave);
+
+    if(m_mempool.empty()) {
+        return;
+    }
+
     auto new_block = std::make_shared<CBlock>(
         m_current_block->m_hash,
         m_current_block->m_n_height + 1,
@@ -60,6 +67,7 @@ void CBlockweave::MineBlock(const std::string& str_miner_address) {
 }
 
 std::shared_ptr<CBlock> CBlockweave::GetBlock(const CHash& hash) {
+    std::lock_guard<std::mutex> lock(cs_blockweave);
     auto it = map_blocks.find(hash.m_str_data);
     if(it != map_blocks.end()) {
         return it->second;
@@ -68,6 +76,7 @@ std::shared_ptr<CBlock> CBlockweave::GetBlock(const CHash& hash) {
 }
 
 std::vector<uint8_t> CBlockweave::GetData(const CHash& tx_id) {
+    std::lock_guard<std::mutex> lock(cs_blockweave);
     for(const auto& block_hash : m_block_hashes) {
         auto block = map_blocks[block_hash.m_str_data];
         for(const auto& tx : block->m_transactions) {
@@ -80,6 +89,7 @@ std::vector<uint8_t> CBlockweave::GetData(const CHash& tx_id) {
 }
 
 void CBlockweave::PrintChain() {
+    std::lock_guard<std::mutex> lock(cs_blockweave);
     std::cout << "\n=== BLOCKWEAVE STATE ===\n";
     std::cout << "Total blocks: " << map_blocks.size() << "\n";
     std::cout << "Current height: " << m_current_block->m_n_height << "\n";
@@ -91,5 +101,31 @@ void CBlockweave::PrintChain() {
     }
     std::cout << "Total data stored: " << n_total_data << " bytes\n";
     std::cout << "========================\n\n";
+}
+
+// Thread control methods
+void CBlockweave::StartMining() {
+    f_mining_enabled = true;
+    f_stop_mining = false;
+    std::cout << "Mining enabled\n";
+}
+
+void CBlockweave::StopMining() {
+    f_stop_mining = true;
+    f_mining_enabled = false;
+    std::cout << "Mining stopped\n";
+}
+
+bool CBlockweave::IsMiningEnabled() const {
+    return f_mining_enabled;
+}
+
+bool CBlockweave::ShouldStopMining() const {
+    return f_stop_mining;
+}
+
+size_t CBlockweave::GetMempoolSize() const {
+    std::lock_guard<std::mutex> lock(cs_blockweave);
+    return m_mempool.size();
 }
 

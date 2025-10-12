@@ -26,48 +26,137 @@ endif()
 
 include_directories(include src ${OPENSSL_INCLUDE_DIR})
 
-# Main executable: rest_daemon
-add_executable(rest_daemon
-    src/main.cpp
+# ============================================================
+# Blockweave Core Library (libblockweave_core.so / .dylib / .dll)
+# Contains: block, blockweave, transaction, hash utilities
+# Thread-safe with mutex protection
+# Built as SHARED library for dynamic linking
+# ============================================================
+add_library(blockweave_core SHARED
     src/block.cpp
     src/blockweave.cpp
-    src/hash.cpp
+    src/utils/hash.cpp
     src/transaction.cpp
+)
+
+# Set library version and properties
+set_target_properties(blockweave_core PROPERTIES
+    VERSION 1.0.0
+    SOVERSION 1
+    POSITION_INDEPENDENT_CODE ON
+    CXX_VISIBILITY_PRESET default
+)
+
+# On macOS, set the install name for the dynamic library
+if(APPLE)
+    set_target_properties(blockweave_core PROPERTIES
+        INSTALL_NAME_DIR "@rpath"
+        BUILD_WITH_INSTALL_RPATH TRUE
+    )
+endif()
+
+# Link OpenSSL to library
+target_link_libraries(blockweave_core
+    PUBLIC OpenSSL::SSL
+    PUBLIC OpenSSL::Crypto
+)
+
+# ============================================================
+# Main Executable: rest_daemon
+# Links with: libblockweave_core.so (shared library)
+# ============================================================
+add_executable(rest_daemon
+    src/main.cpp
     src/wallet/wallet.cpp
 )
 
-# Wallet executable
+# Link rest_daemon with blockweave_core library
+target_link_libraries(rest_daemon
+    PRIVATE blockweave_core
+    PRIVATE OpenSSL::SSL
+    PRIVATE OpenSSL::Crypto
+)
+
+# Set rpath so rest_daemon can find the shared library
+if(APPLE)
+    set_target_properties(rest_daemon PROPERTIES
+        BUILD_WITH_INSTALL_RPATH FALSE
+        BUILD_RPATH "${CMAKE_BINARY_DIR}"
+        INSTALL_RPATH "@executable_path/../lib;${CMAKE_INSTALL_PREFIX}/lib"
+        INSTALL_RPATH_USE_LINK_PATH TRUE
+    )
+elseif(UNIX)
+    set_target_properties(rest_daemon PROPERTIES
+        BUILD_WITH_INSTALL_RPATH FALSE
+        BUILD_RPATH "${CMAKE_BINARY_DIR}"
+        INSTALL_RPATH "\$ORIGIN/../lib:${CMAKE_INSTALL_PREFIX}/lib"
+        INSTALL_RPATH_USE_LINK_PATH TRUE
+    )
+endif()
+
+# ============================================================
+# Wallet Executable: wallet
+# Links with: libblockweave_core.so (shared library)
+# ============================================================
 add_executable(wallet
     src/wallet/wallet_main.cpp
     src/wallet/wallet.cpp
-    src/hash.cpp
-    src/transaction.cpp
 )
 
-# Link OpenSSL
-target_link_libraries(rest_daemon OpenSSL::SSL OpenSSL::Crypto)
-target_link_libraries(wallet OpenSSL::SSL OpenSSL::Crypto)
+# Link wallet executable with blockweave_core library
+target_link_libraries(wallet
+    PRIVATE blockweave_core
+    PRIVATE OpenSSL::SSL
+    PRIVATE OpenSSL::Crypto
+)
+
+# Set rpath so wallet can find the shared library
+if(APPLE)
+    set_target_properties(wallet PROPERTIES
+        BUILD_WITH_INSTALL_RPATH FALSE
+        BUILD_RPATH "${CMAKE_BINARY_DIR}"
+        INSTALL_RPATH "@executable_path/../lib;${CMAKE_INSTALL_PREFIX}/lib"
+        INSTALL_RPATH_USE_LINK_PATH TRUE
+    )
+elseif(UNIX)
+    set_target_properties(wallet PROPERTIES
+        BUILD_WITH_INSTALL_RPATH FALSE
+        BUILD_RPATH "${CMAKE_BINARY_DIR}"
+        INSTALL_RPATH "\$ORIGIN/../lib:${CMAKE_INSTALL_PREFIX}/lib"
+        INSTALL_RPATH_USE_LINK_PATH TRUE
+    )
+endif()
 
 # Platform-specific libraries
 if(WIN32)
     # Windows specific settings
     target_compile_definitions(rest_daemon PRIVATE _WIN32_WINNT=0x0601)
+    target_compile_definitions(wallet PRIVATE _WIN32_WINNT=0x0601)
 else()
-    # Linux/macOS: Use POSIX threads if needed
+    # Linux/macOS: Use POSIX threads for threading support
     find_package(Threads REQUIRED)
-    target_link_libraries(rest_daemon Threads::Threads)
+    target_link_libraries(blockweave_core PUBLIC Threads::Threads)
+    target_link_libraries(rest_daemon PRIVATE Threads::Threads)
+    target_link_libraries(wallet PRIVATE Threads::Threads)
 endif()
 
 # Platform-specific compile options
 if(MSVC)
     # Visual Studio
+    target_compile_options(blockweave_core PRIVATE /W4)
     target_compile_options(rest_daemon PRIVATE /W4)
     target_compile_options(wallet PRIVATE /W4)
 else()
     # GCC/Clang
+    target_compile_options(blockweave_core PRIVATE -Wall -Wextra -pedantic)
     target_compile_options(rest_daemon PRIVATE -Wall -Wextra -pedantic)
     target_compile_options(wallet PRIVATE -Wall -Wextra -pedantic)
 endif()
 
 # Installation
+install(TARGETS blockweave_core
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin
+)
 install(TARGETS rest_daemon wallet DESTINATION bin)

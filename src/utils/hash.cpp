@@ -24,4 +24,3 @@ bool CHash::operator==(const CHash& other) const {
 bool CHash::operator<(const CHash& other) const {
     return m_str_data < other.m_str_data;
 }
-

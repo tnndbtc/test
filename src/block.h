@@ -2,7 +2,7 @@
 #ifndef BLOCK_H
 #define BLOCK_H
 
-#include "hash.h"
+#include "utils/hash.h"
 #include "transaction.h"
 #include <vector>
 #include <memory>
