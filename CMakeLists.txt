@@ -136,7 +136,7 @@ endif()
 # Control utility for starting/stopping rest_daemon
 # ============================================================
 add_executable(daemon_cli
-    src/daemon_cli.cpp
+    src/cli/daemon_cli.cpp
 )
 
 # Link daemon_cli with blockweave_core library

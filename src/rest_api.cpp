@@ -1,6 +1,7 @@
 // ============= rest_api.cpp =============
 #include "rest_api.h"
 #include "logger/logger.h"
+#include "transaction.h"
 #include <iostream>
 #include <sstream>
 #include <sys/socket.h>
@@ -8,6 +9,115 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <cstring>
+#include <algorithm>
+#include <cctype>
+
+// ============= Utility Functions =============
+
+// Simple JSON value extractor (extracts value for a given key)
+static std::string ExtractJsonValue(const std::string& str_json, const std::string& str_key) {
+    // Find the key
+    std::string str_search = "\"" + str_key + "\"";
+    size_t n_key_pos = str_json.find(str_search);
+    if (n_key_pos == std::string::npos) {
+        return "";
+    }
+
+    // Find the colon after the key
+    size_t n_colon_pos = str_json.find(':', n_key_pos);
+    if (n_colon_pos == std::string::npos) {
+        return "";
+    }
+
+    // Skip whitespace after colon
+    size_t n_value_start = n_colon_pos + 1;
+    while (n_value_start < str_json.length() && std::isspace(str_json[n_value_start])) {
+        n_value_start++;
+    }
+
+    // Check if value is a string (starts with ")
+    if (str_json[n_value_start] == '"') {
+        n_value_start++;
+        size_t n_value_end = str_json.find('"', n_value_start);
+        if (n_value_end != std::string::npos) {
+            return str_json.substr(n_value_start, n_value_end - n_value_start);
+        }
+    } else {
+        // Numeric or boolean value - read until comma, }, or newline
+        size_t n_value_end = n_value_start;
+        while (n_value_end < str_json.length() &&
+               str_json[n_value_end] != ',' &&
+               str_json[n_value_end] != '}' &&
+               str_json[n_value_end] != '\n') {
+            n_value_end++;
+        }
+        std::string str_value = str_json.substr(n_value_start, n_value_end - n_value_start);
+        // Trim whitespace
+        size_t n_end = str_value.find_last_not_of(" \t\r\n");
+        return (n_end != std::string::npos) ? str_value.substr(0, n_end + 1) : str_value;
+    }
+
+    return "";
+}
+
+// Base64 decoding table
+static const std::string base64_chars =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "abcdefghijklmnopqrstuvwxyz"
+    "0123456789+/";
+
+static bool IsBase64(unsigned char c) {
+    return (std::isalnum(c) || (c == '+') || (c == '/'));
+}
+
+// Decode base64 string to bytes
+static std::vector<uint8_t> DecodeBase64(const std::string& str_encoded) {
+    std::vector<uint8_t> decoded;
+    int n_in_len = str_encoded.size();
+    int n_i = 0;
+    int n_j = 0;
+    int n_in = 0;
+    unsigned char char_array_4[4], char_array_3[3];
+
+    while (n_in_len-- && (str_encoded[n_in] != '=') && IsBase64(str_encoded[n_in])) {
+        char_array_4[n_i++] = str_encoded[n_in];
+        n_in++;
+        if (n_i == 4) {
+            for (n_i = 0; n_i < 4; n_i++) {
+                char_array_4[n_i] = base64_chars.find(char_array_4[n_i]);
+            }
+
+            char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
+            char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
+            char_array_3[2] = ((char_array_4[2] & 0x3) << 6) + char_array_4[3];
+
+            for (n_i = 0; n_i < 3; n_i++) {
+                decoded.push_back(char_array_3[n_i]);
+            }
+            n_i = 0;
+        }
+    }
+
+    if (n_i) {
+        for (n_j = n_i; n_j < 4; n_j++) {
+            char_array_4[n_j] = 0;
+        }
+
+        for (n_j = 0; n_j < 4; n_j++) {
+            char_array_4[n_j] = base64_chars.find(char_array_4[n_j]);
+        }
+
+        char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
+        char_array_3[1] = ((char_array_4[1] & 0xf) << 4) + ((char_array_4[2] & 0x3c) >> 2);
+        char_array_3[2] = ((char_array_4[2] & 0x3) << 6) + char_array_4[3];
+
+        for (n_j = 0; (n_j < n_i - 1); n_j++) {
+            decoded.push_back(char_array_3[n_j]);
+        }
+    }
+
+    return decoded;
+}
 
 // ============= CRequestQueue Implementation =============
 
@@ -254,6 +364,11 @@ void CRestApiServer::ProcessRequest(const CHttpRequest& request) {
         SendHttpResponse(request.n_client_socket, 200, "application/json", str_response);
         LOG_INFO("Handled GET /chain request");
     }
+    else if (request.str_method == "POST" && request.str_path == "/transaction") {
+        str_response = HandlePostTransaction(request.str_body);
+        SendHttpResponse(request.n_client_socket, 200, "application/json", str_response);
+        LOG_INFO("Handled POST /transaction request");
+    }
     else if (request.str_method == "POST" && request.str_path == "/mine/start") {
         str_response = HandlePostMineStart();
         SendHttpResponse(request.n_client_socket, 200, "application/json", str_response);
@@ -295,8 +410,63 @@ std::string CRestApiServer::HandleGetData(const std::string& str_tx_id) {
 }
 
 std::string CRestApiServer::HandlePostTransaction(const std::string& str_body) {
-    // TODO: Implement transaction creation
-    return "{\"error\": \"Not implemented\"}";
+    try {
+        // Parse JSON body
+        std::string str_from = ExtractJsonValue(str_body, "from");
+        std::string str_to = ExtractJsonValue(str_body, "to");
+        std::string str_data_b64 = ExtractJsonValue(str_body, "data");
+        std::string str_fee = ExtractJsonValue(str_body, "fee");
+
+        // Validate required fields
+        if (str_from.empty() || str_to.empty() || str_data_b64.empty()) {
+            LOG_ERROR("POST /transaction: Missing required fields (from, to, or data)");
+            return "{\"error\": \"Missing required fields: from, to, data\"}";
+        }
+
+        // Decode base64 data
+        std::vector<uint8_t> data = DecodeBase64(str_data_b64);
+        if (data.empty()) {
+            LOG_ERROR("POST /transaction: Failed to decode base64 data");
+            return "{\"error\": \"Invalid base64 data\"}";
+        }
+
+        // Parse fee (default to 0 if not provided or invalid)
+        uint64_t n_fee = 0;
+        if (!str_fee.empty()) {
+            try {
+                n_fee = static_cast<uint64_t>(std::stod(str_fee) * 1000000); // Convert to smallest unit
+            } catch (...) {
+                LOG_ERROR("POST /transaction: Invalid fee value: " + str_fee);
+                return "{\"error\": \"Invalid fee value\"}";
+            }
+        }
+
+        // Create transaction
+        auto tx = std::make_shared<CTransaction>(str_from, str_to, data, n_fee);
+
+        // Add to mempool
+        p_blockweave->AddTransaction(tx);
+
+        // Build response
+        std::ostringstream oss;
+        oss << "{\n";
+        oss << "  \"status\": \"success\",\n";
+        oss << "  \"transaction_id\": \"" << tx->m_id.m_str_data.substr(0, 32) << "...\",\n";
+        oss << "  \"from\": \"" << str_from.substr(0, 16) << "...\",\n";
+        oss << "  \"to\": \"" << str_to.substr(0, 16) << "...\",\n";
+        oss << "  \"data_size\": " << data.size() << ",\n";
+        oss << "  \"fee\": " << n_fee << "\n";
+        oss << "}";
+
+        LOG_INFO("Transaction created: " + tx->m_id.m_str_data.substr(0, 16) + "... (from: " +
+                 str_from.substr(0, 16) + "..., to: " + str_to.substr(0, 16) + "..., size: " +
+                 std::to_string(data.size()) + " bytes)");
+
+        return oss.str();
+    } catch (const std::exception& e) {
+        LOG_ERROR("POST /transaction exception: " + std::string(e.what()));
+        return "{\"error\": \"Internal server error\"}";
+    }
 }
 
 std::string CRestApiServer::HandlePostMineStart() {

@@ -1,0 +1,14 @@
+{
+  type: "tx",
+  properties: 
+  {
+    "to": "bc1qw508d6qejxtdg4y5r3zarvaryv98gj9p8t5z6",
+    "from": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
+    "data": "SGVsbG8gQmxvY2tjaGFpbiBkYXRhIQ==",
+    "fee": 0.00012,
+    "nonce": 42,
+    "timestamp": 1738900000,
+    "signature": "3045022100a4b7...8f02203d",
+    "network": "testnet"
+  }
+}
