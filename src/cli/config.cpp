@@ -20,6 +20,7 @@ void CConfig::LoadDefaults() {
     m_config_values["worker_threads"] = "5";
     m_config_values["data_dir"] = "./data";
     m_config_values["log_dir"] = "./log";
+    m_config_values["log_level"] = "INFO";
     m_config_values["daemon"] = "false";
 }
 
@@ -126,6 +127,10 @@ std::string CConfig::GetDataDir() const {
 
 std::string CConfig::GetLogDir() const {
     return GetValue("log_dir", "./log");
+}
+
+std::string CConfig::GetLogLevel() const {
+    return GetValue("log_level", "INFO");
 }
 
 bool CConfig::IsDaemonMode() const {

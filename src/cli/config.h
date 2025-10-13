@@ -29,6 +29,7 @@ public:
     int GetWorkerThreads() const;
     std::string GetDataDir() const;
     std::string GetLogDir() const;
+    std::string GetLogLevel() const;
     bool IsDaemonMode() const;
 };
 

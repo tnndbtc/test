@@ -11,7 +11,7 @@
 // Global logger instance
 std::shared_ptr<CLogger> g_p_logger = nullptr;
 
-CLogger::CLogger() : f_initialized(false) {
+CLogger::CLogger() : f_initialized(false), m_min_log_level(ELogLevel::INFO) {
 }
 
 CLogger::~CLogger() {
@@ -35,19 +35,43 @@ std::string CLogger::GetTimestamp() {
 
 std::string CLogger::GetLevelString(ELogLevel level) {
     switch (level) {
+        case ELogLevel::TRACE:
+            return "TRACE";
         case ELogLevel::INFO:
             return "INFO ";
+        case ELogLevel::WARN:
+            return "WARN ";
         case ELogLevel::ERROR:
             return "ERROR";
+        case ELogLevel::FATAL:
+            return "FATAL";
         default:
             return "UNKNOWN";
     }
 }
 
-bool CLogger::Initialize(const std::string& str_log_dir) {
+ELogLevel CLogger::ParseLogLevel(const std::string& str_level) {
+    std::string str_upper = str_level;
+    // Convert to uppercase
+    for (char& c : str_upper) {
+        c = std::toupper(c);
+    }
+
+    if (str_upper == "TRACE") return ELogLevel::TRACE;
+    if (str_upper == "INFO") return ELogLevel::INFO;
+    if (str_upper == "WARN" || str_upper == "WARNING") return ELogLevel::WARN;
+    if (str_upper == "ERROR") return ELogLevel::ERROR;
+    if (str_upper == "FATAL") return ELogLevel::FATAL;
+
+    // Default to INFO if unknown
+    return ELogLevel::INFO;
+}
+
+bool CLogger::Initialize(const std::string& str_log_dir, ELogLevel min_level) {
     std::lock_guard<std::recursive_mutex> lock(cs_log);
 
     m_str_log_dir = str_log_dir;
+    m_min_log_level = min_level;
 
     // Create log directory if it doesn't exist
     struct stat st;
@@ -88,6 +112,11 @@ void CLogger::Log(ELogLevel level, const std::string& str_message) {
         return;
     }
 
+    // Filter out messages below minimum log level
+    if (static_cast<int>(level) < static_cast<int>(m_min_log_level)) {
+        return;
+    }
+
     std::lock_guard<std::recursive_mutex> lock(cs_log);
 
     std::string str_timestamp = GetTimestamp();
@@ -97,18 +126,35 @@ void CLogger::Log(ELogLevel level, const std::string& str_message) {
     m_log_stream << "[" << str_timestamp << "] [" << str_level << "] " << str_message << "\n";
     m_log_stream.flush();
 
-    // Also write to console for errors
-    if (level == ELogLevel::ERROR) {
+    // Also write to console for errors and fatal
+    if (level >= ELogLevel::ERROR) {
         std::cerr << "[" << str_timestamp << "] [" << str_level << "] " << str_message << "\n";
     }
+}
+
+void CLogger::Trace(const std::string& str_message) {
+    Log(ELogLevel::TRACE, str_message);
 }
 
 void CLogger::Info(const std::string& str_message) {
     Log(ELogLevel::INFO, str_message);
 }
 
+void CLogger::Warn(const std::string& str_message) {
+    Log(ELogLevel::WARN, str_message);
+}
+
 void CLogger::Error(const std::string& str_message) {
     Log(ELogLevel::ERROR, str_message);
+}
+
+void CLogger::Fatal(const std::string& str_message) {
+    Log(ELogLevel::FATAL, str_message);
+}
+
+void CLogger::SetMinLogLevel(ELogLevel level) {
+    std::lock_guard<std::recursive_mutex> lock(cs_log);
+    m_min_log_level = level;
 }
 
 void CLogger::Flush() {
@@ -118,7 +164,11 @@ void CLogger::Flush() {
     }
 }
 
-bool InitializeLogger(const std::string& str_log_dir) {
+ELogLevel ParseLogLevelString(const std::string& str_level) {
+    return CLogger::ParseLogLevel(str_level);
+}
+
+bool InitializeLogger(const std::string& str_log_dir, ELogLevel min_level) {
     g_p_logger = std::make_shared<CLogger>();
-    return g_p_logger->Initialize(str_log_dir);
+    return g_p_logger->Initialize(str_log_dir, min_level);
 }

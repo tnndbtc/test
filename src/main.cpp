@@ -72,6 +72,7 @@ int main(int argc, char* argv[]) {
     int n_rest_port = config.GetRestApiPort();
     int n_workers = config.GetWorkerThreads();
     std::string str_log_dir = config.GetLogDir();
+    std::string str_log_level = config.GetLogLevel();
 
     // Override daemon mode from command line
     if (f_daemon_mode) {
@@ -112,7 +113,8 @@ int main(int argc, char* argv[]) {
     }
 
     // Initialize logger (after daemonization to avoid file descriptor issues)
-    if (!InitializeLogger(str_log_dir)) {
+    ELogLevel log_level = ParseLogLevelString(str_log_level);
+    if (!InitializeLogger(str_log_dir, log_level)) {
         // In daemon mode, stderr is redirected to /dev/null, so this won't be seen
         // But in non-daemon mode, user will see the error
         std::cerr << "Error: Failed to initialize logger\n";
@@ -122,6 +124,7 @@ int main(int argc, char* argv[]) {
     if (config.IsDaemonMode()) {
         LOG_INFO("Daemon process started successfully");
     }
+    LOG_INFO("Log level set to: " + str_log_level);
 
     std::cout << "=== Blockweave REST Daemon ===\n\n";
     std::cout << "Miner address: " << str_miner_address.substr(0, 16) << "...\n";
