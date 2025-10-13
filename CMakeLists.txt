@@ -28,7 +28,7 @@ include_directories(include src ${OPENSSL_INCLUDE_DIR})
 
 # ============================================================
 # Blockweave Core Library (libblockweave_core.so / .dylib / .dll)
-# Contains: block, blockweave, transaction, hash utilities
+# Contains: block, blockweave, transaction, hash utilities, REST API, CLI
 # Thread-safe with mutex protection
 # Built as SHARED library for dynamic linking
 # ============================================================
@@ -37,6 +37,10 @@ add_library(blockweave_core SHARED
     src/blockweave.cpp
     src/utils/hash.cpp
     src/transaction.cpp
+    src/rest_api.cpp
+    src/cli/config.cpp
+    src/cli/daemon.cpp
+    src/logger/logger.cpp
 )
 
 # Set library version and properties
@@ -127,17 +131,51 @@ elseif(UNIX)
     )
 endif()
 
+# ============================================================
+# Daemon CLI: daemon_cli
+# Control utility for starting/stopping rest_daemon
+# ============================================================
+add_executable(daemon_cli
+    src/daemon_cli.cpp
+)
+
+# Link daemon_cli with blockweave_core library
+target_link_libraries(daemon_cli
+    PRIVATE blockweave_core
+    PRIVATE OpenSSL::SSL
+    PRIVATE OpenSSL::Crypto
+)
+
+# Set rpath so daemon_cli can find the shared library
+if(APPLE)
+    set_target_properties(daemon_cli PROPERTIES
+        BUILD_WITH_INSTALL_RPATH FALSE
+        BUILD_RPATH "${CMAKE_BINARY_DIR}"
+        INSTALL_RPATH "@executable_path/../lib;${CMAKE_INSTALL_PREFIX}/lib"
+        INSTALL_RPATH_USE_LINK_PATH TRUE
+    )
+elseif(UNIX)
+    set_target_properties(daemon_cli PROPERTIES
+        BUILD_WITH_INSTALL_RPATH FALSE
+        BUILD_RPATH "${CMAKE_BINARY_DIR}"
+        INSTALL_RPATH "\$ORIGIN/../lib:${CMAKE_INSTALL_PREFIX}/lib"
+        INSTALL_RPATH_USE_LINK_PATH TRUE
+    )
+endif()
+
 # Platform-specific libraries
 if(WIN32)
     # Windows specific settings
     target_compile_definitions(rest_daemon PRIVATE _WIN32_WINNT=0x0601)
     target_compile_definitions(wallet PRIVATE _WIN32_WINNT=0x0601)
+    target_compile_definitions(daemon_cli PRIVATE _WIN32_WINNT=0x0601)
 else()
     # Linux/macOS: Use POSIX threads for threading support
     find_package(Threads REQUIRED)
     target_link_libraries(blockweave_core PUBLIC Threads::Threads)
     target_link_libraries(rest_daemon PRIVATE Threads::Threads)
     target_link_libraries(wallet PRIVATE Threads::Threads)
+    target_link_libraries(daemon_cli PRIVATE Threads::Threads)
 endif()
 
 # Platform-specific compile options
@@ -146,11 +184,13 @@ if(MSVC)
     target_compile_options(blockweave_core PRIVATE /W4)
     target_compile_options(rest_daemon PRIVATE /W4)
     target_compile_options(wallet PRIVATE /W4)
+    target_compile_options(daemon_cli PRIVATE /W4)
 else()
     # GCC/Clang
     target_compile_options(blockweave_core PRIVATE -Wall -Wextra -pedantic)
     target_compile_options(rest_daemon PRIVATE -Wall -Wextra -pedantic)
     target_compile_options(wallet PRIVATE -Wall -Wextra -pedantic)
+    target_compile_options(daemon_cli PRIVATE -Wall -Wextra -pedantic)
 endif()
 
 # Installation
@@ -159,4 +199,4 @@ install(TARGETS blockweave_core
     ARCHIVE DESTINATION lib
     RUNTIME DESTINATION bin
 )
-install(TARGETS rest_daemon wallet DESTINATION bin)
+install(TARGETS rest_daemon wallet daemon_cli DESTINATION bin)

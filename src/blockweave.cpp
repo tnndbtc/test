@@ -1,5 +1,6 @@
 // ============= blockweave.cpp =============
 #include "blockweave.h"
+#include "logger/logger.h"
 #include <iostream>
 #include <random>
 #include <algorithm>
@@ -32,6 +33,7 @@ void CBlockweave::AddTransaction(std::shared_ptr<CTransaction> tx) {
     std::lock_guard<std::mutex> lock(cs_blockweave);
     m_mempool.push_back(tx);
     std::cout << "Transaction added to mempool: " << tx->m_id.m_str_data.substr(0, 16) << "...\n";
+    LOG_INFO("Transaction added to mempool: " + tx->m_id.m_str_data.substr(0, 16) + "...");
 }
 
 void CBlockweave::MineBlock(const std::string& str_miner_address) {
@@ -57,6 +59,7 @@ void CBlockweave::MineBlock(const std::string& str_miner_address) {
     new_block->SetRecallBlock(recall_hash);
 
     std::cout << "Mining block #" << new_block->m_n_height << "...\n";
+    LOG_INFO("Mining block #" + std::to_string(new_block->m_n_height) + " with " + std::to_string(n_tx_count) + " transactions");
     new_block->Mine();
 
     map_blocks[new_block->m_hash.m_str_data] = new_block;
@@ -64,6 +67,7 @@ void CBlockweave::MineBlock(const std::string& str_miner_address) {
     m_current_block = new_block;
 
     std::cout << "Block mined successfully!\n" << new_block->ToString() << "\n";
+    LOG_INFO("Block #" + std::to_string(new_block->m_n_height) + " mined successfully, hash: " + new_block->m_hash.m_str_data.substr(0, 16) + "...");
 }
 
 std::shared_ptr<CBlock> CBlockweave::GetBlock(const CHash& hash) {
