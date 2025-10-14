@@ -119,6 +119,69 @@ static std::vector<uint8_t> DecodeBase64(const std::string& str_encoded) {
     return decoded;
 }
 
+// Extract filename and file data from multipart form-data
+static bool ParseMultipartFile(const std::string& str_body, const std::string& str_boundary,
+                               std::string& str_filename, std::vector<uint8_t>& file_data) {
+    // Find boundary markers
+    std::string str_start_boundary = "--" + str_boundary;
+    std::string str_end_boundary = "--" + str_boundary + "--";
+
+    size_t n_start = str_body.find(str_start_boundary);
+    if (n_start == std::string::npos) {
+        return false;
+    }
+
+    // Skip past first boundary
+    n_start += str_start_boundary.length();
+
+    // Find Content-Disposition header
+    size_t n_disposition = str_body.find("Content-Disposition:", n_start);
+    if (n_disposition == std::string::npos) {
+        return false;
+    }
+
+    // Extract filename from Content-Disposition
+    size_t n_filename_start = str_body.find("filename=\"", n_disposition);
+    if (n_filename_start != std::string::npos) {
+        n_filename_start += 10; // Length of "filename=\""
+        size_t n_filename_end = str_body.find("\"", n_filename_start);
+        if (n_filename_end != std::string::npos) {
+            str_filename = str_body.substr(n_filename_start, n_filename_end - n_filename_start);
+        }
+    }
+
+    // Find blank line marking start of file data
+    size_t n_data_start = str_body.find("\r\n\r\n", n_disposition);
+    if (n_data_start == std::string::npos) {
+        n_data_start = str_body.find("\n\n", n_disposition);
+        if (n_data_start == std::string::npos) {
+            return false;
+        }
+        n_data_start += 2;
+    } else {
+        n_data_start += 4;
+    }
+
+    // Find end boundary
+    size_t n_data_end = str_body.find(str_start_boundary, n_data_start);
+    if (n_data_end == std::string::npos) {
+        return false;
+    }
+
+    // Remove trailing CRLF before boundary
+    while (n_data_end > n_data_start &&
+           (str_body[n_data_end - 1] == '\n' || str_body[n_data_end - 1] == '\r')) {
+        n_data_end--;
+    }
+
+    // Extract file data
+    for (size_t i = n_data_start; i < n_data_end; i++) {
+        file_data.push_back(static_cast<uint8_t>(str_body[i]));
+    }
+
+    return !file_data.empty();
+}
+
 // ============= CRequestQueue Implementation =============
 
 CRequestQueue::CRequestQueue() : f_shutdown(false) {}
@@ -326,14 +389,39 @@ CHttpRequest CRestApiServer::ParseHttpRequest(const std::string& str_raw_request
         line_stream >> request.str_method >> request.str_path;
     }
 
-    // Skip headers
-    while (std::getline(iss, str_line) && str_line != "\r" && !str_line.empty()) {}
+    // Parse headers
+    while (std::getline(iss, str_line) && str_line != "\r" && !str_line.empty()) {
+        // Remove trailing \r if present
+        if (!str_line.empty() && str_line.back() == '\r') {
+            str_line.pop_back();
+        }
 
-    // Read body
-    std::string str_body_line;
-    while (std::getline(iss, str_body_line)) {
-        request.str_body += str_body_line;
+        // Look for Content-Type header
+        size_t n_colon = str_line.find(':');
+        if (n_colon != std::string::npos) {
+            std::string str_header_name = str_line.substr(0, n_colon);
+            std::string str_header_value = str_line.substr(n_colon + 1);
+
+            // Trim whitespace
+            str_header_name.erase(0, str_header_name.find_first_not_of(" \t"));
+            str_header_name.erase(str_header_name.find_last_not_of(" \t") + 1);
+            str_header_value.erase(0, str_header_value.find_first_not_of(" \t"));
+            str_header_value.erase(str_header_value.find_last_not_of(" \t"));
+
+            // Convert header name to lowercase for case-insensitive comparison
+            std::transform(str_header_name.begin(), str_header_name.end(),
+                          str_header_name.begin(), ::tolower);
+
+            if (str_header_name == "content-type") {
+                request.str_content_type = str_header_value;
+            }
+        }
     }
+
+    // Read body - preserve all characters including newlines
+    std::string remaining;
+    std::getline(iss, remaining, '\0');  // Read everything remaining
+    request.str_body = remaining;
 
     return request;
 }
@@ -368,6 +456,11 @@ void CRestApiServer::ProcessRequest(const CHttpRequest& request) {
         str_response = HandlePostTransaction(request.str_body);
         SendHttpResponse(request.n_client_socket, 200, "application/json", str_response);
         LOG_INFO("Handled POST /transaction request");
+    }
+    else if (request.str_method == "POST" && request.str_path == "/files") {
+        str_response = HandlePostFiles(request);
+        SendHttpResponse(request.n_client_socket, 200, "application/json", str_response);
+        LOG_INFO("Handled POST /files request");
     }
     else if (request.str_method == "POST" && request.str_path == "/mine/start") {
         str_response = HandlePostMineStart();
@@ -465,6 +558,83 @@ std::string CRestApiServer::HandlePostTransaction(const std::string& str_body) {
         return oss.str();
     } catch (const std::exception& e) {
         LOG_ERROR("POST /transaction exception: " + std::string(e.what()));
+        return "{\"error\": \"Internal server error\"}";
+    }
+}
+
+std::string CRestApiServer::HandlePostFiles(const CHttpRequest& request) {
+    try {
+        std::string str_filename;
+        std::vector<uint8_t> file_data;
+
+        // Check Content-Type to determine how to parse
+        if (request.str_content_type.find("multipart/form-data") != std::string::npos) {
+            // Extract boundary from Content-Type
+            size_t n_boundary_pos = request.str_content_type.find("boundary=");
+            if (n_boundary_pos == std::string::npos) {
+                LOG_ERROR("POST /files: Missing boundary in multipart/form-data");
+                return "{\"error\": \"Missing boundary in Content-Type\"}";
+            }
+
+            std::string str_boundary = request.str_content_type.substr(n_boundary_pos + 9);
+            // Remove quotes if present
+            if (!str_boundary.empty() && str_boundary.front() == '"') {
+                str_boundary = str_boundary.substr(1);
+            }
+            if (!str_boundary.empty() && str_boundary.back() == '"') {
+                str_boundary.pop_back();
+            }
+
+            // Parse multipart data
+            if (!ParseMultipartFile(request.str_body, str_boundary, str_filename, file_data)) {
+                LOG_ERROR("POST /files: Failed to parse multipart data");
+                return "{\"error\": \"Failed to parse multipart data\"}";
+            }
+
+            if (str_filename.empty()) {
+                str_filename = "uploaded_file";
+            }
+        } else {
+            // Raw file upload - use entire body as file data
+            str_filename = "raw_upload";
+            for (char c : request.str_body) {
+                file_data.push_back(static_cast<uint8_t>(c));
+            }
+        }
+
+        if (file_data.empty()) {
+            LOG_ERROR("POST /files: Empty file data");
+            return "{\"error\": \"Empty file data\"}";
+        }
+
+        // Create transaction with file data
+        // Use miner address as owner and a placeholder target
+        auto tx = std::make_shared<CTransaction>(
+            str_miner_address,
+            "file_storage",
+            file_data,
+            0  // No fee for file uploads
+        );
+
+        // Add to mempool
+        p_blockweave->AddTransaction(tx);
+
+        // Build response
+        std::ostringstream oss;
+        oss << "{\n";
+        oss << "  \"status\": \"success\",\n";
+        oss << "  \"transaction_id\": \"" << tx->m_id.m_str_data.substr(0, 32) << "...\",\n";
+        oss << "  \"filename\": \"" << str_filename << "\",\n";
+        oss << "  \"size\": " << file_data.size() << ",\n";
+        oss << "  \"message\": \"File uploaded and added to mempool\"\n";
+        oss << "}";
+
+        LOG_INFO("File uploaded: " + str_filename + " (" + std::to_string(file_data.size()) +
+                 " bytes, TX: " + tx->m_id.m_str_data.substr(0, 16) + "...)");
+
+        return oss.str();
+    } catch (const std::exception& e) {
+        LOG_ERROR("POST /files exception: " + std::string(e.what()));
         return "{\"error\": \"Internal server error\"}";
     }
 }

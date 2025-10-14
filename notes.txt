@@ -1,3 +1,8 @@
 ./configure --generator="Unix Makefiles"
 cd build
 make
+--------------------------
+to test files:
+curl -X POST http://localhost:28443/files -F "file=@/tmp/test_upload.txt" 2>&1
+curl -X POST http://localhost:28443/files -H "Content-Type:application/octet-stream" --data-binary "@/tmp/test_upload.txt" 2>&1
+--------------------------

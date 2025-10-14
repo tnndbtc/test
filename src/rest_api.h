@@ -14,10 +14,11 @@
 
 // HTTP Request structure
 struct CHttpRequest {
-    std::string str_method;      // GET, POST, etc.
-    std::string str_path;        // URL path
-    std::string str_body;        // Request body
-    int n_client_socket;         // Client socket for response
+    std::string str_method;          // GET, POST, etc.
+    std::string str_path;            // URL path
+    std::string str_body;            // Request body
+    std::string str_content_type;    // Content-Type header
+    int n_client_socket;             // Client socket for response
 };
 
 // Thread-safe request queue
@@ -65,6 +66,7 @@ private:
     std::string HandleGetBlock(const std::string& str_hash);
     std::string HandleGetData(const std::string& str_tx_id);
     std::string HandlePostTransaction(const std::string& str_body);
+    std::string HandlePostFiles(const CHttpRequest& request);
     std::string HandlePostMineStart();
     std::string HandlePostMineStop();
 
