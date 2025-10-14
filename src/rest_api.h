@@ -38,10 +38,14 @@ public:
     size_t Size() const;
 };
 
+// Forward declaration
+class CConfig;
+
 // REST API Server
 class CRestApiServer {
 private:
     CBlockweave* p_blockweave;
+    const CConfig* p_config;
     std::string str_miner_address;
     int n_port;
     int n_server_socket;
@@ -77,7 +81,7 @@ private:
                           const std::string& str_body);
 
 public:
-    CRestApiServer(CBlockweave* p_weave, const std::string& str_miner_addr,
+    CRestApiServer(CBlockweave* p_weave, const CConfig* p_cfg, const std::string& str_miner_addr,
                    int n_port_num = 28443, int n_num_workers = 5);
     ~CRestApiServer();
 

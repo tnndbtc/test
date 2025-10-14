@@ -1,5 +1,6 @@
 // ============= rest_api.cpp =============
 #include "rest_api.h"
+#include "cli/config.h"
 #include "logger/logger.h"
 #include "transaction.h"
 #include <iostream>
@@ -11,6 +12,10 @@
 #include <cstring>
 #include <algorithm>
 #include <cctype>
+#include <fstream>
+#include <random>
+#include <iomanip>
+#include <sys/stat.h>
 
 // ============= Utility Functions =============
 
@@ -182,6 +187,61 @@ static bool ParseMultipartFile(const std::string& str_body, const std::string& s
     return !file_data.empty();
 }
 
+// Generate UUID v4 string
+static std::string GenerateUUID() {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, 15);
+    std::uniform_int_distribution<> dis2(8, 11);
+
+    std::stringstream ss;
+    ss << std::hex;
+    for (int n_i = 0; n_i < 8; n_i++) {
+        ss << dis(gen);
+    }
+    ss << "-";
+    for (int n_i = 0; n_i < 4; n_i++) {
+        ss << dis(gen);
+    }
+    ss << "-4";  // UUID version 4
+    for (int n_i = 0; n_i < 3; n_i++) {
+        ss << dis(gen);
+    }
+    ss << "-";
+    ss << dis2(gen);  // UUID variant (8, 9, A, or B)
+    for (int n_i = 0; n_i < 3; n_i++) {
+        ss << dis(gen);
+    }
+    ss << "-";
+    for (int n_i = 0; n_i < 12; n_i++) {
+        ss << dis(gen);
+    }
+    return ss.str();
+}
+
+// Create directory recursively
+static bool CreateDirectoryRecursive(const std::string& str_path) {
+    if (str_path.empty()) return false;
+
+    // Check if directory already exists
+    struct stat st;
+    if (stat(str_path.c_str(), &st) == 0) {
+        return S_ISDIR(st.st_mode);
+    }
+
+    // Find parent directory
+    size_t n_pos = str_path.find_last_of('/');
+    if (n_pos != std::string::npos && n_pos > 0) {
+        std::string str_parent = str_path.substr(0, n_pos);
+        if (!CreateDirectoryRecursive(str_parent)) {
+            return false;
+        }
+    }
+
+    // Create this directory
+    return mkdir(str_path.c_str(), 0755) == 0;
+}
+
 // ============= CRequestQueue Implementation =============
 
 CRequestQueue::CRequestQueue() : f_shutdown(false) {}
@@ -221,9 +281,10 @@ size_t CRequestQueue::Size() const {
 
 // ============= CRestApiServer Implementation =============
 
-CRestApiServer::CRestApiServer(CBlockweave* p_weave, const std::string& str_miner_addr,
+CRestApiServer::CRestApiServer(CBlockweave* p_weave, const CConfig* p_cfg,
+                               const std::string& str_miner_addr,
                                int n_port_num, int n_num_workers)
-    : p_blockweave(p_weave), str_miner_address(str_miner_addr), n_port(n_port_num),
+    : p_blockweave(p_weave), p_config(p_cfg), str_miner_address(str_miner_addr), n_port(n_port_num),
       n_server_socket(-1), f_running(false), f_stop_requested(false),
       p_request_queue(std::make_shared<CRequestQueue>()) {
 
@@ -607,6 +668,36 @@ std::string CRestApiServer::HandlePostFiles(const CHttpRequest& request) {
             return "{\"error\": \"Empty file data\"}";
         }
 
+        // Generate UUID for file name
+        std::string str_uuid = GenerateUUID();
+
+        // Get data directory from config
+        std::string str_data_dir = p_config->GetDataDir();
+
+        // Create data directory if it doesn't exist
+        if (!CreateDirectoryRecursive(str_data_dir)) {
+            LOG_ERROR("POST /files: Failed to create data directory: " + str_data_dir);
+            return "{\"error\": \"Failed to create data directory\"}";
+        }
+
+        // Build full file path
+        std::string str_file_path = str_data_dir + "/" + str_uuid;
+
+        // Save file to disk
+        std::ofstream file(str_file_path, std::ios::binary);
+        if (!file.is_open()) {
+            LOG_ERROR("POST /files: Failed to open file for writing: " + str_file_path);
+            return "{\"error\": \"Failed to save file\"}";
+        }
+
+        file.write(reinterpret_cast<const char*>(file_data.data()), file_data.size());
+        file.close();
+
+        if (file.fail()) {
+            LOG_ERROR("POST /files: Failed to write file data to: " + str_file_path);
+            return "{\"error\": \"Failed to write file\"}";
+        }
+
         // Create transaction with file data
         // Use miner address as owner and a placeholder target
         auto tx = std::make_shared<CTransaction>(
@@ -624,13 +715,16 @@ std::string CRestApiServer::HandlePostFiles(const CHttpRequest& request) {
         oss << "{\n";
         oss << "  \"status\": \"success\",\n";
         oss << "  \"transaction_id\": \"" << tx->m_id.m_str_data.substr(0, 32) << "...\",\n";
-        oss << "  \"filename\": \"" << str_filename << "\",\n";
+        oss << "  \"uuid\": \"" << str_uuid << "\",\n";
+        oss << "  \"original_filename\": \"" << str_filename << "\",\n";
+        oss << "  \"saved_path\": \"" << str_file_path << "\",\n";
         oss << "  \"size\": " << file_data.size() << ",\n";
-        oss << "  \"message\": \"File uploaded and added to mempool\"\n";
+        oss << "  \"message\": \"File uploaded and saved to disk\"\n";
         oss << "}";
 
-        LOG_INFO("File uploaded: " + str_filename + " (" + std::to_string(file_data.size()) +
-                 " bytes, TX: " + tx->m_id.m_str_data.substr(0, 16) + "...)");
+        LOG_INFO("File uploaded: " + str_filename + " -> " + str_uuid + " (" +
+                 std::to_string(file_data.size()) + " bytes, TX: " +
+                 tx->m_id.m_str_data.substr(0, 16) + "...)");
 
         return oss.str();
     } catch (const std::exception& e) {

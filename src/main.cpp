@@ -73,6 +73,7 @@ int main(int argc, char* argv[]) {
     int n_workers = config.GetWorkerThreads();
     std::string str_log_dir = config.GetLogDir();
     std::string str_log_level = config.GetLogLevel();
+    std::string str_data_dir = config.GetDataDir();
 
     // Override daemon mode from command line
     if (f_daemon_mode) {
@@ -94,6 +95,18 @@ int main(int argc, char* argv[]) {
         if (getcwd(cwd, sizeof(cwd)) != nullptr) {
             snprintf(abs_log_dir, sizeof(abs_log_dir), "%s/%s", cwd, str_log_dir.c_str());
             str_log_dir = abs_log_dir;
+        }
+    }
+
+    // Convert data directory to absolute path (needed for daemon mode)
+    char abs_data_dir[PATH_MAX];
+    if (str_data_dir[0] != '/') {
+        // Relative path - convert to absolute
+        char cwd[PATH_MAX];
+        if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+            snprintf(abs_data_dir, sizeof(abs_data_dir), "%s/%s", cwd, str_data_dir.c_str());
+            str_data_dir = abs_data_dir;
+            config.SetValue("data_dir", str_data_dir);
         }
     }
 
@@ -142,7 +155,7 @@ int main(int argc, char* argv[]) {
 
     // Start REST API server (1 listener thread + N worker threads)
     LOG_INFO("Starting REST API server on port " + std::to_string(n_rest_port));
-    CRestApiServer rest_api(&weave, str_miner_address, n_rest_port, n_workers);
+    CRestApiServer rest_api(&weave, &config, str_miner_address, n_rest_port, n_workers);
     if (!rest_api.Start()) {
         std::cerr << "Failed to start REST API server\n";
         LOG_ERROR("Failed to start REST API server on port " + std::to_string(n_rest_port));
