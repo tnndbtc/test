@@ -1,7 +1,7 @@
 // ============= main.cpp =============
 #include "blockweave.h"
 #include "wallet/wallet.h"
-#include "rest_api.h"
+#include "rest/rest_api.h"
 #include "cli/config.h"
 #include "cli/daemon.h"
 #include "logger/logger.h"

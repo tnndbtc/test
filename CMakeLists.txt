@@ -37,7 +37,7 @@ add_library(blockweave_core SHARED
     src/blockweave.cpp
     src/utils/hash.cpp
     src/transaction.cpp
-    src/rest_api.cpp
+    src/rest/rest_api.cpp
     src/cli/config.cpp
     src/cli/daemon.cpp
     src/logger/logger.cpp

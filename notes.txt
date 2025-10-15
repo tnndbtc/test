@@ -2,7 +2,18 @@
 cd build
 make
 --------------------------
-to test files:
+curl http://localhost:28443/chain
+--------------------------
+curl -X POST http://localhost:28443/transaction \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
+    "to": "bc1qw508d6qejxtdg4y5r3zarvaryv98gj9p8t5z6",
+    "data": "SGVsbG8gQmxvY2tjaGFpbiBkYXRhIQ==",
+    "fee": 0.00012
+  }'
+--------------------------
+to test file upload:
 curl -X POST http://localhost:28443/files -F "file=@/tmp/test_upload.txt" 2>&1
 curl -X POST http://localhost:28443/files -H "Content-Type:application/octet-stream" --data-binary "@/tmp/test_upload.txt" 2>&1
 --------------------------
