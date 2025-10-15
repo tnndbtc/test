@@ -2,6 +2,7 @@
 #ifndef REST_API_H
 #define REST_API_H
 
+#include "i_rest_api.h"
 #include "blockweave.h"
 #include <string>
 #include <queue>
@@ -41,8 +42,9 @@ public:
 // Forward declaration
 class CConfig;
 
-// REST API Server
-class CRestApiServer {
+// REST API Server Implementation
+// Implements the IRestApiServer interface for HTTP REST API functionality
+class CRestApiServer : public IRestApiServer {
 private:
     CBlockweave* p_blockweave;
     const CConfig* p_config;
@@ -83,11 +85,14 @@ private:
 public:
     CRestApiServer(CBlockweave* p_weave, const CConfig* p_cfg, const std::string& str_miner_addr,
                    int n_port_num = 28443, int n_num_workers = 5);
-    ~CRestApiServer();
+    virtual ~CRestApiServer() override;
 
-    bool Start();
-    void Stop();
-    bool IsRunning() const;
+    // IRestApiServer interface implementation
+    virtual bool Start() override;
+    virtual void Stop() override;
+    virtual bool IsRunning() const override;
+    virtual std::string HandleGET(const std::string& str_endpoint, const CHttpRequest& request) override;
+    virtual std::string HandlePOST(const std::string& str_endpoint, const CHttpRequest& request) override;
 };
 
 #endif

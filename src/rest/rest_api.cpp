@@ -507,37 +507,30 @@ void CRestApiServer::ProcessRequest(const CHttpRequest& request) {
     LOG_INFO("Processing request: " + request.str_method + " " + request.str_path);
 
     std::string str_response;
+    int n_status_code = 200;
 
-    if (request.str_method == "GET" && request.str_path == "/chain") {
-        str_response = HandleGetChain();
-        SendHttpResponse(request.n_client_socket, 200, "application/json", str_response);
-        LOG_INFO("Handled GET /chain request");
+    // Route to appropriate handler based on HTTP method
+    if (request.str_method == "GET") {
+        str_response = HandleGET(request.str_path, request);
+        if (str_response.find("\"error\"") != std::string::npos &&
+            str_response.find("Not found") != std::string::npos) {
+            n_status_code = 404;
+        }
     }
-    else if (request.str_method == "POST" && request.str_path == "/transaction") {
-        str_response = HandlePostTransaction(request.str_body);
-        SendHttpResponse(request.n_client_socket, 200, "application/json", str_response);
-        LOG_INFO("Handled POST /transaction request");
-    }
-    else if (request.str_method == "POST" && request.str_path == "/files") {
-        str_response = HandlePostFiles(request);
-        SendHttpResponse(request.n_client_socket, 200, "application/json", str_response);
-        LOG_INFO("Handled POST /files request");
-    }
-    else if (request.str_method == "POST" && request.str_path == "/mine/start") {
-        str_response = HandlePostMineStart();
-        SendHttpResponse(request.n_client_socket, 200, "application/json", str_response);
-        LOG_INFO("Handled POST /mine/start request - mining started");
-    }
-    else if (request.str_method == "POST" && request.str_path == "/mine/stop") {
-        str_response = HandlePostMineStop();
-        SendHttpResponse(request.n_client_socket, 200, "application/json", str_response);
-        LOG_INFO("Handled POST /mine/stop request - mining stopped");
+    else if (request.str_method == "POST") {
+        str_response = HandlePOST(request.str_path, request);
+        if (str_response.find("\"error\"") != std::string::npos &&
+            str_response.find("Not found") != std::string::npos) {
+            n_status_code = 404;
+        }
     }
     else {
-        str_response = "{\"error\": \"Not found\"}";
-        SendHttpResponse(request.n_client_socket, 404, "application/json", str_response);
-        LOG_ERROR("Unknown endpoint: " + request.str_method + " " + request.str_path);
+        str_response = "{\"error\": \"Method not allowed\"}";
+        n_status_code = 405;
+        LOG_ERROR("Unsupported HTTP method: " + request.str_method);
     }
+
+    SendHttpResponse(request.n_client_socket, n_status_code, "application/json", str_response);
 }
 
 std::string CRestApiServer::HandleGetChain() {
@@ -741,4 +734,51 @@ std::string CRestApiServer::HandlePostMineStart() {
 std::string CRestApiServer::HandlePostMineStop() {
     p_blockweave->StopMining();
     return "{\"status\": \"Mining stopped\"}";
+}
+
+// ============= HTTP Method Handlers (Interface Implementation) =============
+
+std::string CRestApiServer::HandleGET(const std::string& str_endpoint, const CHttpRequest& request) {
+    LOG_INFO("Handling GET request for endpoint: " + str_endpoint);
+
+    // Route based on endpoint
+    if (str_endpoint == "/chain") {
+        return HandleGetChain();
+    }
+    else if (str_endpoint.find("/block/") == 0) {
+        // Extract block hash from path (e.g., /block/<hash>)
+        std::string str_hash = str_endpoint.substr(7);
+        return HandleGetBlock(str_hash);
+    }
+    else if (str_endpoint.find("/data/") == 0) {
+        // Extract transaction ID from path (e.g., /data/<tx_id>)
+        std::string str_tx_id = str_endpoint.substr(6);
+        return HandleGetData(str_tx_id);
+    }
+    else {
+        LOG_ERROR("GET endpoint not found: " + str_endpoint);
+        return "{\"error\": \"Not found\"}";
+    }
+}
+
+std::string CRestApiServer::HandlePOST(const std::string& str_endpoint, const CHttpRequest& request) {
+    LOG_INFO("Handling POST request for endpoint: " + str_endpoint);
+
+    // Route based on endpoint
+    if (str_endpoint == "/transaction") {
+        return HandlePostTransaction(request.str_body);
+    }
+    else if (str_endpoint == "/files") {
+        return HandlePostFiles(request);
+    }
+    else if (str_endpoint == "/mine/start") {
+        return HandlePostMineStart();
+    }
+    else if (str_endpoint == "/mine/stop") {
+        return HandlePostMineStop();
+    }
+    else {
+        LOG_ERROR("POST endpoint not found: " + str_endpoint);
+        return "{\"error\": \"Not found\"}";
+    }
 }
