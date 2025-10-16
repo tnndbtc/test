@@ -25,41 +25,49 @@ class BlockweaveNode:
     Provides methods to start, stop, and query a local blockweave node.
     """
 
-    def __init__(self, project_root=None, port=28443, config_file=None, datadir=None, node_index=0):
+    def __init__(self, project_root=None, port=28443, p2p_port=None, config_file=None, datadir=None, node_index=0):
         """
         Initialize the node manager.
 
         Args:
             project_root: Path to project root directory (auto-detected if None)
             port: REST API port (default: 28443)
+            p2p_port: P2P network port (default: None, uses default from config)
             config_file: Path to config file (default: blockweave.conf in project root)
             datadir: Data directory for this node (default: auto-generated temp directory)
             node_index: Node index for logging (default: 0, creates node0 folder)
         """
         if project_root is None:
             # Auto-detect project root
-            # If running from build/test/functional, go up 3 levels to project root
-            # If running from test/functional, go up 2 levels to project root
+            # test_file_path is .../test_framework/__init__.py
+            # From build/test/functional/test_framework/__init__.py -> go up 4 levels to project root
+            # From test/functional/test_framework/__init__.py -> go up 3 levels to project root
             test_file_path = Path(__file__).resolve()
 
-            # Check if we're in build/test/functional
-            if test_file_path.parent.parent.name == "test" and test_file_path.parent.parent.parent.name == "build":
-                # Running from build/test/functional -> go up 4 levels
-                self.project_root = test_file_path.parent.parent.parent.parent
+            # Check if we're in build/test/functional/test_framework
+            # Navigate up: test_framework -> functional -> test -> build -> project_root
+            if "build" in test_file_path.parts and "test" in test_file_path.parts:
+                # Find the "build" directory in the path and go up one level
+                # Path is like: /path/to/project/build/test/functional/test_framework/__init__.py
+                build_index = test_file_path.parts.index("build")
+                self.project_root = Path(*test_file_path.parts[:build_index])
             else:
-                # Running from test/functional -> go up 2 levels
+                # Running from test/functional/test_framework -> go up 3 levels
+                # Path is like: /path/to/project/test/functional/test_framework/__init__.py
                 self.project_root = test_file_path.parent.parent.parent
         else:
             self.project_root = Path(project_root).resolve()
 
         self.port = port
+        self.p2p_port = p2p_port
         self.config_file = config_file or (self.project_root / "blockweave.conf")
 
-        # Check if daemon_cli exists in current directory (when running from build/)
-        if (Path.cwd() / "daemon_cli").exists():
-            self.daemon_cli = Path.cwd() / "daemon_cli"
+        # Locate rest_daemon executable
+        if (Path.cwd() / "rest_daemon").exists():
+            self.rest_daemon = Path.cwd() / "rest_daemon"
         else:
-            self.daemon_cli = self.project_root / "build" / "daemon_cli"
+            self.rest_daemon = self.project_root / "build" / "rest_daemon"
+
         self.base_url = f"http://localhost:{self.port}"
         self.process = None
         self.node_index = node_index
@@ -94,24 +102,42 @@ class BlockweaveNode:
             custom_config_path = node_dir / f"node{self.node_index}.conf"
 
             with open(custom_config_path, 'w') as f:
+                p2p_port_written = False
                 for line in config_lines:
-                    # Override log_dir and data_dir settings
+                    # Override log_dir, data_dir, rest_api_port, p2p_port, and daemon settings
                     if line.strip().startswith('log_dir='):
                         f.write(f"log_dir={log_dir}\n")
                     elif line.strip().startswith('data_dir='):
                         f.write(f"data_dir={node_dir / 'data'}\n")
+                    elif line.strip().startswith('rest_api_port='):
+                        f.write(f"rest_api_port={self.port}\n")
+                    elif line.strip().startswith('p2p_port='):
+                        if self.p2p_port is not None:
+                            f.write(f"p2p_port={self.p2p_port}\n")
+                            p2p_port_written = True
+                        else:
+                            f.write(line)
+                    elif line.strip().startswith('daemon='):
+                        f.write("daemon=false\n")  # Force foreground mode for tests
                     else:
                         f.write(line)
 
+                # Add p2p_port if it wasn't in the config and we have a value
+                if self.p2p_port is not None and not p2p_port_written:
+                    f.write(f"\n# P2P port (added by test framework)\n")
+                    f.write(f"p2p_port={self.p2p_port}\n")
+
             self.logger.info(f"Created custom config at {custom_config_path}")
             self.logger.info(f"Log directory: {log_dir}")
+            if self.p2p_port is not None:
+                self.logger.info(f"P2P port: {self.p2p_port}")
             return custom_config_path
 
         return self.config_file
 
     def start(self, timeout=10):
         """
-        Start the blockweave node.
+        Start the blockweave node in foreground mode.
 
         Args:
             timeout: Maximum time to wait for node to start (seconds)
@@ -119,9 +145,9 @@ class BlockweaveNode:
         Returns:
             bool: True if node started successfully, False otherwise
         """
-        if not self.daemon_cli.exists():
+        if not self.rest_daemon.exists():
             raise FileNotFoundError(
-                f"daemon_cli not found at {self.daemon_cli}. "
+                f"rest_daemon not found at {self.rest_daemon}. "
                 "Please build the project first: cd build && make"
             )
 
@@ -131,41 +157,57 @@ class BlockweaveNode:
                 "Please create blockweave.conf in project root."
             )
 
-        # Create custom config with node-specific log directory
+        # Create custom config with node-specific settings
         self.custom_config_file = self.create_custom_config()
 
         self.logger.info(f"Starting blockweave node on port {self.port}...")
         self.logger.info(f"Using config: {self.custom_config_file}")
         print(f"Starting blockweave node on port {self.port}...")
 
-        # Start the daemon with custom config
+        # Start rest_daemon in foreground mode as a subprocess
         try:
-            cmd = [str(self.daemon_cli), "start"]
-            if self.custom_config_file != self.config_file:
-                cmd.extend(["-c", str(self.custom_config_file)])
+            cmd = [str(self.rest_daemon), "-c", str(self.custom_config_file)]
 
-            result = subprocess.run(
-                cmd,
-                cwd=str(self.project_root),
-                capture_output=True,
-                text=True,
-                timeout=timeout
-            )
+            # Redirect stdout/stderr to log files in node directory
+            node_dir = Path(self.datadir) if self.datadir else Path(tempfile.mkdtemp())
+            stdout_log = node_dir / f"node{self.node_index}_stdout.log"
+            stderr_log = node_dir / f"node{self.node_index}_stderr.log"
 
-            if result.returncode != 0:
-                error_msg = f"Failed to start daemon: {result.stderr}"
-                self.logger.error(error_msg)
-                print(error_msg)
-                return False
+            with open(stdout_log, 'w') as stdout_f, open(stderr_log, 'w') as stderr_f:
+                self.process = subprocess.Popen(
+                    cmd,
+                    cwd=str(self.project_root),
+                    stdout=stdout_f,
+                    stderr=stderr_f,
+                    start_new_session=True  # Detach from terminal
+                )
+
+            self.logger.info(f"Started rest_daemon process (PID: {self.process.pid})")
+            self.logger.info(f"Stdout log: {stdout_log}")
+            self.logger.info(f"Stderr log: {stderr_log}")
 
             # Wait for node to be ready
             start_time = time.time()
             while time.time() - start_time < timeout:
                 if self.is_ready():
-                    success_msg = f"Node started successfully (PID from daemon)"
+                    success_msg = f"Node started successfully (PID: {self.process.pid})"
                     self.logger.info(success_msg)
                     print(success_msg)
                     return True
+
+                # Check if process died
+                if self.process.poll() is not None:
+                    error_msg = f"Process died with returncode {self.process.returncode}"
+                    self.logger.error(error_msg)
+                    print(error_msg)
+                    # Print stderr for debugging
+                    with open(stderr_log, 'r') as f:
+                        stderr_content = f.read()
+                        if stderr_content:
+                            self.logger.error(f"Stderr: {stderr_content}")
+                            print(f"Stderr: {stderr_content}")
+                    return False
+
                 time.sleep(0.5)
 
             timeout_msg = "Timeout waiting for node to become ready"
@@ -174,11 +216,6 @@ class BlockweaveNode:
             self.stop()
             return False
 
-        except subprocess.TimeoutExpired:
-            error_msg = f"Timeout starting daemon after {timeout} seconds"
-            self.logger.error(error_msg)
-            print(error_msg)
-            return False
         except Exception as e:
             error_msg = f"Error starting node: {e}"
             self.logger.error(error_msg)
@@ -197,31 +234,36 @@ class BlockweaveNode:
         """
         print("Stopping blockweave node...")
 
+        if self.process is None:
+            print("Node process not found (already stopped or never started)")
+            return True
+
         try:
-            result = subprocess.run(
-                [str(self.daemon_cli), "stop"],
-                cwd=str(self.project_root),
-                capture_output=True,
-                text=True,
-                timeout=timeout
-            )
+            import signal
 
-            if result.returncode != 0:
-                print(f"Warning: daemon_cli stop returned non-zero: {result.stderr}")
+            # Send SIGTERM for graceful shutdown
+            self.logger.info(f"Sending SIGTERM to process {self.process.pid}")
+            self.process.terminate()
 
-            # Wait for node to stop responding
-            start_time = time.time()
-            while time.time() - start_time < timeout:
-                if not self.is_ready():
-                    print("Node stopped successfully")
-                    return True
-                time.sleep(0.5)
-
-            print("Warning: Node may still be running after stop command")
-            return False
+            # Wait for process to exit
+            try:
+                self.process.wait(timeout=timeout)
+                self.logger.info("Process terminated gracefully")
+                print("Node stopped successfully")
+                return True
+            except subprocess.TimeoutExpired:
+                # Force kill if it doesn't stop gracefully
+                self.logger.warning(f"Process didn't stop gracefully, sending SIGKILL")
+                self.process.kill()
+                self.process.wait(timeout=5)
+                self.logger.info("Process killed")
+                print("Node stopped (forcefully)")
+                return True
 
         except Exception as e:
-            print(f"Error stopping node: {e}")
+            error_msg = f"Error stopping node: {e}"
+            self.logger.error(error_msg)
+            print(error_msg)
             return False
 
     def is_ready(self):

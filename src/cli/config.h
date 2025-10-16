@@ -27,6 +27,7 @@ public:
     // Specific configuration getters
     std::string GetMinerAddress() const;
     int GetRestApiPort() const;
+    int GetP2PPort() const;
     std::string GetDataDir() const;
     std::string GetLogDir() const;
     std::string GetLogLevel() const;

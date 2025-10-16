@@ -288,7 +288,7 @@ CRestApiServer::CRestApiServer(CBlockweave* p_weave, const CConfig* p_cfg,
       n_server_socket(-1), f_running(false), f_stop_requested(false),
       p_request_queue(std::make_shared<CRequestQueue>()) {
 
-    m_worker_threads.reserve(WORKER_THREADS);
+    m_worker_threads.reserve(REST_WORKER_THREADS);
 }
 
 CRestApiServer::~CRestApiServer() {
@@ -339,12 +339,12 @@ bool CRestApiServer::Start() {
     m_listener_thread = std::thread(&CRestApiServer::ListenerThread, this);
 
     // Start worker threads
-    for (size_t n_i = 0; n_i < WORKER_THREADS; n_i++) {
+    for (size_t n_i = 0; n_i < REST_WORKER_THREADS; n_i++) {
         m_worker_threads.emplace_back(&CRestApiServer::WorkerThread, this, n_i);
     }
 
     std::cout << "[REST API] Server started on port " << n_port << "\n";
-    std::cout << "[REST API] Worker threads: " << WORKER_THREADS << "\n";
+    std::cout << "[REST API] Worker threads: " << REST_WORKER_THREADS << "\n";
     LOG_INFO("REST API listener thread and worker threads started");
 
     return true;

@@ -17,6 +17,7 @@ CConfig::CConfig(const std::string& str_config_path) {
 void CConfig::LoadDefaults() {
     m_config_values["miner_address"] = "";
     m_config_values["rest_api_port"] = std::to_string(REST_API_PORT);
+    m_config_values["p2p_port"] = std::to_string(P2P_PORT);
     m_config_values["data_dir"] = "./data";
     m_config_values["log_dir"] = LOG_DIR;
     m_config_values["log_level"] = LOG_LEVEL;
@@ -114,6 +115,10 @@ std::string CConfig::GetMinerAddress() const {
 
 int CConfig::GetRestApiPort() const {
     return GetIntValue("rest_api_port", REST_API_PORT);
+}
+
+int CConfig::GetP2PPort() const {
+    return GetIntValue("p2p_port", P2P_PORT);
 }
 
 std::string CConfig::GetDataDir() const {

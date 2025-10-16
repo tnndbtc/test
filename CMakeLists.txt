@@ -28,7 +28,7 @@ include_directories(include src ${OPENSSL_INCLUDE_DIR})
 
 # ============================================================
 # Blockweave Core Library (libblockweave_core.so / .dylib / .dll)
-# Contains: block, blockweave, transaction, hash utilities, REST API, CLI
+# Contains: block, blockweave, transaction, hash utilities, REST API, CLI, Peer
 # Thread-safe with mutex protection
 # Built as SHARED library for dynamic linking
 # ============================================================
@@ -41,6 +41,7 @@ add_library(blockweave_core SHARED
     src/cli/config.cpp
     src/cli/daemon.cpp
     src/logger/logger.cpp
+    src/peer/peer.cpp
 )
 
 # Set library version and properties

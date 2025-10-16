@@ -2,6 +2,7 @@
 #include "blockweave.h"
 #include "wallet/wallet.h"
 #include "rest/rest_api.h"
+#include "peer/peer.h"
 #include "cli/config.h"
 #include "cli/daemon.h"
 #include "logger/logger.h"
@@ -70,6 +71,7 @@ int main(int argc, char* argv[]) {
     CConfig config(str_config_file);
     std::string str_miner_address = config.GetMinerAddress();
     int n_rest_port = config.GetRestApiPort();
+    int n_p2p_port = config.GetP2PPort();
     std::string str_log_dir = config.GetLogDir();
     std::string str_log_level = config.GetLogLevel();
     std::string str_data_dir = config.GetDataDir();
@@ -141,12 +143,14 @@ int main(int argc, char* argv[]) {
     std::cout << "=== Blockweave REST Daemon ===\n\n";
     std::cout << "Miner address: " << str_miner_address.substr(0, 16) << "...\n";
     std::cout << "REST API port: " << n_rest_port << "\n";
-    std::cout << "Worker threads: " << WORKER_THREADS << "\n\n";
+    std::cout << "P2P port: " << n_p2p_port << "\n";
+    std::cout << "REST worker threads: " << REST_WORKER_THREADS << "\n\n";
 
     LOG_INFO("Configuration loaded:");
     LOG_INFO("  Miner address: " + str_miner_address.substr(0, 16) + "...");
     LOG_INFO("  REST API port: " + std::to_string(n_rest_port));
-    LOG_INFO("  Worker threads: " + std::to_string(WORKER_THREADS));
+    LOG_INFO("  P2P port: " + std::to_string(n_p2p_port));
+    LOG_INFO("  REST worker threads: " + std::to_string(REST_WORKER_THREADS));
     LOG_INFO("  Log directory: " + str_log_dir);
 
     CBlockweave weave;
@@ -162,6 +166,17 @@ int main(int argc, char* argv[]) {
     }
     LOG_INFO("REST API server started successfully");
 
+    // Start peer manager
+    LOG_INFO("Starting peer manager on port " + std::to_string(n_p2p_port));
+    CPeerManager peer_manager(n_p2p_port);
+    if (!peer_manager.Start()) {
+        std::cerr << "Failed to start peer manager\n";
+        LOG_ERROR("Failed to start peer manager on port " + std::to_string(n_p2p_port));
+        rest_api.Stop();
+        return 1;
+    }
+    LOG_INFO("Peer manager started successfully");
+
     // Start mining thread
     weave.StartMining();
     LOG_INFO("Mining enabled");
@@ -169,34 +184,9 @@ int main(int argc, char* argv[]) {
     LOG_INFO("Mining thread started");
 
     std::cout << "[Main] REST daemon is running. Press Ctrl+C to stop.\n";
-    std::cout << "[Main] Use REST API on port " << n_rest_port << " to interact with the blockchain.\n\n";
+    std::cout << "[Main] Use REST API on port " << n_rest_port << " to interact with the blockchain.\n";
+    std::cout << "[Main] P2P network listening on port " << n_p2p_port << "\n\n";
     LOG_INFO("REST daemon is running and ready to accept requests");
-
-    // ==================================================================
-    // Test transactions (commented out - use REST API instead)
-    // ==================================================================
-    // CWallet alice, bob;
-    // std::string str_alice_address = alice.GetAddress();
-    // std::string str_bob_address = bob.GetAddress();
-    //
-    // // Transaction 1: Alice -> Bob
-    // std::string str_data1 = "Hello, permanent storage!";
-    // std::vector<uint8_t> bytes1(str_data1.begin(), str_data1.end());
-    // auto tx1 = alice.CreateTransaction(str_bob_address, bytes1, 100);
-    // weave.AddTransaction(tx1);
-    //
-    // // Transaction 2: Bob -> Alice
-    // std::string str_data2 = "This data will last forever on the blockweave";
-    // std::vector<uint8_t> bytes2(str_data2.begin(), str_data2.end());
-    // auto tx2 = bob.CreateTransaction(str_alice_address, bytes2, 150);
-    // weave.AddTransaction(tx2);
-    //
-    // // Transaction 3: Alice -> Bob
-    // std::string str_data3 = "Another piece of permanent data";
-    // std::vector<uint8_t> bytes3(str_data3.begin(), str_data3.end());
-    // auto tx3 = alice.CreateTransaction(str_bob_address, bytes3, 200);
-    // weave.AddTransaction(tx3);
-    // ==================================================================
 
     // Main loop - wait for shutdown signal
     while (!g_f_shutdown_requested) {
@@ -211,6 +201,11 @@ int main(int argc, char* argv[]) {
     weave.StopMining();
     mining_thread.join();
     LOG_INFO("Mining thread stopped");
+
+    // Stop peer manager
+    LOG_INFO("Stopping peer manager");
+    peer_manager.Stop();
+    LOG_INFO("Peer manager stopped");
 
     // Stop REST API server
     LOG_INFO("Stopping REST API server");
