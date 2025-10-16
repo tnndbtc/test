@@ -193,6 +193,16 @@ else()
     target_compile_options(daemon_cli PRIVATE -Wall -Wextra -pedantic)
 endif()
 
+# ============================================================
+# Copy test directory to build/test after build
+# ============================================================
+add_custom_command(TARGET rest_daemon POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/test
+        ${CMAKE_BINARY_DIR}/test
+    COMMENT "Copying test directory to build/test"
+)
+
 # Installation
 install(TARGETS blockweave_core
     LIBRARY DESTINATION lib

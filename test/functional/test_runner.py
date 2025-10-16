@@ -14,18 +14,26 @@ import sys
 import os
 import subprocess
 import argparse
+import tempfile
+import shutil
+import logging
 from pathlib import Path
+from datetime import datetime
 
 
 class TestRunner:
     """Runs functional tests and aggregates results."""
 
-    def __init__(self):
+    def __init__(self, tmpdir=None, nocleanup=False):
         """Initialize the test runner."""
         self.script_dir = Path(__file__).parent.resolve()
         self.num_passed = 0
         self.num_failed = 0
         self.failed_tests = []
+        self.tmpdir = tmpdir
+        self.nocleanup = nocleanup
+        self.test_counter = 0
+        self.created_tmpdirs = []
 
     def find_tests(self):
         """
@@ -61,25 +69,54 @@ class TestRunner:
             print(f"✗ ERROR: Test file must start with 'test_': {test_file.name}")
             return False
 
+        # Create tmpdir for this test with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]  # Format: YYYYMMDD_HHMMSS_mmm
+
+        if self.tmpdir:
+            test_tmpdir = Path(self.tmpdir) / f"test_run_{timestamp}"
+            test_tmpdir.mkdir(parents=True, exist_ok=True)
+        else:
+            test_tmpdir = Path(tempfile.mkdtemp(prefix=f"blockweave_test_run_{timestamp}_"))
+
+        self.created_tmpdirs.append(test_tmpdir)
+        self.test_counter += 1
+
         print(f"\n{'='*70}")
         print(f"Running: {test_file.name}")
         print(f"{'='*70}")
+        print(f"Test tmpdir: {test_tmpdir}")
 
         try:
+            # Set environment variables for the test
+            env = os.environ.copy()
+            env["TEST_TMPDIR"] = str(test_tmpdir)
+            if self.nocleanup:
+                env["TEST_NOCLEANUP"] = "1"
+
             # Run the test as a subprocess
             result = subprocess.run(
                 [sys.executable, str(test_file)],
                 cwd=str(test_file.parent),
                 capture_output=False,
-                text=True
+                text=True,
+                env=env
             )
 
             if result.returncode == 0:
                 print(f"\n✓ {test_file.name} PASSED\n")
-                return True
+                success = True
             else:
                 print(f"\n✗ {test_file.name} FAILED (exit code: {result.returncode})\n")
-                return False
+                success = False
+
+            # Clean up tmpdir unless --nocleanup specified
+            if not self.nocleanup and test_tmpdir.exists():
+                try:
+                    shutil.rmtree(test_tmpdir)
+                except Exception as e:
+                    print(f"Warning: Failed to clean up tmpdir {test_tmpdir}: {e}")
+
+            return success
 
         except Exception as e:
             print(f"\n✗ {test_file.name} FAILED WITH EXCEPTION: {e}\n")
@@ -140,9 +177,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s                    # Run all tests
-  %(prog)s test_chain.py      # Run specific test
-  %(prog)s path/to/test.py    # Run test by path
+  %(prog)s                                  # Run all tests
+  %(prog)s test_chain.py                    # Run specific test
+  %(prog)s path/to/test.py                  # Run test by path
+  %(prog)s --tmpdir=/tmp/test_runs          # Use custom tmpdir
+  %(prog)s --nocleanup                      # Keep test data after run
         """
     )
 
@@ -152,25 +191,55 @@ Examples:
         help="Path to specific test file to run (runs all tests if not specified)"
     )
 
+    parser.add_argument(
+        "--tmpdir",
+        type=str,
+        help="Directory for test data (default: auto-generated temp directory)"
+    )
+
+    parser.add_argument(
+        "--nocleanup",
+        action="store_true",
+        help="Do not cleanup test data after test run"
+    )
+
     args = parser.parse_args()
 
-    runner = TestRunner()
+    runner = TestRunner(tmpdir=args.tmpdir, nocleanup=args.nocleanup)
 
-    if args.test_file:
-        # Run single test
-        test_path = Path(args.test_file)
+    # Print tmpdir info
+    if args.tmpdir:
+        print(f"Using tmpdir: {args.tmpdir}")
+    if args.nocleanup:
+        print("Cleanup disabled - test data will be preserved")
 
-        # If relative path or just filename, look in script directory
-        if not test_path.is_absolute():
-            test_path = runner.script_dir / test_path
+    try:
+        if args.test_file:
+            # Run single test
+            test_path = Path(args.test_file)
 
-        if runner.run_test(test_path):
-            return 0
+            # Convert to absolute path
+            if not test_path.is_absolute():
+                # If path exists relative to current directory, use it
+                if test_path.exists():
+                    test_path = test_path.resolve()
+                # Otherwise, look in script directory (for just filename)
+                else:
+                    test_path = runner.script_dir / test_path
+
+            if runner.run_test(test_path):
+                return 0
+            else:
+                return 1
         else:
-            return 1
-    else:
-        # Run all tests
-        return runner.run_all_tests()
+            # Run all tests
+            return runner.run_all_tests()
+    finally:
+        # Print tmpdir locations if not cleaning up
+        if args.nocleanup and runner.created_tmpdirs:
+            print(f"\nTest data preserved in:")
+            for tmpdir in runner.created_tmpdirs:
+                print(f"  {tmpdir}")
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ class ChainTest(TestFramework):
     def setup(self):
         """Setup test environment - start a local node."""
         self.log_info("Starting local blockweave node...")
-        self.node = BlockweaveNode()
+        self.node = self.add_node()
 
         if not self.node.start(timeout=15):
             raise RuntimeError("Failed to start blockweave node")

@@ -24,21 +24,46 @@ This directory contains functional tests for the Blockweave REST daemon. These t
 
 ### Using the Test Runner (Recommended)
 
-The `test_runner.py` script provides a convenient way to run tests:
+The `test_runner.py` script provides a convenient way to run tests.
 
-**Run all tests:**
+**Run all tests (from project root):**
 ```bash
 python3 test/functional/test_runner.py
 ```
 
-**Run a specific test:**
+**Run all tests (from build directory):**
+```bash
+cd build/test/functional && python3 test_runner.py
+```
+
+**Run a specific test (by filename):**
 ```bash
 python3 test/functional/test_runner.py test_chain.py
 ```
 
-**Run a test by path:**
+**Run a test by relative path:**
 ```bash
 python3 test/functional/test_runner.py test/functional/test_chain.py
+```
+
+**Run a test by absolute path:**
+```bash
+python3 test/functional/test_runner.py /full/path/to/test_chain.py
+```
+
+**Use custom tmpdir:**
+```bash
+python3 test/functional/test_runner.py --tmpdir=/tmp/my_tests
+```
+
+**Preserve test data after run:**
+```bash
+python3 test/functional/test_runner.py --nocleanup
+```
+
+**Combine options:**
+```bash
+python3 test/functional/test_runner.py test_chain.py --tmpdir=/tmp/debug --nocleanup
 ```
 
 The test runner provides:
@@ -46,6 +71,9 @@ The test runner provides:
 - Exit code 0 if all tests pass, non-zero if any fail
 - Clear formatting and progress reporting
 - Automatic test discovery (finds all `test_*.py` files)
+- Temporary directory management with optional cleanup
+- Logging to `test_framework.log` in test tmpdir
+- Per-node logging in `node0/`, `node1/`, etc. subdirectories
 
 ### Run Individual Test Directly
 
@@ -121,6 +149,68 @@ Total:  11
 ✓ ALL TESTS PASSED
 ```
 
+## Test Data and Logging
+
+### Temporary Directories
+
+Each test run creates a temporary directory for test data:
+
+- **Default behavior**: Auto-generated temporary directory (e.g., `/tmp/blockweave_test_0_xyz/`)
+- **Custom tmpdir**: Use `--tmpdir` to specify a custom directory
+- **Cleanup**: By default, test data is cleaned up after tests complete
+- **Preservation**: Use `--nocleanup` to keep test data for debugging
+
+### Directory Structure
+
+```
+<tmpdir>/
+└── test_run_20251015_143052_123/    # Test run with timestamp
+    ├── test_framework.log           # Python test framework logs
+    └── node0/                       # Node 0 directory
+        ├── node0.conf               # Custom config for this node
+        ├── logs/                    # Node logs directory
+        │   └── rest_daemon_*.log    # REST daemon logs
+        └── data/                    # Node blockchain data
+```
+
+Each test run creates a directory named `test_run_<timestamp>` where the timestamp format is `YYYYMMDD_HHMMSS_mmm` (date, time, and milliseconds).
+
+**Node Directory Organization:**
+- Each node gets its own directory: `node0/`, `node1/`, etc.
+- Node-specific configuration file is auto-generated with correct paths
+- REST daemon logs are stored in `node<N>/logs/`
+- Blockchain data is stored in `node<N>/data/`
+
+### Logging
+
+Test activity is logged to multiple locations:
+
+**Python test framework logs** (`test_framework.log`):
+- Test framework initialization and cleanup
+- Node start/stop operations
+- HTTP requests and responses (at DEBUG level)
+- Test assertions and results
+- Exception tracebacks
+
+**REST daemon logs** (`node<N>/logs/rest_daemon_*.log`):
+- Daemon startup and configuration
+- REST API request/response handling
+- Mining operations
+- Block creation and validation
+- Internal daemon operations
+
+**View logs after a test run:**
+```bash
+# Run test with preserved data
+python3 test/functional/test_runner.py test_chain.py --tmpdir=/tmp/mytest --nocleanup
+
+# View Python test framework logs
+cat /tmp/mytest/test_run_*/test_framework.log
+
+# View REST daemon logs
+cat /tmp/mytest/test_run_*/node0/logs/rest_daemon_*.log
+```
+
 ## Test Framework
 
 The `test_framework.py` module provides:
@@ -150,10 +240,18 @@ Base class for functional tests:
 - `setup()` - Override for test setup
 - `run_test()` - Override with test logic
 - `cleanup()` - Override for test cleanup
+- `add_node(port=28443, **kwargs)` - Create and add a new node for testing (automatically manages node directories)
 - `assert_equal(actual, expected, message)` - Assert equality
 - `assert_true(condition, message)` - Assert condition is true
 - `assert_in(item, container, message)` - Assert item in container
 - `log_info(message)` - Log informational message
+
+**Automatic Features:**
+- Temporary directory creation and management
+- Logging to `test_framework.log`
+- Node directory creation (`node0/`, `node1/`, etc.)
+- Automatic cleanup unless `--nocleanup` is specified
+- Environment variable support (`TEST_TMPDIR`, `TEST_NOCLEANUP`)
 
 ## Writing New Tests
 
