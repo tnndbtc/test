@@ -203,6 +203,16 @@ add_custom_command(TARGET rest_daemon POST_BUILD
     COMMENT "Copying test directory to build/test"
 )
 
+# ============================================================
+# Copy blockweave.conf to build directory after build
+# ============================================================
+add_custom_command(TARGET rest_daemon POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/blockweave.conf
+        ${CMAKE_BINARY_DIR}/blockweave.conf
+    COMMENT "Copying blockweave.conf to build directory"
+)
+
 # Installation
 install(TARGETS blockweave_core
     LIBRARY DESTINATION lib

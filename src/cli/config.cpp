@@ -16,11 +16,10 @@ CConfig::CConfig(const std::string& str_config_path) {
 
 void CConfig::LoadDefaults() {
     m_config_values["miner_address"] = "";
-    m_config_values["rest_api_port"] = "28443";
-    m_config_values["worker_threads"] = "5";
+    m_config_values["rest_api_port"] = std::to_string(REST_API_PORT);
     m_config_values["data_dir"] = "./data";
-    m_config_values["log_dir"] = "./log";
-    m_config_values["log_level"] = "INFO";
+    m_config_values["log_dir"] = LOG_DIR;
+    m_config_values["log_level"] = LOG_LEVEL;
     m_config_values["daemon"] = "false";
 }
 
@@ -114,11 +113,7 @@ std::string CConfig::GetMinerAddress() const {
 }
 
 int CConfig::GetRestApiPort() const {
-    return GetIntValue("rest_api_port", 28443);
-}
-
-int CConfig::GetWorkerThreads() const {
-    return GetIntValue("worker_threads", 5);
+    return GetIntValue("rest_api_port", REST_API_PORT);
 }
 
 std::string CConfig::GetDataDir() const {
@@ -126,11 +121,11 @@ std::string CConfig::GetDataDir() const {
 }
 
 std::string CConfig::GetLogDir() const {
-    return GetValue("log_dir", "./log");
+    return GetValue("log_dir", LOG_DIR);
 }
 
 std::string CConfig::GetLogLevel() const {
-    return GetValue("log_level", "INFO");
+    return GetValue("log_level", LOG_LEVEL);
 }
 
 bool CConfig::IsDaemonMode() const {

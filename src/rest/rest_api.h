@@ -4,6 +4,7 @@
 
 #include "i_rest_api.h"
 #include "blockweave.h"
+#include "utils/settings.h"
 #include <string>
 #include <queue>
 #include <thread>
@@ -84,7 +85,7 @@ private:
 
 public:
     CRestApiServer(CBlockweave* p_weave, const CConfig* p_cfg, const std::string& str_miner_addr,
-                   int n_port_num = 28443, int n_num_workers = 5);
+                   int n_port_num = 28443);
     virtual ~CRestApiServer() override;
 
     // IRestApiServer interface implementation

@@ -5,6 +5,7 @@
 #include "cli/config.h"
 #include "cli/daemon.h"
 #include "logger/logger.h"
+#include "utils/settings.h"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -22,7 +23,6 @@ void PrintUsage(const char* program_name) {
     std::cout << "Configuration file (blockweave.conf) should contain:\n";
     std::cout << "  miner_address=<address>\n";
     std::cout << "  rest_api_port=28443\n";
-    std::cout << "  worker_threads=5\n";
     std::cout << "  daemon=false\n";
 }
 
@@ -70,7 +70,6 @@ int main(int argc, char* argv[]) {
     CConfig config(str_config_file);
     std::string str_miner_address = config.GetMinerAddress();
     int n_rest_port = config.GetRestApiPort();
-    int n_workers = config.GetWorkerThreads();
     std::string str_log_dir = config.GetLogDir();
     std::string str_log_level = config.GetLogLevel();
     std::string str_data_dir = config.GetDataDir();
@@ -142,12 +141,12 @@ int main(int argc, char* argv[]) {
     std::cout << "=== Blockweave REST Daemon ===\n\n";
     std::cout << "Miner address: " << str_miner_address.substr(0, 16) << "...\n";
     std::cout << "REST API port: " << n_rest_port << "\n";
-    std::cout << "Worker threads: " << n_workers << "\n\n";
+    std::cout << "Worker threads: " << WORKER_THREADS << "\n\n";
 
     LOG_INFO("Configuration loaded:");
     LOG_INFO("  Miner address: " + str_miner_address.substr(0, 16) + "...");
     LOG_INFO("  REST API port: " + std::to_string(n_rest_port));
-    LOG_INFO("  Worker threads: " + std::to_string(n_workers));
+    LOG_INFO("  Worker threads: " + std::to_string(WORKER_THREADS));
     LOG_INFO("  Log directory: " + str_log_dir);
 
     CBlockweave weave;
@@ -155,7 +154,7 @@ int main(int argc, char* argv[]) {
 
     // Start REST API server (1 listener thread + N worker threads)
     LOG_INFO("Starting REST API server on port " + std::to_string(n_rest_port));
-    CRestApiServer rest_api(&weave, &config, str_miner_address, n_rest_port, n_workers);
+    CRestApiServer rest_api(&weave, &config, str_miner_address, n_rest_port);
     if (!rest_api.Start()) {
         std::cerr << "Failed to start REST API server\n";
         LOG_ERROR("Failed to start REST API server on port " + std::to_string(n_rest_port));

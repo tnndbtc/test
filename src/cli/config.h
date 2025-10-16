@@ -4,6 +4,7 @@
 
 #include <string>
 #include <map>
+#include "utils/settings.h"
 
 class CConfig {
 private:
@@ -26,7 +27,6 @@ public:
     // Specific configuration getters
     std::string GetMinerAddress() const;
     int GetRestApiPort() const;
-    int GetWorkerThreads() const;
     std::string GetDataDir() const;
     std::string GetLogDir() const;
     std::string GetLogLevel() const;
