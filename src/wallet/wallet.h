@@ -2,7 +2,7 @@
 #ifndef WALLET_H
 #define WALLET_H
 
-#include "transaction.h"
+#include "core/transaction.h"
 #include <string>
 #include <memory>
 #include <vector>

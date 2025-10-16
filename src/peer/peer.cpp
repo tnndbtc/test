@@ -103,8 +103,8 @@ bool CPeerManager::Start() {
     // Start peer management thread
     m_peer_thread = std::thread(&CPeerManager::PeerThread, this);
 
-    std::cout << "[Peer Manager] Started on port " << n_listen_port << "\n";
-    std::cout << "[Peer Manager] Maximum outbound peers: " << MAX_OUTBOUND_PEERS << "\n";
+    LOG_INFO("Peer Manager started on port " + std::to_string(n_listen_port));
+    LOG_INFO("Maximum outbound peers: " + std::to_string(MAX_OUTBOUND_PEERS));
     LOG_INFO("Peer manager started successfully");
 
     return true;
@@ -157,7 +157,6 @@ void CPeerManager::Stop() {
         m_outbound_peers.clear();
     }
 
-    std::cout << "[Peer Manager] Stopped\n";
     LOG_INFO("Peer manager stopped");
 }
 
@@ -260,7 +259,6 @@ bool CPeerManager::SetSocketNonBlocking(int n_socket, bool f_non_blocking) {
 
 void CPeerManager::PeerThread() {
     LOG_INFO("Peer management thread started");
-    std::cout << "[Peer Manager Thread] Started\n";
 
     while (!f_stop_requested) {
         // Clean up disconnected peers
@@ -271,12 +269,10 @@ void CPeerManager::PeerThread() {
     }
 
     LOG_INFO("Peer management thread stopped");
-    std::cout << "[Peer Manager Thread] Stopped\n";
 }
 
 void CPeerManager::ListenerThread() {
     LOG_INFO("Peer listener thread started");
-    std::cout << "[Peer Listener] Thread started\n";
 
     while (!f_stop_requested) {
         sockaddr_in client_addr{};
@@ -299,7 +295,6 @@ void CPeerManager::ListenerThread() {
         int n_peer_port = ntohs(client_addr.sin_port);
 
         LOG_INFO("Inbound peer connection from " + std::string(str_ip) + ":" + std::to_string(n_peer_port));
-        std::cout << "[Peer Listener] Inbound connection from " << str_ip << ":" << n_peer_port << "\n";
 
         // Set socket keepalive
         SetSocketKeepAlive(n_client_socket);
@@ -310,7 +305,6 @@ void CPeerManager::ListenerThread() {
     }
 
     LOG_INFO("Peer listener thread stopped");
-    std::cout << "[Peer Listener] Thread stopped\n";
 }
 
 void CPeerManager::ConnectionThread(CPeerConnection* p_peer) {
@@ -319,7 +313,6 @@ void CPeerManager::ConnectionThread(CPeerConnection* p_peer) {
     }
 
     LOG_INFO("Connection thread started for peer " + p_peer->str_address + ":" + std::to_string(p_peer->n_port));
-    std::cout << "[Peer Connection] Thread started for " << p_peer->str_address << ":" << p_peer->n_port << "\n";
 
     // Connection keep-alive loop
     while (p_peer->f_active && !f_stop_requested) {
@@ -335,7 +328,6 @@ void CPeerManager::ConnectionThread(CPeerConnection* p_peer) {
     }
 
     LOG_INFO("Connection thread stopped for peer " + p_peer->str_address);
-    std::cout << "[Peer Connection] Thread stopped for " << p_peer->str_address << "\n";
 }
 
 bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
@@ -384,7 +376,6 @@ bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
     }
 
     LOG_INFO("Successfully connected to peer " + str_address + ":" + std::to_string(n_port));
-    std::cout << "[Peer Manager] Connected to " << str_address << ":" << n_port << "\n";
 
     return true;
 }

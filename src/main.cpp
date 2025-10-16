@@ -1,5 +1,5 @@
 // ============= main.cpp =============
-#include "blockweave.h"
+#include "core/blockweave.h"
 #include "wallet/wallet.h"
 #include "rest/rest_api.h"
 #include "peer/peer.h"
@@ -29,7 +29,7 @@ void PrintUsage(const char* program_name) {
 
 // Mining thread function
 void MiningThread(CBlockweave* p_weave, const std::string& str_miner_address) {
-    std::cout << "[Mining Thread] Started\n";
+    LOG_INFO("Mining thread started");
 
     while (!p_weave->ShouldStopMining()) {
         if (p_weave->IsMiningEnabled() && p_weave->GetMempoolSize() > 0) {
@@ -40,7 +40,7 @@ void MiningThread(CBlockweave* p_weave, const std::string& str_miner_address) {
         }
     }
 
-    std::cout << "[Mining Thread] Stopped\n";
+    LOG_INFO("Mining thread stopped");
 }
 
 int main(int argc, char* argv[]) {
@@ -116,6 +116,7 @@ int main(int argc, char* argv[]) {
 
     // Daemonize if requested
     if (config.IsDaemonMode()) {
+        // Note: Using cout here because logger is not yet initialized
         std::cout << "[Main] Starting in daemon mode...\n";
         std::cout << "[Main] Log directory: " << str_log_dir << "\n";
         if (!CDaemon::Daemonize("/tmp/rest_daemon.pid")) {
@@ -140,11 +141,11 @@ int main(int argc, char* argv[]) {
     }
     LOG_INFO("Log level set to: " + str_log_level);
 
-    std::cout << "=== Blockweave REST Daemon ===\n\n";
-    std::cout << "Miner address: " << str_miner_address.substr(0, 16) << "...\n";
-    std::cout << "REST API port: " << n_rest_port << "\n";
-    std::cout << "P2P port: " << n_p2p_port << "\n";
-    std::cout << "REST worker threads: " << REST_WORKER_THREADS << "\n\n";
+    LOG_INFO("=== Blockweave REST Daemon ===");
+    LOG_INFO("Miner address: " + str_miner_address.substr(0, 16) + "...");
+    LOG_INFO("REST API port: " + std::to_string(n_rest_port));
+    LOG_INFO("P2P port: " + std::to_string(n_p2p_port));
+    LOG_INFO("REST worker threads: " + std::to_string(REST_WORKER_THREADS));
 
     LOG_INFO("Configuration loaded:");
     LOG_INFO("  Miner address: " + str_miner_address.substr(0, 16) + "...");
@@ -160,7 +161,6 @@ int main(int argc, char* argv[]) {
     LOG_INFO("Starting REST API server on port " + std::to_string(n_rest_port));
     CRestApiServer rest_api(&weave, &config, str_miner_address, n_rest_port);
     if (!rest_api.Start()) {
-        std::cerr << "Failed to start REST API server\n";
         LOG_ERROR("Failed to start REST API server on port " + std::to_string(n_rest_port));
         return 1;
     }
@@ -170,7 +170,6 @@ int main(int argc, char* argv[]) {
     LOG_INFO("Starting peer manager on port " + std::to_string(n_p2p_port));
     CPeerManager peer_manager(n_p2p_port);
     if (!peer_manager.Start()) {
-        std::cerr << "Failed to start peer manager\n";
         LOG_ERROR("Failed to start peer manager on port " + std::to_string(n_p2p_port));
         rest_api.Stop();
         return 1;
@@ -181,11 +180,10 @@ int main(int argc, char* argv[]) {
     weave.StartMining();
     LOG_INFO("Mining enabled");
     std::thread mining_thread(MiningThread, &weave, str_miner_address);
-    LOG_INFO("Mining thread started");
 
-    std::cout << "[Main] REST daemon is running. Press Ctrl+C to stop.\n";
-    std::cout << "[Main] Use REST API on port " << n_rest_port << " to interact with the blockchain.\n";
-    std::cout << "[Main] P2P network listening on port " << n_p2p_port << "\n\n";
+    LOG_INFO("REST daemon is running. Press Ctrl+C to stop.");
+    LOG_INFO("Use REST API on port " + std::to_string(n_rest_port) + " to interact with the blockchain.");
+    LOG_INFO("P2P network listening on port " + std::to_string(n_p2p_port));
     LOG_INFO("REST daemon is running and ready to accept requests");
 
     // Main loop - wait for shutdown signal
@@ -193,7 +191,7 @@ int main(int argc, char* argv[]) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 
-    std::cout << "\n[Main] Shutdown signal received. Cleaning up...\n";
+    LOG_INFO("Shutdown signal received. Cleaning up...");
     LOG_INFO("Shutdown signal received, initiating graceful shutdown");
 
     // Stop mining and wait for thread to finish
@@ -221,7 +219,6 @@ int main(int argc, char* argv[]) {
         LOG_INFO("PID file removed");
     }
 
-    std::cout << "[Main] Shutdown complete.\n";
     LOG_INFO("Shutdown complete");
 
     // Flush logger before exit

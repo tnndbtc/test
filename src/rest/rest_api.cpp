@@ -2,7 +2,7 @@
 #include "rest_api.h"
 #include "cli/config.h"
 #include "logger/logger.h"
-#include "transaction.h"
+#include "core/transaction.h"
 #include <iostream>
 #include <sstream>
 #include <sys/socket.h>
@@ -343,9 +343,8 @@ bool CRestApiServer::Start() {
         m_worker_threads.emplace_back(&CRestApiServer::WorkerThread, this, n_i);
     }
 
-    std::cout << "[REST API] Server started on port " << n_port << "\n";
-    std::cout << "[REST API] Worker threads: " << REST_WORKER_THREADS << "\n";
-    LOG_INFO("REST API listener thread and worker threads started");
+    LOG_INFO("REST API server started on port " + std::to_string(n_port));
+    LOG_INFO("REST API worker threads: " + std::to_string(REST_WORKER_THREADS));
 
     return true;
 }
@@ -377,7 +376,6 @@ void CRestApiServer::Stop() {
         }
     }
 
-    std::cout << "[REST API] Server stopped\n";
     LOG_INFO("REST API server stopped, all threads joined");
 }
 
@@ -386,7 +384,6 @@ bool CRestApiServer::IsRunning() const {
 }
 
 void CRestApiServer::ListenerThread() {
-    std::cout << "[REST API Listener] Thread started\n";
     LOG_INFO("REST API listener thread started");
 
     while (!f_stop_requested) {
@@ -416,12 +413,10 @@ void CRestApiServer::ListenerThread() {
         }
     }
 
-    std::cout << "[REST API Listener] Thread stopped\n";
     LOG_INFO("REST API listener thread stopped");
 }
 
 void CRestApiServer::WorkerThread(int n_worker_id) {
-    std::cout << "[REST API Worker " << n_worker_id << "] Thread started\n";
     LOG_INFO("REST API worker thread " + std::to_string(n_worker_id) + " started");
 
     while (!f_stop_requested) {
@@ -432,7 +427,6 @@ void CRestApiServer::WorkerThread(int n_worker_id) {
         }
     }
 
-    std::cout << "[REST API Worker " << n_worker_id << "] Thread stopped\n";
     LOG_INFO("REST API worker thread " + std::to_string(n_worker_id) + " stopped");
 }
 
@@ -503,7 +497,6 @@ void CRestApiServer::SendHttpResponse(int n_client_socket, int n_status_code,
 }
 
 void CRestApiServer::ProcessRequest(const CHttpRequest& request) {
-    std::cout << "[REST API] " << request.str_method << " " << request.str_path << "\n";
     LOG_INFO("Processing request: " + request.str_method + " " + request.str_path);
 
     std::string str_response;

@@ -129,4 +129,3 @@ size_t CBlockweave::GetMempoolSize() const {
     std::lock_guard<std::mutex> lock(cs_blockweave);
     return m_mempool.size();
 }
-

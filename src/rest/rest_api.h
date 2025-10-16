@@ -3,7 +3,7 @@
 #define REST_API_H
 
 #include "i_rest_api.h"
-#include "blockweave.h"
+#include "core/blockweave.h"
 #include "utils/settings.h"
 #include <string>
 #include <queue>
