@@ -1,6 +1,6 @@
 // ============= rest_api.cpp =============
 #include "rest_api.h"
-#include "cli/config.h"
+#include "utils/config.h"
 #include "logger/logger.h"
 #include "core/transaction.h"
 #include <iostream>

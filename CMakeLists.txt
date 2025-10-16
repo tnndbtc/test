@@ -36,10 +36,10 @@ add_library(blockweave_core SHARED
     src/core/block.cpp
     src/core/blockweave.cpp
     src/core/transaction.cpp
+    src/core/daemon.cpp
     src/utils/hash.cpp
+    src/utils/config.cpp
     src/rest/rest_api.cpp
-    src/cli/config.cpp
-    src/cli/daemon.cpp
     src/logger/logger.cpp
     src/peer/peer.cpp
 )
@@ -135,34 +135,14 @@ endif()
 # ============================================================
 # Daemon CLI: daemon_cli
 # Control utility for starting/stopping rest_daemon
+# Lightweight - only passes config file path, no dependencies on blockweave_core
 # ============================================================
 add_executable(daemon_cli
     src/cli/daemon_cli.cpp
 )
 
-# Link daemon_cli with blockweave_core library
-target_link_libraries(daemon_cli
-    PRIVATE blockweave_core
-    PRIVATE OpenSSL::SSL
-    PRIVATE OpenSSL::Crypto
-)
-
-# Set rpath so daemon_cli can find the shared library
-if(APPLE)
-    set_target_properties(daemon_cli PROPERTIES
-        BUILD_WITH_INSTALL_RPATH FALSE
-        BUILD_RPATH "${CMAKE_BINARY_DIR}"
-        INSTALL_RPATH "@executable_path/../lib;${CMAKE_INSTALL_PREFIX}/lib"
-        INSTALL_RPATH_USE_LINK_PATH TRUE
-    )
-elseif(UNIX)
-    set_target_properties(daemon_cli PROPERTIES
-        BUILD_WITH_INSTALL_RPATH FALSE
-        BUILD_RPATH "${CMAKE_BINARY_DIR}"
-        INSTALL_RPATH "\$ORIGIN/../lib:${CMAKE_INSTALL_PREFIX}/lib"
-        INSTALL_RPATH_USE_LINK_PATH TRUE
-    )
-endif()
+# daemon_cli doesn't need blockweave_core - it only starts/stops rest_daemon
+# No linking needed - standalone executable
 
 # Platform-specific libraries
 if(WIN32)
@@ -176,7 +156,7 @@ else()
     target_link_libraries(blockweave_core PUBLIC Threads::Threads)
     target_link_libraries(rest_daemon PRIVATE Threads::Threads)
     target_link_libraries(wallet PRIVATE Threads::Threads)
-    target_link_libraries(daemon_cli PRIVATE Threads::Threads)
+    # daemon_cli doesn't use threads - no linking needed
 endif()
 
 # Platform-specific compile options

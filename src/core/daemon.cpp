@@ -1,6 +1,6 @@
 // ============= daemon.cpp =============
 #include "daemon.h"
-#include "../logger/logger.h"
+#include "logger/logger.h"
 #include <iostream>
 #include <fstream>
 #include <unistd.h>

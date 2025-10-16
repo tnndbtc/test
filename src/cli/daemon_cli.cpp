@@ -1,8 +1,7 @@
 // ============= daemon_cli.cpp =============
-#include "cli/config.h"
-#include "cli/daemon.h"
 #include <iostream>
 #include <string>
+#include <vector>
 #include <fstream>
 #include <unistd.h>
 #include <signal.h>
@@ -14,6 +13,11 @@
 
 const std::string STR_PID_FILE = "/tmp/rest_daemon.pid";
 const std::string STR_DAEMON_EXECUTABLE = "rest_daemon";
+
+// Simple PID file removal (no dependencies)
+void RemovePidFile(const std::string& str_pid_file) {
+    unlink(str_pid_file.c_str());
+}
 
 // Get the directory where this executable is located
 std::string GetExecutableDirectory() {
@@ -110,7 +114,7 @@ bool IsDaemonRunning() {
     }
 
     // Stale PID file
-    CDaemon::RemovePidFile(STR_PID_FILE);
+    RemovePidFile(STR_PID_FILE);
     return false;
 }
 
@@ -194,11 +198,7 @@ int StartDaemon(const std::string& str_config_file, const char* argv0) {
     }
 
     std::cerr << "[CLI] Failed to start daemon - PID file not created within timeout\n";
-    std::cerr << "[CLI] Check log file for errors: ";
-
-    // Try to show log directory from config
-    CConfig config(str_config_file.empty() ? "blockweave.conf" : str_config_file);
-    std::cout << config.GetLogDir() << "/rest_daemon_*.log\n";
+    std::cerr << "[CLI] Check log files for errors (default location: ./logs/rest_daemon_*.log)\n";
 
     return 1;
 }

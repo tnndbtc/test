@@ -1,10 +1,10 @@
 // ============= main.cpp =============
 #include "core/blockweave.h"
+#include "core/daemon.h"
 #include "wallet/wallet.h"
 #include "rest/rest_api.h"
 #include "peer/peer.h"
-#include "cli/config.h"
-#include "cli/daemon.h"
+#include "utils/config.h"
 #include "logger/logger.h"
 #include "utils/settings.h"
 #include <iostream>
