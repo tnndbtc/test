@@ -13,7 +13,7 @@ CBlockweave::CBlockweave() : f_mining_enabled(false), f_stop_mining(false) {
     m_block_hashes.push_back(m_genesis_block->m_hash);
     m_current_block = m_genesis_block;
 
-    LOG_INFO("Genesis block created!\n" + m_genesis_block->ToString());
+    LOG_TRACE("Genesis block created!\n" + m_genesis_block->ToString());
 }
 
 CHash CBlockweave::SelectRecallBlock(int64_t n_current_height) {

@@ -296,7 +296,7 @@ CRestApiServer::~CRestApiServer() {
 }
 
 bool CRestApiServer::Start() {
-    LOG_INFO("Creating REST API server socket");
+    LOG_TRACE("Creating REST API server socket");
 
     // Create socket
     n_server_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -322,7 +322,7 @@ bool CRestApiServer::Start() {
         close(n_server_socket);
         return false;
     }
-    LOG_INFO("REST API server bound to port " + std::to_string(n_port));
+    LOG_TRACE("REST API server bound to port " + std::to_string(n_port));
 
     // Listen
     if (listen(n_server_socket, 10) < 0) {
@@ -343,8 +343,8 @@ bool CRestApiServer::Start() {
         m_worker_threads.emplace_back(&CRestApiServer::WorkerThread, this, n_i);
     }
 
-    LOG_INFO("REST API server started on port " + std::to_string(n_port));
-    LOG_INFO("REST API worker threads: " + std::to_string(REST_WORKER_THREADS));
+    LOG_TRACE("REST API server started on port " + std::to_string(n_port));
+    LOG_TRACE("REST API worker threads: " + std::to_string(REST_WORKER_THREADS));
 
     return true;
 }
@@ -376,7 +376,7 @@ void CRestApiServer::Stop() {
         }
     }
 
-    LOG_INFO("REST API server stopped, all threads joined");
+    LOG_INFO("REST API server stopped");
 }
 
 bool CRestApiServer::IsRunning() const {
@@ -384,7 +384,7 @@ bool CRestApiServer::IsRunning() const {
 }
 
 void CRestApiServer::ListenerThread() {
-    LOG_INFO("REST API listener thread started");
+    LOG_TRACE("REST API listener thread started");
 
     while (!f_stop_requested) {
         sockaddr_in client_addr{};
@@ -413,11 +413,11 @@ void CRestApiServer::ListenerThread() {
         }
     }
 
-    LOG_INFO("REST API listener thread stopped");
+    LOG_TRACE("REST API listener thread stopped");
 }
 
 void CRestApiServer::WorkerThread(int n_worker_id) {
-    LOG_INFO("REST API worker thread " + std::to_string(n_worker_id) + " started");
+    LOG_TRACE("REST API worker thread " + std::to_string(n_worker_id) + " started");
 
     while (!f_stop_requested) {
         CHttpRequest request;
@@ -427,7 +427,7 @@ void CRestApiServer::WorkerThread(int n_worker_id) {
         }
     }
 
-    LOG_INFO("REST API worker thread " + std::to_string(n_worker_id) + " stopped");
+    LOG_TRACE("REST API worker thread " + std::to_string(n_worker_id) + " stopped");
 }
 
 CHttpRequest CRestApiServer::ParseHttpRequest(const std::string& str_raw_request,
@@ -732,7 +732,7 @@ std::string CRestApiServer::HandlePostMineStop() {
 // ============= HTTP Method Handlers (Interface Implementation) =============
 
 std::string CRestApiServer::HandleGET(const std::string& str_endpoint, const CHttpRequest& request) {
-    LOG_INFO("Handling GET request for endpoint: " + str_endpoint);
+    LOG_TRACE("Handling GET request for endpoint: " + str_endpoint);
 
     // Route based on endpoint
     if (str_endpoint == "/chain") {

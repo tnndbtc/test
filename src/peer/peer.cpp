@@ -86,8 +86,6 @@ bool CPeerManager::Start() {
         return true;
     }
 
-    LOG_INFO("Starting peer manager on port " + std::to_string(n_listen_port));
-
     // Create listen socket for inbound connections
     if (!CreateListenSocket()) {
         LOG_ERROR("Failed to create listen socket for peer manager");
@@ -103,9 +101,8 @@ bool CPeerManager::Start() {
     // Start peer management thread
     m_peer_thread = std::thread(&CPeerManager::PeerThread, this);
 
-    LOG_INFO("Peer Manager started on port " + std::to_string(n_listen_port));
-    LOG_INFO("Maximum outbound peers: " + std::to_string(MAX_OUTBOUND_PEERS));
-    LOG_INFO("Peer manager started successfully");
+    LOG_TRACE("Peer Manager started on port " + std::to_string(n_listen_port));
+    LOG_TRACE("Maximum outbound peers: " + std::to_string(MAX_OUTBOUND_PEERS));
 
     return true;
 }
@@ -268,7 +265,7 @@ void CPeerManager::PeerThread() {
         std::this_thread::sleep_for(std::chrono::seconds(5));
     }
 
-    LOG_INFO("Peer management thread stopped");
+    LOG_TRACE("Peer management thread stopped");
 }
 
 void CPeerManager::ListenerThread() {

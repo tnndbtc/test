@@ -102,7 +102,7 @@ bool CLogger::Initialize(const std::string& str_log_dir, ELogLevel min_level) {
     f_initialized = true;
 
     // Write initial log message
-    Log(ELogLevel::INFO, "Logger initialized, log file: " + m_str_log_file);
+    Log(ELogLevel::TRACE, "Logger initialized, log file: " + m_str_log_file);
 
     return true;
 }
