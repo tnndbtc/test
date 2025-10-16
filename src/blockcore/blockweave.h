@@ -2,8 +2,8 @@
 #ifndef BLOCKWEAVE_H
 #define BLOCKWEAVE_H
 
-#include "core/block.h"
-#include "core/transaction.h"
+#include "blockcore/block.h"
+#include "blockcore/transaction.h"
 #include "utils/hash.h"
 #include <unordered_map>
 #include <vector>

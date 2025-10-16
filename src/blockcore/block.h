@@ -3,7 +3,7 @@
 #define BLOCK_H
 
 #include "utils/hash.h"
-#include "core/transaction.h"
+#include "blockcore/transaction.h"
 #include <vector>
 #include <memory>
 #include <string>

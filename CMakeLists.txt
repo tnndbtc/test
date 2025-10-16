@@ -33,10 +33,10 @@ include_directories(include src ${OPENSSL_INCLUDE_DIR})
 # Built as SHARED library for dynamic linking
 # ============================================================
 add_library(blockweave_core SHARED
-    src/core/block.cpp
-    src/core/blockweave.cpp
-    src/core/transaction.cpp
-    src/core/daemon.cpp
+    src/blockcore/block.cpp
+    src/blockcore/blockweave.cpp
+    src/blockcore/transaction.cpp
+    src/blockcore/daemon.cpp
     src/utils/hash.cpp
     src/utils/config.cpp
     src/rest/rest_api.cpp

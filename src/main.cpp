@@ -1,6 +1,6 @@
 // ============= main.cpp =============
-#include "core/blockweave.h"
-#include "core/daemon.h"
+#include "blockcore/blockweave.h"
+#include "blockcore/daemon.h"
 #include "wallet/wallet.h"
 #include "rest/rest_api.h"
 #include "peer/peer.h"
