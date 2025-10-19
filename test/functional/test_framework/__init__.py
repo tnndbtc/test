@@ -163,7 +163,6 @@ class BlockweaveNode:
 
         self.logger.info(f"Starting blockweave node on port {self.port}...")
         self.logger.info(f"Using config: {self.custom_config_file}")
-        print(f"Starting blockweave node on port {self.port}...")
 
         # Start rest_daemon in foreground mode as a subprocess
         try:
@@ -191,36 +190,27 @@ class BlockweaveNode:
             start_time = time.time()
             while time.time() - start_time < timeout:
                 if self.is_ready():
-                    success_msg = f"Node started successfully (PID: {self.process.pid})"
-                    self.logger.info(success_msg)
-                    print(success_msg)
+                    self.logger.info(f"Node started successfully (PID: {self.process.pid})")
                     return True
 
                 # Check if process died
                 if self.process.poll() is not None:
-                    error_msg = f"Process died with returncode {self.process.returncode}"
-                    self.logger.error(error_msg)
-                    print(error_msg)
-                    # Print stderr for debugging
+                    self.logger.error(f"Process died with returncode {self.process.returncode}")
+                    # Log stderr for debugging
                     with open(stderr_log, 'r') as f:
                         stderr_content = f.read()
                         if stderr_content:
                             self.logger.error(f"Stderr: {stderr_content}")
-                            print(f"Stderr: {stderr_content}")
                     return False
 
                 time.sleep(0.5)
 
-            timeout_msg = "Timeout waiting for node to become ready"
-            self.logger.error(timeout_msg)
-            print(timeout_msg)
+            self.logger.error("Timeout waiting for node to become ready")
             self.stop()
             return False
 
         except Exception as e:
-            error_msg = f"Error starting node: {e}"
-            self.logger.error(error_msg)
-            print(error_msg)
+            self.logger.error(f"Error starting node: {e}")
             return False
 
     def stop(self, timeout=10):
@@ -233,10 +223,8 @@ class BlockweaveNode:
         Returns:
             bool: True if node stopped successfully, False otherwise
         """
-        print("Stopping blockweave node...")
-
         if self.process is None:
-            print("Node process not found (already stopped or never started)")
+            self.logger.info("Node process not found (already stopped or never started)")
             return True
 
         try:
@@ -250,7 +238,6 @@ class BlockweaveNode:
             try:
                 self.process.wait(timeout=timeout)
                 self.logger.info("Process terminated gracefully")
-                print("Node stopped successfully")
                 return True
             except subprocess.TimeoutExpired:
                 # Force kill if it doesn't stop gracefully
@@ -258,13 +245,10 @@ class BlockweaveNode:
                 self.process.kill()
                 self.process.wait(timeout=5)
                 self.logger.info("Process killed")
-                print("Node stopped (forcefully)")
                 return True
 
         except Exception as e:
-            error_msg = f"Error stopping node: {e}"
-            self.logger.error(error_msg)
-            print(error_msg)
+            self.logger.error(f"Error stopping node: {e}")
             return False
 
     def is_ready(self):
@@ -358,13 +342,12 @@ class TestFramework:
 
         log_file = self.tmpdir / "test_framework.log"
 
-        # Configure root logger
+        # Configure root logger - only to file, not stdout
         logging.basicConfig(
             level=logging.DEBUG,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
             handlers=[
-                logging.FileHandler(log_file),
-                logging.StreamHandler(sys.stdout)
+                logging.FileHandler(log_file)
             ]
         )
 
@@ -452,7 +435,6 @@ class TestFramework:
 
     def log_info(self, message):
         """Log an informational message."""
-        print(f"ℹ INFO: {message}")
         if hasattr(self, 'logger'):
             self.logger.info(message)
 
