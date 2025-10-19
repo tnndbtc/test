@@ -60,7 +60,8 @@ class BlockweaveNode:
 
         self.port = port
         self.p2p_port = p2p_port
-        self.config_file = config_file or (self.project_root / "blockweave.conf")
+        # Config file is copied to build/ during build from src/conf/blockweave.conf
+        self.config_file = config_file or (self.project_root / "build" / "blockweave.conf")
 
         # Locate rest_daemon executable
         if (Path.cwd() / "rest_daemon").exists():
@@ -85,7 +86,7 @@ class BlockweaveNode:
         if not self.config_file.exists():
             raise FileNotFoundError(
                 f"Base config file not found at {self.config_file}. "
-                "Please create blockweave.conf in project root."
+                "Please build the project first (it copies src/conf/blockweave.conf to build/)."
             )
 
         # Read the base config
@@ -154,7 +155,7 @@ class BlockweaveNode:
         if not self.config_file.exists():
             raise FileNotFoundError(
                 f"Config file not found at {self.config_file}. "
-                "Please create blockweave.conf in project root."
+                "Please build the project first (it copies src/conf/blockweave.conf to build/)."
             )
 
         # Create custom config with node-specific settings

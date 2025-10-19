@@ -32,7 +32,7 @@ make
 
 The project builds the following components:
 
-1. **libblockweave_core.dylib** (or .so on Linux) - Shared library containing core blockchain code
+1. **libblockcore.dylib** (or .so on Linux) - Shared library containing core blockchain code
 2. **rest_daemon** - Main REST API daemon process
 3. **wallet** - Wallet address generator utility
 4. **daemon_cli** - Daemon control utility (start/stop/status/restart)
@@ -303,7 +303,7 @@ CMakeLists.txt                  # Build configuration
 - **rest_daemon**: Runs as a background daemon process with REST API
 - **daemon_cli**: Control utility for starting/stopping rest_daemon
 - **wallet**: Standalone wallet address generator
-- **libblockweave_core**: Shared library (dynamic linking) containing core blockchain code
+- **libblockcore**: Shared library (dynamic linking) containing core blockchain code
 - All source files include banner comments: `// ============= filename.ext =============`
 - The project uses smart pointers (`std::shared_ptr`) for transaction and block management
 - Thread-safe design with mutexes (`cs_` prefix) and atomic flags
