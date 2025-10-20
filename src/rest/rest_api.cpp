@@ -591,14 +591,14 @@ std::string CRestApiServer::HandlePostTransaction(const std::string& str_body) {
         std::ostringstream oss;
         oss << "{\n";
         oss << "  \"status\": \"success\",\n";
-        oss << "  \"transaction_id\": \"" << tx->m_id.m_str_data.substr(0, 32) << "...\",\n";
+        oss << "  \"transaction_id\": \"" << tx->m_id.GetData().substr(0, 32) << "...\",\n";
         oss << "  \"from\": \"" << str_from.substr(0, 16) << "...\",\n";
         oss << "  \"to\": \"" << str_to.substr(0, 16) << "...\",\n";
         oss << "  \"data_size\": " << data.size() << ",\n";
         oss << "  \"fee\": " << n_fee << "\n";
         oss << "}";
 
-        LOG_INFO("Transaction created: " + tx->m_id.m_str_data.substr(0, 16) + "... (from: " +
+        LOG_INFO("Transaction created: " + tx->m_id.GetData().substr(0, 16) + "... (from: " +
                  str_from.substr(0, 16) + "..., to: " + str_to.substr(0, 16) + "..., size: " +
                  std::to_string(data.size()) + " bytes)");
 
@@ -700,7 +700,7 @@ std::string CRestApiServer::HandlePostFiles(const CHttpRequest& request) {
         std::ostringstream oss;
         oss << "{\n";
         oss << "  \"status\": \"success\",\n";
-        oss << "  \"transaction_id\": \"" << tx->m_id.m_str_data.substr(0, 32) << "...\",\n";
+        oss << "  \"transaction_id\": \"" << tx->m_id.GetData().substr(0, 32) << "...\",\n";
         oss << "  \"uuid\": \"" << str_uuid << "\",\n";
         oss << "  \"original_filename\": \"" << str_filename << "\",\n";
         oss << "  \"saved_path\": \"" << str_file_path << "\",\n";
@@ -710,7 +710,7 @@ std::string CRestApiServer::HandlePostFiles(const CHttpRequest& request) {
 
         LOG_INFO("File uploaded: " + str_filename + " -> " + str_uuid + " (" +
                  std::to_string(file_data.size()) + " bytes, TX: " +
-                 tx->m_id.m_str_data.substr(0, 16) + "...)");
+                 tx->m_id.GetData().substr(0, 16) + "...)");
 
         return oss.str();
     } catch (const std::exception& e) {

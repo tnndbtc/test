@@ -9,8 +9,8 @@ CBlockweave::CBlockweave() : f_mining_enabled(false), f_stop_mining(false) {
     m_genesis_block = std::make_shared<CBlock>(CHash(), 0, "genesis");
     m_genesis_block->Mine();
 
-    map_blocks[m_genesis_block->m_hash.m_str_data] = m_genesis_block;
-    m_block_hashes.push_back(m_genesis_block->m_hash);
+    map_blocks[m_genesis_block->GetHash().GetData()] = m_genesis_block;
+    m_block_hashes.push_back(m_genesis_block->GetHash());
     m_current_block = m_genesis_block;
 
     LOG_TRACE("Genesis block created!\n" + m_genesis_block->ToString());
@@ -18,7 +18,7 @@ CBlockweave::CBlockweave() : f_mining_enabled(false), f_stop_mining(false) {
 
 CHash CBlockweave::SelectRecallBlock(int64_t n_current_height) {
     if(n_current_height <= 1) {
-        return m_genesis_block->m_hash;
+        return m_genesis_block->GetHash();
     }
 
     std::random_device rd;
@@ -32,7 +32,7 @@ CHash CBlockweave::SelectRecallBlock(int64_t n_current_height) {
 void CBlockweave::AddTransaction(std::shared_ptr<CTransaction> tx) {
     std::lock_guard<std::mutex> lock(cs_blockweave);
     m_mempool.push_back(tx);
-    LOG_INFO("Transaction added to mempool: " + tx->m_id.m_str_data.substr(0, 16) + "...");
+    LOG_INFO("Transaction added to mempool: " + tx->m_id.GetData().substr(0, 16) + "...");
 }
 
 void CBlockweave::MineBlock(const std::string& str_miner_address) {
@@ -43,8 +43,8 @@ void CBlockweave::MineBlock(const std::string& str_miner_address) {
     }
 
     auto new_block = std::make_shared<CBlock>(
-        m_current_block->m_hash,
-        m_current_block->m_n_height + 1,
+        m_current_block->GetHash(),
+        m_current_block->GetHeight() + 1,
         str_miner_address
     );
 
@@ -54,22 +54,22 @@ void CBlockweave::MineBlock(const std::string& str_miner_address) {
     }
     m_mempool.erase(m_mempool.begin(), m_mempool.begin() + n_tx_count);
 
-    CHash recall_hash = SelectRecallBlock(new_block->m_n_height);
+    CHash recall_hash = SelectRecallBlock(new_block->GetHeight());
     new_block->SetRecallBlock(recall_hash);
 
-    LOG_INFO("Mining block #" + std::to_string(new_block->m_n_height) + " with " + std::to_string(n_tx_count) + " transactions");
+    LOG_INFO("Mining block #" + std::to_string(new_block->GetHeight()) + " with " + std::to_string(n_tx_count) + " transactions");
     new_block->Mine();
 
-    map_blocks[new_block->m_hash.m_str_data] = new_block;
-    m_block_hashes.push_back(new_block->m_hash);
+    map_blocks[new_block->GetHash().GetData()] = new_block;
+    m_block_hashes.push_back(new_block->GetHash());
     m_current_block = new_block;
 
-    LOG_INFO("Block #" + std::to_string(new_block->m_n_height) + " mined successfully, hash: " + new_block->m_hash.m_str_data.substr(0, 16) + "...");
+    LOG_INFO("Block #" + std::to_string(new_block->GetHeight()) + " mined successfully, hash: " + new_block->GetHash().GetData().substr(0, 16) + "...");
 }
 
 std::shared_ptr<CBlock> CBlockweave::GetBlock(const CHash& hash) {
     std::lock_guard<std::mutex> lock(cs_blockweave);
-    auto it = map_blocks.find(hash.m_str_data);
+    auto it = map_blocks.find(hash.GetData());
     if(it != map_blocks.end()) {
         return it->second;
     }
@@ -79,8 +79,8 @@ std::shared_ptr<CBlock> CBlockweave::GetBlock(const CHash& hash) {
 std::vector<uint8_t> CBlockweave::GetData(const CHash& tx_id) {
     std::lock_guard<std::mutex> lock(cs_blockweave);
     for(const auto& block_hash : m_block_hashes) {
-        auto block = map_blocks[block_hash.m_str_data];
-        for(const auto& tx : block->m_transactions) {
+        auto block = map_blocks[block_hash.GetData()];
+        for(const auto& tx : block->GetTransactions()) {
             if(tx->m_id == tx_id) {
                 return tx->m_data;
             }
@@ -93,12 +93,12 @@ void CBlockweave::PrintChain() {
     std::lock_guard<std::mutex> lock(cs_blockweave);
     LOG_INFO("\n=== BLOCKWEAVE STATE ===");
     LOG_INFO("Total blocks: " + std::to_string(map_blocks.size()));
-    LOG_INFO("Current height: " + std::to_string(m_current_block->m_n_height));
+    LOG_INFO("Current height: " + std::to_string(m_current_block->GetHeight()));
     LOG_INFO("Mempool size: " + std::to_string(m_mempool.size()));
 
     uint64_t n_total_data = 0;
     for(const auto& pair : map_blocks) {
-        n_total_data += pair.second->m_n_cumulative_data_size;
+        n_total_data += pair.second->GetCumulativeDataSize();
     }
     LOG_INFO("Total data stored: " + std::to_string(n_total_data) + " bytes");
     LOG_INFO("========================\n");

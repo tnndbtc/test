@@ -21,11 +21,11 @@ void CBlock::SetRecallBlock(const CHash& recall) {
 }
 
 void CBlock::Mine() {
-    std::string str_block_data = m_previous_block.m_str_data + m_recall_block.m_str_data +
+    std::string str_block_data = m_previous_block.GetData() + m_recall_block.GetData() +
                                  std::to_string(m_n_height) + std::to_string(m_n_timestamp);
 
     for(const auto& tx : m_transactions) {
-        str_block_data += tx->m_id.m_str_data;
+        str_block_data += tx->m_id.GetData();
     }
 
     std::random_device rd;
@@ -36,7 +36,7 @@ void CBlock::Mine() {
         m_str_nonce = std::to_string(dis(gen));
         m_hash = CHash(str_block_data + m_str_nonce);
 
-        if(m_hash.m_str_data.substr(0, 4) < "0fff") {
+        if(m_hash.GetData().substr(0, 4) < "0fff") {
             break;
         }
     }
@@ -45,9 +45,9 @@ void CBlock::Mine() {
 std::string CBlock::ToString() const {
     std::stringstream ss;
     ss << "Block #" << m_n_height << "\n"
-       << "  Hash: " << m_hash.m_str_data.substr(0, 16) << "...\n"
-       << "  Previous: " << m_previous_block.m_str_data.substr(0, 16) << "...\n"
-       << "  Recall: " << m_recall_block.m_str_data.substr(0, 16) << "...\n"
+       << "  Hash: " << m_hash.GetData().substr(0, 16) << "...\n"
+       << "  Previous: " << m_previous_block.GetData().substr(0, 16) << "...\n"
+       << "  Recall: " << m_recall_block.GetData().substr(0, 16) << "...\n"
        << "  Miner: " << m_str_miner << "\n"
        << "  Transactions: " << m_transactions.size() << "\n"
        << "  Data Size: " << m_n_cumulative_data_size << " bytes\n"

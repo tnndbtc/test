@@ -124,7 +124,6 @@ void CLogger::Log(ELogLevel level, const std::string& str_message) {
 
     // Write to log file
     m_log_stream << "[" << str_timestamp << "] [" << str_level << "] " << str_message << "\n";
-    m_log_stream.flush();
 
     // Also write to console for errors and fatal
     if (level >= ELogLevel::ERROR) {
