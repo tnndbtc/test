@@ -32,10 +32,18 @@ make
 
 The project builds the following components:
 
-1. **libblockcore.dylib** (or .so on Linux) - Shared library containing core blockchain code
-2. **rest_daemon** - Main REST API daemon process
-3. **wallet** - Wallet address generator utility
-4. **daemon_cli** - Daemon control utility (start/stop/status/restart)
+**Shared Libraries:**
+1. **libbfthreadname.dylib** (or .so on Linux) - Thread naming utilities
+2. **libbflogger.dylib** - Logging system
+3. **libbfutils.dylib** - Hash and configuration utilities
+4. **libbfpeer.dylib** - P2P networking
+5. **libbfblockcore.dylib** - Core blockchain implementation (block, blockweave, transaction, daemon, mining)
+6. **libbfrest.dylib** - REST API server
+
+**Executables:**
+1. **rest_daemon** - Main REST API daemon process
+2. **wallet** - Wallet address generator utility
+3. **daemon_cli** - Daemon control utility (start/stop/status/restart)
 
 **Post-Build Actions:**
 - Automatically copies `test/` directory to `build/test/` for functional testing
@@ -159,14 +167,17 @@ cd build
 
 ### Threading Model
 
-The system uses multiple threads for concurrent operation:
+The system uses multiple named threads for concurrent operation:
 
-1. **Main Thread** - Initializes components, waits for shutdown signal
-2. **Mining Thread** - Continuously mines new blocks when enabled
-3. **REST API Listener Thread** - Accepts incoming HTTP connections
-4. **REST API Worker Threads** (5 by default) - Process HTTP requests from queue
+1. **Main Thread** (`main_thread`) - Initializes components, waits for shutdown signal
+2. **Mining Thread** (`mining_thread`) - Continuously mines new blocks when enabled
+3. **REST API Listener Thread** (`rest_listener`) - Accepts incoming HTTP connections
+4. **REST API Worker Threads** (`rest_worker0-4`) - Process HTTP requests from queue (5 by default)
+5. **Peer Manager Thread** (`peer_manager`) - Manages P2P connections
+6. **Peer Listener Thread** (`peer_listener`) - Accepts incoming P2P connections
+7. **Peer Connection Threads** (`peer_<address>`) - One per active peer connection
 
-All threads are synchronized using mutexes and atomic flags for thread-safe operation.
+All threads are synchronized using mutexes and atomic flags for thread-safe operation. Thread names are visible in logs and debuggers for easier troubleshooting.
 
 ### Core Components
 
@@ -217,11 +228,36 @@ All threads are synchronized using mutexes and atomic flags for thread-safe oper
 - These values are used as defaults when not specified in blockweave.conf
 - Located in src/utils/ subfolder
 
-**CDaemon** (src/cli/daemon.h, src/cli/daemon.cpp)
+**CDaemon** (src/blockcore/daemon.h, src/blockcore/daemon.cpp)
 - Unix daemon process management
 - Handles: forking, session creation, signal handling, PID file management
 - PID file location: `/tmp/rest_daemon.pid`
 - Signal handlers for graceful shutdown (SIGTERM, SIGINT)
+- Located in src/blockcore/ subfolder
+
+**CMiningManager** (src/blockcore/mining.h, src/blockcore/mining.cpp)
+- Mining thread lifecycle management
+- Manages background mining thread that continuously mines blocks
+- Methods: `Start()`, `Stop()`, `IsRunning()`
+- Mining loop checks mining enabled flag and mempool status
+- Sleeps 500ms after mining, 100ms when idle
+- Located in src/blockcore/ subfolder
+
+**Thread Naming** (src/utils/threadname.h, src/utils/threadname.cpp)
+- Cross-platform thread naming utilities
+- Functions: `SetThreadName()`, `GetThreadName()`
+- Uses pthread API (macOS and Linux)
+- Thread names limited to 15 characters (pthread limitation)
+- Automatic truncation and fallback to hex thread ID
+- Located in src/utils/ subfolder
+
+**CLogger** (src/logger/logger.h, src/logger/logger.cpp)
+- Thread-safe logging system with timestamped messages
+- Log format: `[timestamp] [level] [process:thread_name] message`
+- Shows process name and thread name in each log entry
+- Log levels: TRACE, INFO, WARN, ERROR, FATAL
+- Minimum log level filtering and console output for errors
+- Located in src/logger/ subfolder
 
 ### Blockweave vs Blockchain
 
@@ -267,16 +303,19 @@ Platform-specific defines are set automatically:
 ```
 src/
 ├── main.cpp                    # Main daemon entry point
-├── daemon_cli.cpp              # Daemon control utility
-├── block.cpp, block.h          # Block implementation
-├── blockweave.cpp, blockweave.h # Blockweave orchestrator
-├── transaction.cpp, transaction.h # Transaction implementation
+├── blockcore/
+│   ├── block.cpp, block.h      # Block implementation
+│   ├── blockweave.cpp, blockweave.h # Blockweave orchestrator
+│   ├── transaction.cpp, transaction.h # Transaction implementation
+│   ├── daemon.cpp, daemon.h    # Daemon process management
+│   └── mining.cpp, mining.h    # Mining thread management
 ├── rest/
 │   ├── rest_api.cpp, rest_api.h # REST API server
 │   └── i_rest_api.h            # REST API interface
+├── peer/
+│   └── peer.cpp, peer.h        # P2P networking
 ├── cli/
-│   ├── config.cpp, config.h    # Configuration file parser
-│   ├── daemon.cpp, daemon.h    # Daemon process management
+│   ├── config.cpp, config.h    # Configuration file parser (moved from utils/)
 │   └── daemon_cli.cpp          # Daemon CLI utility
 ├── wallet/
 │   ├── wallet.cpp, wallet.h    # Wallet implementation
@@ -285,6 +324,8 @@ src/
 │   └── logger.cpp, logger.h    # Logging system
 └── utils/
     ├── hash.cpp, hash.h        # SHA-256 hash wrapper
+    ├── config.h                # Config header (implementation in cli/)
+    ├── threadname.cpp, threadname.h # Thread naming utilities
     └── settings.h              # Global configuration constants
 
 test/
@@ -303,10 +344,20 @@ CMakeLists.txt                  # Build configuration
 - **rest_daemon**: Runs as a background daemon process with REST API
 - **daemon_cli**: Control utility for starting/stopping rest_daemon
 - **wallet**: Standalone wallet address generator
-- **libblockcore**: Shared library (dynamic linking) containing core blockchain code
+- **Library Architecture**: Modular design with separate shared libraries:
+  - `libbfthreadname`: Thread naming (no dependencies)
+  - `libbflogger`: Logging (depends on threadname)
+  - `libbfutils`: Hash and config utilities (depends on logger, threadname)
+  - `libbfpeer`: P2P networking (depends on logger, threadname)
+  - `libbfblockcore`: Core blockchain (depends on utils, logger, threadname)
+  - `libbfrest`: REST API server (depends on blockcore, utils, logger, threadname)
 - All source files include banner comments: `// ============= filename.ext =============`
 - The project uses smart pointers (`std::shared_ptr`) for transaction and block management
 - Thread-safe design with mutexes (`cs_` prefix) and atomic flags
+- **Thread Naming**: All threads are named for easier debugging and log analysis
+  - Names visible in logs with format: `[timestamp] [level] [process:thread_name] message`
+  - Thread names set using `SetThreadName()` utility function
+  - Example: `[2025-01-15 10:30:45.123] [INFO ] [rest_daemon:rest_worker0] Processing request`
 - PID file location: `/tmp/rest_daemon.pid` (changed from `/var/run/` for permissions)
 - REST API uses request queue with condition variables for worker thread synchronization
 - **settings.h**: Centralized location for compile-time and default runtime configuration constants
