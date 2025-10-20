@@ -27,6 +27,28 @@ endif()
 include_directories(include src ${OPENSSL_INCLUDE_DIR})
 
 # ============================================================
+# Thread Naming Library (libbfthreadname.so / .dylib / .dll)
+# Thread naming utilities (no dependencies)
+# ============================================================
+add_library(bfthreadname SHARED
+    src/utils/threadname.cpp
+)
+
+set_target_properties(bfthreadname PROPERTIES
+    VERSION 1.0.0
+    SOVERSION 1
+    POSITION_INDEPENDENT_CODE ON
+    CXX_VISIBILITY_PRESET default
+)
+
+if(APPLE)
+    set_target_properties(bfthreadname PROPERTIES
+        INSTALL_NAME_DIR "@rpath"
+        BUILD_WITH_INSTALL_RPATH TRUE
+    )
+endif()
+
+# ============================================================
 # Logger Library (libbflogger.so / .dylib / .dll)
 # Logging utilities
 # ============================================================
@@ -47,6 +69,11 @@ if(APPLE)
         BUILD_WITH_INSTALL_RPATH TRUE
     )
 endif()
+
+# Link threadname to logger (logger needs GetThreadName)
+target_link_libraries(bflogger
+    PUBLIC bfthreadname
+)
 
 # ============================================================
 # Utils Library (libbfutils.so / .dylib / .dll)
@@ -71,11 +98,12 @@ if(APPLE)
     )
 endif()
 
-# Link OpenSSL to bfutils (needed for hash)
+# Link OpenSSL and threadname to bfutils (needed for hash and config)
 target_link_libraries(bfutils
     PUBLIC OpenSSL::SSL
     PUBLIC OpenSSL::Crypto
     PUBLIC bflogger
+    PUBLIC bfthreadname
 )
 
 # ============================================================
@@ -100,20 +128,22 @@ if(APPLE)
     )
 endif()
 
-# Link logger to peer
+# Link logger and threadname to peer
 target_link_libraries(bfpeer
     PUBLIC bflogger
+    PUBLIC bfthreadname
 )
 
 # ============================================================
 # Blockcore Library (libbfblockcore.so / .dylib / .dll)
-# Core blockchain implementation: block, blockweave, transaction, daemon
+# Core blockchain implementation: block, blockweave, transaction, daemon, mining
 # ============================================================
 add_library(bfblockcore SHARED
     src/blockcore/block.cpp
     src/blockcore/blockweave.cpp
     src/blockcore/transaction.cpp
     src/blockcore/daemon.cpp
+    src/blockcore/mining.cpp
 )
 
 set_target_properties(bfblockcore PROPERTIES
@@ -134,6 +164,7 @@ endif()
 target_link_libraries(bfblockcore
     PUBLIC bfutils
     PUBLIC bflogger
+    PUBLIC bfthreadname
 )
 
 # ============================================================
@@ -163,6 +194,7 @@ target_link_libraries(bfrest
     PUBLIC bfblockcore
     PUBLIC bfutils
     PUBLIC bflogger
+    PUBLIC bfthreadname
 )
 
 # ============================================================
@@ -181,6 +213,7 @@ target_link_libraries(rest_daemon
     PRIVATE bfpeer
     PRIVATE bfutils
     PRIVATE bflogger
+    PRIVATE bfthreadname
     PRIVATE OpenSSL::SSL
     PRIVATE OpenSSL::Crypto
 )
@@ -216,6 +249,7 @@ target_link_libraries(wallet
     PRIVATE bfblockcore
     PRIVATE bfutils
     PRIVATE bflogger
+    PRIVATE bfthreadname
     PRIVATE OpenSSL::SSL
     PRIVATE OpenSSL::Crypto
 )
@@ -258,6 +292,7 @@ if(WIN32)
 else()
     # Linux/macOS: Use POSIX threads for threading support
     find_package(Threads REQUIRED)
+    target_link_libraries(bfthreadname PUBLIC Threads::Threads)
     target_link_libraries(bfblockcore PUBLIC Threads::Threads)
     target_link_libraries(bfrest PUBLIC Threads::Threads)
     target_link_libraries(bfpeer PUBLIC Threads::Threads)
@@ -269,6 +304,7 @@ endif()
 # Platform-specific compile options
 if(MSVC)
     # Visual Studio
+    target_compile_options(bfthreadname PRIVATE /W4)
     target_compile_options(bflogger PRIVATE /W4)
     target_compile_options(bfutils PRIVATE /W4)
     target_compile_options(bfpeer PRIVATE /W4)
@@ -279,6 +315,7 @@ if(MSVC)
     target_compile_options(daemon_cli PRIVATE /W4)
 else()
     # GCC/Clang
+    target_compile_options(bfthreadname PRIVATE -Wall -Wextra -pedantic)
     target_compile_options(bflogger PRIVATE -Wall -Wextra -pedantic)
     target_compile_options(bfutils PRIVATE -Wall -Wextra -pedantic)
     target_compile_options(bfpeer PRIVATE -Wall -Wextra -pedantic)
@@ -310,7 +347,7 @@ add_custom_command(TARGET rest_daemon POST_BUILD
 )
 
 # Installation
-install(TARGETS bflogger bfutils bfpeer bfblockcore bfrest
+install(TARGETS bfthreadname bflogger bfutils bfpeer bfblockcore bfrest
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
     RUNTIME DESTINATION bin

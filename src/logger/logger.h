@@ -62,6 +62,18 @@ private:
      */
     static std::string GetLevelString(ELogLevel level);
 
+    /**
+     * @brief Get current process name
+     * @return Process name as string
+     */
+    static std::string GetProcessName();
+
+    /**
+     * @brief Get current thread name as string
+     * @return Thread name as string, or thread ID if name not set
+     */
+    static std::string GetThreadName();
+
 public:
     /**
      * @brief Parse log level from string (case-insensitive)

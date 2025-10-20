@@ -8,6 +8,7 @@
  */
 
 #include "logger.h"
+#include "utils/threadname.h"
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -15,6 +16,11 @@
 #include <ctime>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
+
+#ifdef __APPLE__
+#include <libproc.h>
+#endif
 
 /// Global logger instance (initialized by InitializeLogger)
 std::shared_ptr<CLogger> g_p_logger = nullptr;
@@ -70,6 +76,67 @@ std::string CLogger::GetLevelString(ELogLevel level) {
         default:
             return "UNKNOWN";
     }
+}
+
+/**
+ * @brief Get current process name
+ * @return Process name as string
+ *
+ * Platform-specific implementation to retrieve the current process name.
+ * On macOS, uses proc_pidpath() to get the full path then extracts basename.
+ * On Linux, reads from /proc/self/comm or /proc/self/cmdline.
+ */
+std::string CLogger::GetProcessName() {
+#ifdef __APPLE__
+    char path_buf[PROC_PIDPATHINFO_MAXSIZE];
+    pid_t pid = getpid();
+    int ret = proc_pidpath(pid, path_buf, sizeof(path_buf));
+    if (ret <= 0) {
+        return "unknown";
+    }
+    // Extract basename from full path
+    std::string str_full_path(path_buf);
+    size_t n_last_slash = str_full_path.find_last_of('/');
+    if (n_last_slash != std::string::npos) {
+        return str_full_path.substr(n_last_slash + 1);
+    }
+    return str_full_path;
+#elif defined(__linux__)
+    // Try /proc/self/comm first (more reliable for process name)
+    std::ifstream comm_file("/proc/self/comm");
+    if (comm_file.is_open()) {
+        std::string str_name;
+        std::getline(comm_file, str_name);
+        if (!str_name.empty()) {
+            return str_name;
+        }
+    }
+    // Fallback to cmdline
+    std::ifstream cmdline_file("/proc/self/cmdline");
+    if (cmdline_file.is_open()) {
+        std::string str_cmdline;
+        std::getline(cmdline_file, str_cmdline, '\0');
+        size_t n_last_slash = str_cmdline.find_last_of('/');
+        if (n_last_slash != std::string::npos) {
+            return str_cmdline.substr(n_last_slash + 1);
+        }
+        return str_cmdline;
+    }
+    return "unknown";
+#else
+    return "unknown";
+#endif
+}
+
+/**
+ * @brief Get current thread name as string
+ * @return Thread name as string, or thread ID if name not set
+ *
+ * Delegates to the centralized thread naming utility in utils/threadname.h
+ * which provides cross-platform thread name retrieval.
+ */
+std::string CLogger::GetThreadName() {
+    return ::GetThreadName();
 }
 
 /**
@@ -153,9 +220,11 @@ bool CLogger::Initialize(const std::string& str_log_dir, ELogLevel min_level) {
  *
  * Thread-safe logging that:
  * - Filters messages below minimum level
- * - Writes timestamped message to file (OS-buffered)
+ * - Writes timestamped message with process name and thread ID to file (OS-buffered)
  * - Also outputs ERROR/FATAL to stderr
  * Does nothing if logger not initialized.
+ *
+ * Log format: [timestamp] [level] [process:thread] message
  */
 void CLogger::Log(ELogLevel level, const std::string& str_message) {
     if (!f_initialized) {
@@ -171,13 +240,18 @@ void CLogger::Log(ELogLevel level, const std::string& str_message) {
 
     std::string str_timestamp = GetTimestamp();
     std::string str_level = GetLevelString(level);
+    std::string str_process = GetProcessName();
+    std::string str_thread = GetThreadName();
 
     // Write to log file (OS-buffered, no immediate flush for performance)
-    m_log_stream << "[" << str_timestamp << "] [" << str_level << "] " << str_message << "\n";
+    // Format: [timestamp] [level] [process:thread] message
+    m_log_stream << "[" << str_timestamp << "] [" << str_level << "] ["
+                 << str_process << ":" << str_thread << "] " << str_message << "\n";
 
     // Also write to console for errors and fatal
     if (level >= ELogLevel::ERROR) {
-        std::cerr << "[" << str_timestamp << "] [" << str_level << "] " << str_message << "\n";
+        std::cerr << "[" << str_timestamp << "] [" << str_level << "] ["
+                  << str_process << ":" << str_thread << "] " << str_message << "\n";
     }
 }
 

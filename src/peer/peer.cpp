@@ -9,6 +9,7 @@
  */
 
 #include "peer/peer.h"
+#include "utils/threadname.h"
 #include "logger/logger.h"
 #include <iostream>
 #include <cstring>
@@ -20,6 +21,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <algorithm>
+#include <sstream>
 
 // ============= CPeerConnection Implementation =============
 
@@ -415,6 +417,9 @@ bool CPeerManager::SetSocketNonBlocking(int n_socket, bool f_non_blocking) {
  * Exits when f_stop_requested is set by Stop().
  */
 void CPeerManager::PeerThread() {
+    // Set thread name for easier debugging and logging
+    SetThreadName("peer_manager");
+
     LOG_INFO("Peer management thread started");
 
     while (!f_stop_requested) {
@@ -441,6 +446,9 @@ void CPeerManager::PeerThread() {
  * Exits when f_stop_requested is set and listening socket is closed.
  */
 void CPeerManager::ListenerThread() {
+    // Set thread name for easier debugging and logging
+    SetThreadName("peer_listener");
+
     LOG_INFO("Peer listener thread started");
 
     while (!f_stop_requested) {
@@ -494,6 +502,12 @@ void CPeerManager::ConnectionThread(CPeerConnection* p_peer) {
     if (!p_peer) {
         return;
     }
+
+    // Set thread name for easier debugging and logging
+    // Use format: peer_<address>
+    std::ostringstream oss;
+    oss << "peer_" << p_peer->str_address;
+    SetThreadName(oss.str());
 
     LOG_INFO("Connection thread started for peer " + p_peer->str_address + ":" + std::to_string(p_peer->n_port));
 

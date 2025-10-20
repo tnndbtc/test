@@ -15,6 +15,7 @@
 
 #include "rest_api.h"
 #include "utils/config.h"
+#include "utils/threadname.h"
 #include "logger/logger.h"
 #include "blockcore/transaction.h"
 #include <iostream>
@@ -553,7 +554,10 @@ bool CRestApiServer::IsRunning() const {
  * Exits when f_stop_requested is set and socket is closed.
  */
 void CRestApiServer::ListenerThread() {
-    LOG_TRACE("REST API listener thread started");
+    // Set thread name for easier debugging and logging
+    SetThreadName("rest_listener");
+
+    LOG_INFO("REST API listener thread started");
 
     while (!f_stop_requested) {
         sockaddr_in client_addr{};
@@ -598,6 +602,9 @@ void CRestApiServer::ListenerThread() {
  * Uses short timeout to check f_stop_requested frequently.
  */
 void CRestApiServer::WorkerThread(int n_worker_id) {
+    // Set thread name for easier debugging and logging
+    SetThreadName("rest_worker" + std::to_string(n_worker_id));
+
     LOG_TRACE("REST API worker thread " + std::to_string(n_worker_id) + " started");
 
     while (!f_stop_requested) {

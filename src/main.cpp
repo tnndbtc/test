@@ -1,10 +1,12 @@
 // ============= main.cpp =============
 #include "blockcore/blockweave.h"
 #include "blockcore/daemon.h"
+#include "blockcore/mining.h"
 #include "wallet/wallet.h"
 #include "rest/rest_api.h"
 #include "peer/peer.h"
 #include "utils/config.h"
+#include "utils/threadname.h"
 #include "logger/logger.h"
 #include "utils/settings.h"
 #include <iostream>
@@ -27,23 +29,10 @@ void PrintUsage(const char* program_name) {
     std::cout << "  daemon=false\n";
 }
 
-// Mining thread function
-void MiningThread(CBlockweave* p_weave, const std::string& str_miner_address) {
-    LOG_INFO("Mining thread started");
-
-    while (!p_weave->ShouldStopMining()) {
-        if (p_weave->IsMiningEnabled() && p_weave->GetMempoolSize() > 0) {
-            p_weave->MineBlock(str_miner_address);
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        } else {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-    }
-
-    LOG_INFO("Mining thread stopped");
-}
-
 int main(int argc, char* argv[]) {
+    // Set main thread name for easier debugging and logging
+    SetThreadName("main_thread");
+
     std::string str_config_file = "blockweave.conf";
     bool f_daemon_mode = false;
 
@@ -169,9 +158,17 @@ int main(int argc, char* argv[]) {
     }
     LOG_INFO("Peer manager started successfully");
 
-    // Start mining thread
+    // Start mining manager
+    LOG_INFO("Starting mining manager");
+    CMiningManager mining_manager(&weave, str_miner_address);
     weave.StartMining();
-    std::thread mining_thread(MiningThread, &weave, str_miner_address);
+    if (!mining_manager.Start()) {
+        LOG_ERROR("Failed to start mining manager");
+        peer_manager.Stop();
+        rest_api.Stop();
+        return 1;
+    }
+    LOG_INFO("Mining manager started successfully");
 
     LOG_INFO("REST daemon is running and ready to accept requests");
 
@@ -183,11 +180,8 @@ int main(int argc, char* argv[]) {
     LOG_INFO("Shutdown signal received. Cleaning up...");
     LOG_INFO("Shutdown signal received, initiating graceful shutdown");
 
-    // Stop mining and wait for thread to finish
-    LOG_INFO("Stopping mining thread");
-    weave.StopMining();
-    mining_thread.join();
-    // LOG_INFO("Mining thread stopped");
+    // Stop mining manager
+    mining_manager.Stop();
 
     // Stop peer manager
     peer_manager.Stop();
