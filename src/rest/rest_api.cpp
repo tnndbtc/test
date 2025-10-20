@@ -693,22 +693,42 @@ void CRestApiServer::ProcessRequest(const CHttpRequest& request) {
     // Route to appropriate handler based on HTTP method
     if (request.str_method == "GET") {
         str_response = HandleGET(request.str_path, request);
-        if (str_response.find("\"error\"") != std::string::npos &&
-            str_response.find("Not found") != std::string::npos) {
-            n_status_code = 404;
-        }
     }
     else if (request.str_method == "POST") {
         str_response = HandlePOST(request.str_path, request);
-        if (str_response.find("\"error\"") != std::string::npos &&
-            str_response.find("Not found") != std::string::npos) {
-            n_status_code = 404;
-        }
     }
     else {
-        str_response = "{\"error\": \"Method not allowed\"}";
+        str_response = "{\"error\": \"Method Not Allowed\"}";
         n_status_code = 405;
         LOG_ERROR("Unsupported HTTP method: " + request.str_method);
+        SendHttpResponse(request.n_client_socket, n_status_code, "application/json", str_response);
+        return;
+    }
+
+    // Determine HTTP status code based on error type in response
+    if (str_response.find("\"error\"") != std::string::npos) {
+        // Check for specific error types
+        if (str_response.find("Not found") != std::string::npos ||
+            str_response.find("not found") != std::string::npos) {
+            n_status_code = 404;  // Not Found
+        }
+        else if (str_response.find("Bad Request") != std::string::npos ||
+                 str_response.find("Missing required field") != std::string::npos ||
+                 str_response.find("Invalid") != std::string::npos) {
+            n_status_code = 400;  // Bad Request
+        }
+        else if (str_response.find("Internal Server Error") != std::string::npos ||
+                 str_response.find("Internal error") != std::string::npos) {
+            n_status_code = 500;  // Internal Server Error
+        }
+        else if (str_response.find("Not implemented") != std::string::npos) {
+            n_status_code = 501;  // Not Implemented
+        }
+        else {
+            // Generic error - use 500
+            n_status_code = 500;
+        }
+        LOG_ERROR("Request failed with status " + std::to_string(n_status_code) + ": " + str_response);
     }
 
     SendHttpResponse(request.n_client_socket, n_status_code, "application/json", str_response);
@@ -740,37 +760,20 @@ std::string CRestApiServer::HandleGetData(const std::string& str_tx_id) {
 std::string CRestApiServer::HandlePostTransaction(const std::string& str_body) {
     try {
         // Parse JSON body
-        std::string str_from = ExtractJsonValue(str_body, "from");
-        std::string str_to = ExtractJsonValue(str_body, "to");
-        std::string str_data_b64 = ExtractJsonValue(str_body, "data");
-        std::string str_fee = ExtractJsonValue(str_body, "fee");
+        std::string str_data = ExtractJsonValue(str_body, "data");
 
         // Validate required fields
-        if (str_from.empty() || str_to.empty() || str_data_b64.empty()) {
-            LOG_ERROR("POST /transaction: Missing required fields (from, to, or data)");
-            return "{\"error\": \"Missing required fields: from, to, data\"}";
+        if (str_data.empty()) {
+            LOG_ERROR("POST /transaction: Missing required field 'data'");
+            return "{\"error\": \"Bad Request\", \"message\": \"Missing required field: data\"}";
         }
 
-        // Decode base64 data
-        std::vector<uint8_t> data = DecodeBase64(str_data_b64);
-        if (data.empty()) {
-            LOG_ERROR("POST /transaction: Failed to decode base64 data");
-            return "{\"error\": \"Invalid base64 data\"}";
-        }
+        // For now, treat data as plain text (not base64)
+        std::vector<uint8_t> data(str_data.begin(), str_data.end());
 
-        // Parse fee (default to 0 if not provided or invalid)
-        uint64_t n_fee = 0;
-        if (!str_fee.empty()) {
-            try {
-                n_fee = static_cast<uint64_t>(std::stod(str_fee) * 1000000); // Convert to smallest unit
-            } catch (...) {
-                LOG_ERROR("POST /transaction: Invalid fee value: " + str_fee);
-                return "{\"error\": \"Invalid fee value\"}";
-            }
-        }
-
-        // Create transaction
-        auto tx = std::make_shared<CTransaction>(str_from, str_to, data, n_fee);
+        // Create transaction with default addresses and zero fee
+        std::string str_default_addr = "default_address";
+        auto tx = std::make_shared<CTransaction>(str_default_addr, str_default_addr, data, 0);
 
         // Add to mempool
         p_blockweave->AddTransaction(tx);
@@ -780,20 +783,16 @@ std::string CRestApiServer::HandlePostTransaction(const std::string& str_body) {
         oss << "{\n";
         oss << "  \"status\": \"success\",\n";
         oss << "  \"transaction_id\": \"" << tx->m_id.GetData().substr(0, 32) << "...\",\n";
-        oss << "  \"from\": \"" << str_from.substr(0, 16) << "...\",\n";
-        oss << "  \"to\": \"" << str_to.substr(0, 16) << "...\",\n";
-        oss << "  \"data_size\": " << data.size() << ",\n";
-        oss << "  \"fee\": " << n_fee << "\n";
+        oss << "  \"data_size\": " << data.size() << "\n";
         oss << "}";
 
-        LOG_INFO("Transaction created: " + tx->m_id.GetData().substr(0, 16) + "... (from: " +
-                 str_from.substr(0, 16) + "..., to: " + str_to.substr(0, 16) + "..., size: " +
+        LOG_INFO("Transaction created: " + tx->m_id.GetData().substr(0, 16) + "... (size: " +
                  std::to_string(data.size()) + " bytes)");
 
         return oss.str();
     } catch (const std::exception& e) {
         LOG_ERROR("POST /transaction exception: " + std::string(e.what()));
-        return "{\"error\": \"Internal server error\"}";
+        return "{\"error\": \"Internal Server Error\", \"message\": \"" + std::string(e.what()) + "\"}";
     }
 }
 

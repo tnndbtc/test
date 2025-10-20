@@ -154,11 +154,15 @@ class P2PTest(TestFramework):
         self.log_info("Step 2: Creating transaction on node0...")
 
         # Transaction data - simple text data for testing
+        # transaction_data = {
+        #     "from": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
+        #     "to": "bc1qw508d6qejxtdg4y5r3zarvaryv98gj9p8t5z6",
+        #     "data": "Test transaction for P2P mining verification",
+        #     "fee": 0.00012
+        # }
+
         transaction_data = {
-            "from": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
-            "to": "bc1qw508d6qejxtdg4y5r3zarvaryv98gj9p8t5z6",
             "data": "Test transaction for P2P mining verification",
-            "fee": 0.00012
         }
 
         # Try to POST transaction
@@ -166,7 +170,7 @@ class P2PTest(TestFramework):
         transaction_submitted = False
         tx_id = None
 
-        for endpoint in ["/transaction", "/tx"]:
+        for endpoint in ["/transaction"]:
             try:
                 self.log_info(f"Attempting to submit transaction to {endpoint}...")
                 response = node0.post(endpoint, json_data=transaction_data)
@@ -196,10 +200,11 @@ class P2PTest(TestFramework):
                         self.log_info(f"Could not parse JSON response: {e}")
                         self.log_info(f"Response text: {response.text}")
                 else:
-                    self.log_info(f"Endpoint {endpoint} returned status {response.status_code}")
+                    # Log detailed error information
+                    raise Exception("response code: %d, response header: %s, response body: %s" % (response.status_code, dict(response.headers), response.text))
 
             except Exception as e:
-                self.log_info(f"Error submitting to {endpoint}: {e}")
+                self.assert_true(False, f"Error submitting to {endpoint}: {e}")
 
         if not transaction_submitted:
             self.log_info("Transaction submission failed on all attempted endpoints")
