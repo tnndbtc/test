@@ -34,7 +34,7 @@ public:
 
     // Handle HTTP POST request
     // Parameters:
-    //   str_endpoint - The URL path (e.g., "/transaction", "/mine/start")
+    //   str_endpoint - The URL path (e.g., "/transaction", "/files")
     //   request - The full HTTP request object
     // Returns: JSON response string
     virtual std::string HandlePOST(const std::string& str_endpoint, const CHttpRequest& request) = 0;

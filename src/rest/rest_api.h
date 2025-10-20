@@ -33,7 +33,7 @@
  */
 struct CHttpRequest {
     std::string str_method;          ///< HTTP method (GET, POST, etc.)
-    std::string str_path;            ///< URL path (e.g., "/chain", "/mine/start")
+    std::string str_path;            ///< URL path (e.g., "/chain", "/transaction")
     std::string str_body;            ///< Request body content
     std::string str_content_type;    ///< Content-Type header value
     int n_client_socket;             ///< Client socket file descriptor for response
@@ -121,8 +121,6 @@ class CConfig;
  * - GET /data/:txid - Get transaction data by ID
  * - POST /transaction - Submit new transaction
  * - POST /files - Upload file as transaction
- * - POST /mine/start - Start mining
- * - POST /mine/stop - Stop mining
  *
  * Thread safety:
  * - Uses atomic flags for state (f_running, f_stop_requested)
@@ -211,18 +209,6 @@ private:
      * @return JSON response with transaction ID
      */
     std::string HandlePostFiles(const CHttpRequest& request);
-
-    /**
-     * @brief Handle POST /mine/start endpoint
-     * @return JSON response confirming mining started
-     */
-    std::string HandlePostMineStart();
-
-    /**
-     * @brief Handle POST /mine/stop endpoint
-     * @return JSON response confirming mining stopped
-     */
-    std::string HandlePostMineStop();
 
     /**
      * @brief Parse raw HTTP request into structured form

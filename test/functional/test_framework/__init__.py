@@ -15,6 +15,7 @@ import json
 import logging
 import tempfile
 import shutil
+import traceback
 from pathlib import Path
 
 
@@ -411,9 +412,20 @@ class TestFramework:
             # print(f"✓ PASS: {message or f'{actual} == {expected}'}")
         else:
             self.num_failed += 1
-            print(f"✗ FAIL: {message or f'{actual} != {expected}'}")
+            print(f"\n{'='*70}")
+            print(f"✗ ASSERTION FAILED: {message or 'Values are not equal'}")
+            print(f"{'='*70}")
             print(f"  Expected: {expected}")
             print(f"  Actual:   {actual}")
+            print(f"\nCall stack:")
+            print("-" * 70)
+            # Print call stack excluding this function
+            stack = traceback.extract_stack()[:-1]
+            for frame in stack:
+                print(f"  File \"{frame.filename}\", line {frame.lineno}, in {frame.name}")
+                if frame.line:
+                    print(f"    {frame.line}")
+            print("=" * 70 + "\n")
 
     def assert_true(self, condition, message=""):
         """Assert that a condition is true."""
@@ -422,7 +434,19 @@ class TestFramework:
             # print(f"✓ PASS: {message or 'condition is True'}")
         else:
             self.num_failed += 1
-            print(f"✗ FAIL: {message or 'condition is False'}")
+            print(f"\n{'='*70}")
+            print(f"✗ ASSERTION FAILED: {message or 'Condition is False'}")
+            print(f"{'='*70}")
+            print(f"  Condition evaluated to: {condition}")
+            print(f"\nCall stack:")
+            print("-" * 70)
+            # Print call stack excluding this function
+            stack = traceback.extract_stack()[:-1]
+            for frame in stack:
+                print(f"  File \"{frame.filename}\", line {frame.lineno}, in {frame.name}")
+                if frame.line:
+                    print(f"    {frame.line}")
+            print("=" * 70 + "\n")
 
     def assert_in(self, item, container, message=""):
         """Assert that an item is in a container."""
@@ -431,7 +455,20 @@ class TestFramework:
             # print(f"✓ PASS: {message or f'{item} in {container}'}")
         else:
             self.num_failed += 1
-            print(f"✗ FAIL: {message or f'{item} not in {container}'}")
+            print(f"\n{'='*70}")
+            print(f"✗ ASSERTION FAILED: {message or 'Item not in container'}")
+            print(f"{'='*70}")
+            print(f"  Looking for: {item}")
+            print(f"  In container: {container}")
+            print(f"\nCall stack:")
+            print("-" * 70)
+            # Print call stack excluding this function
+            stack = traceback.extract_stack()[:-1]
+            for frame in stack:
+                print(f"  File \"{frame.filename}\", line {frame.lineno}, in {frame.name}")
+                if frame.line:
+                    print(f"    {frame.line}")
+            print("=" * 70 + "\n")
 
     def log_info(self, message):
         """Log an informational message."""

@@ -907,16 +907,6 @@ std::string CRestApiServer::HandlePostFiles(const CHttpRequest& request) {
     }
 }
 
-std::string CRestApiServer::HandlePostMineStart() {
-    p_blockweave->StartMining();
-    return "{\"status\": \"Mining started\"}";
-}
-
-std::string CRestApiServer::HandlePostMineStop() {
-    p_blockweave->StopMining();
-    return "{\"status\": \"Mining stopped\"}";
-}
-
 // ============= HTTP Method Handlers (Interface Implementation) =============
 
 std::string CRestApiServer::HandleGET(const std::string& str_endpoint, const CHttpRequest& request) {
@@ -951,12 +941,6 @@ std::string CRestApiServer::HandlePOST(const std::string& str_endpoint, const CH
     }
     else if (str_endpoint == "/files") {
         return HandlePostFiles(request);
-    }
-    else if (str_endpoint == "/mine/start") {
-        return HandlePostMineStart();
-    }
-    else if (str_endpoint == "/mine/stop") {
-        return HandlePostMineStop();
     }
     else {
         LOG_ERROR("POST endpoint not found: " + str_endpoint);
