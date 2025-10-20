@@ -96,7 +96,7 @@ class BlockweaveNode:
         # Create custom config with node-specific settings
         if self.datadir:
             node_dir = Path(self.datadir)
-            log_dir = node_dir / "logs"
+            log_dir = node_dir / "log"
             log_dir.mkdir(parents=True, exist_ok=True)
 
             # Create custom config file in the node directory

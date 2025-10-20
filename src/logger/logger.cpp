@@ -247,6 +247,8 @@ void CLogger::Log(ELogLevel level, const std::string& str_message) {
     // Format: [timestamp] [level] [process:thread] message
     m_log_stream << "[" << str_timestamp << "] [" << str_level << "] ["
                  << str_process << ":" << str_thread << "] " << str_message << "\n";
+    // note that flush() will not write to disk immediately but only to OS file descriptor.
+    m_log_stream.flush();
 
     // Also write to console for errors and fatal
     if (level >= ELogLevel::ERROR) {
