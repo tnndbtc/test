@@ -408,7 +408,7 @@ class TestFramework:
         """Assert that two values are equal."""
         if actual == expected:
             self.num_success += 1
-            print(f"✓ PASS: {message or f'{actual} == {expected}'}")
+            # print(f"✓ PASS: {message or f'{actual} == {expected}'}")
         else:
             self.num_failed += 1
             print(f"✗ FAIL: {message or f'{actual} != {expected}'}")
@@ -419,7 +419,7 @@ class TestFramework:
         """Assert that a condition is true."""
         if condition:
             self.num_success += 1
-            print(f"✓ PASS: {message or 'condition is True'}")
+            # print(f"✓ PASS: {message or 'condition is True'}")
         else:
             self.num_failed += 1
             print(f"✗ FAIL: {message or 'condition is False'}")
@@ -428,7 +428,7 @@ class TestFramework:
         """Assert that an item is in a container."""
         if item in container:
             self.num_success += 1
-            print(f"✓ PASS: {message or f'{item} in {container}'}")
+            # print(f"✓ PASS: {message or f'{item} in {container}'}")
         else:
             self.num_failed += 1
             print(f"✗ FAIL: {message or f'{item} not in {container}'}")
