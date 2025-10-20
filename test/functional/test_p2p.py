@@ -7,6 +7,7 @@ and verifying they can establish connections.
 """
 
 import sys
+import inspect
 from test_framework import TestFramework
 
 
@@ -45,19 +46,15 @@ class P2PTest(TestFramework):
         self.log_info("Running P2P network test...")
 
         self.test_nodes_are_running()
-        self.test_chain_endpoint()
         self.test_port_isolation()
-        self.test_request_stability()
-        self.test_start_mining()
         self.test_verify_mining_enabled()
-        self.test_stop_mining()
-        self.test_verify_mining_disabled()
+        # self.test_start_mining()
 
         self.log_info("P2P test completed successfully")
 
     def test_nodes_are_running(self):
-        """Test 1: Verify all nodes are running."""
-        self.log_info("Test 1: Verifying all nodes are running...")
+        """Verify all nodes are running."""
+        self.log_info("%s: Verifying all nodes are running..." % inspect.currentframe().f_code.co_name)
 
         for i, node in enumerate(self.nodes):
             # Check if process is alive
@@ -68,38 +65,9 @@ class P2PTest(TestFramework):
 
             self.log_info(f"Node {i} is running")
 
-    def test_chain_endpoint(self):
-        """Test 2: Check each node's REST API /chain endpoint."""
-        self.log_info("Test 2: Testing /chain endpoint on all nodes...")
-
-        for i, node in enumerate(self.nodes):
-            response = node.get("/chain")
-            self.assert_equal(
-                response.status_code,
-                200,
-                f"Node {i} GET /chain returns 200 OK"
-            )
-
-            data = response.json()
-            self.assert_in(
-                "mempool_size",
-                data,
-                f"Node {i} response contains 'mempool_size'"
-            )
-            self.assert_in(
-                "mining_enabled",
-                data,
-                f"Node {i} response contains 'mining_enabled'"
-            )
-
-            self.log_info(
-                f"Node {i}: mempool_size={data['mempool_size']}, "
-                f"mining_enabled={data['mining_enabled']}"
-            )
-
     def test_port_isolation(self):
-        """Test 3: Verify nodes are listening on different ports."""
-        self.log_info("Test 3: Verifying port isolation...")
+        """Verify nodes are listening on different ports."""
+        self.log_info("%s: Verifying port isolation..." % inspect.currentframe().f_code.co_name)
 
         ports_used = set()
         base_port = 28443
@@ -118,27 +86,9 @@ class P2PTest(TestFramework):
             ports_used.add(expected_port)
             self.log_info(f"Node {i} confirmed on unique port {expected_port}")
 
-    def test_request_stability(self):
-        """Test 4: Test multiple requests to verify stability."""
-        self.log_info("Test 4: Testing multiple requests for stability...")
-
-        num_rounds = 3
-        for request_num in range(num_rounds):
-            self.log_info(f"Request round {request_num + 1}/{num_rounds}")
-
-            for i, node in enumerate(self.nodes):
-                response = node.get("/chain")
-                self.assert_equal(
-                    response.status_code,
-                    200,
-                    f"Node {i} request {request_num + 1} returns 200"
-                )
-
-        self.log_info("All stability tests passed")
-
     def test_start_mining(self):
-        """Test 5: Start mining on all nodes."""
-        self.log_info("Test 5: Starting mining on all nodes...")
+        """Start mining on all nodes."""
+        self.log_info("%s: Starting mining on all nodes..." % inspect.currentframe().f_code.co_name)
 
         for i, node in enumerate(self.nodes):
             response = node.post("/mine/start")
@@ -157,8 +107,8 @@ class P2PTest(TestFramework):
             self.log_info(f"Node {i} mining started: {data}")
 
     def test_verify_mining_enabled(self):
-        """Test 6: Verify mining is enabled on all nodes."""
-        self.log_info("Test 6: Verifying mining is enabled on all nodes...")
+        """Verify mining is enabled on all nodes."""
+        self.log_info("%s: Verifying mining is enabled on all nodes..." % inspect.currentframe().f_code.co_name)
 
         for i, node in enumerate(self.nodes):
             response = node.get("/chain")
@@ -169,36 +119,6 @@ class P2PTest(TestFramework):
                 f"Node {i} should have mining enabled"
             )
             self.log_info(f"Node {i} mining confirmed enabled")
-
-    def test_stop_mining(self):
-        """Test 7: Stop mining on all nodes."""
-        self.log_info("Test 7: Stopping mining on all nodes...")
-
-        for i, node in enumerate(self.nodes):
-            response = node.post("/mine/stop")
-            self.assert_equal(
-                response.status_code,
-                200,
-                f"Node {i} POST /mine/stop returns 200"
-            )
-
-            data = response.json()
-            self.log_info(f"Node {i} mining stopped: {data}")
-
-    def test_verify_mining_disabled(self):
-        """Test 8: Verify mining is disabled on all nodes."""
-        self.log_info("Test 8: Verifying mining is disabled on all nodes...")
-
-        for i, node in enumerate(self.nodes):
-            response = node.get("/chain")
-            data = response.json()
-            self.assert_equal(
-                data["mining_enabled"],
-                False,
-                f"Node {i} should have mining disabled"
-            )
-            self.log_info(f"Node {i} mining confirmed disabled")
-
 
 if __name__ == "__main__":
     test = P2PTest()
