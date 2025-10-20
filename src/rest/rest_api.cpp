@@ -1,4 +1,18 @@
 // ============= rest_api.cpp =============
+/**
+ * @file rest_api.cpp
+ * @brief Implementation of multi-threaded HTTP REST API server
+ *
+ * Provides HTTP REST API access to blockweave operations including:
+ * - Blockchain state queries
+ * - Transaction submission
+ * - File uploads as transactions
+ * - Mining control
+ *
+ * Uses listener/worker thread architecture with request queue for
+ * concurrent request processing.
+ */
+
 #include "rest_api.h"
 #include "utils/config.h"
 #include "logger/logger.h"
@@ -19,7 +33,20 @@
 
 // ============= Utility Functions =============
 
-// Simple JSON value extractor (extracts value for a given key)
+/**
+ * @brief Extract value for a given key from simple JSON string
+ * @param str_json JSON string to parse
+ * @param str_key Key to search for
+ * @return Extracted value as string, or empty string if not found
+ *
+ * Simple JSON parser that handles:
+ * - String values (enclosed in quotes)
+ * - Numeric/boolean values
+ * - Trimmed whitespace
+ *
+ * Note: This is a lightweight parser for basic JSON. For complex JSON,
+ * consider using a dedicated JSON library.
+ */
 static std::string ExtractJsonValue(const std::string& str_json, const std::string& str_key) {
     // Find the key
     std::string str_search = "\"" + str_key + "\"";
@@ -65,17 +92,32 @@ static std::string ExtractJsonValue(const std::string& str_json, const std::stri
     return "";
 }
 
-// Base64 decoding table
+/**
+ * @brief Base64 character set for encoding/decoding
+ */
 static const std::string base64_chars =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     "abcdefghijklmnopqrstuvwxyz"
     "0123456789+/";
 
+/**
+ * @brief Check if character is valid Base64
+ * @param c Character to check
+ * @return true if valid Base64 character
+ */
 static bool IsBase64(unsigned char c) {
     return (std::isalnum(c) || (c == '+') || (c == '/'));
 }
 
-// Decode base64 string to bytes
+/**
+ * @brief Decode Base64 string to binary data
+ * @param str_encoded Base64-encoded string
+ * @return Decoded binary data as byte vector
+ *
+ * Implements standard Base64 decoding (RFC 4648).
+ * Handles padding ('=') characters correctly.
+ * Returns empty vector if decoding fails.
+ */
 static std::vector<uint8_t> DecodeBase64(const std::string& str_encoded) {
     std::vector<uint8_t> decoded;
     int n_in_len = str_encoded.size();
@@ -124,7 +166,20 @@ static std::vector<uint8_t> DecodeBase64(const std::string& str_encoded) {
     return decoded;
 }
 
-// Extract filename and file data from multipart form-data
+/**
+ * @brief Extract filename and file data from multipart/form-data
+ * @param str_body HTTP request body containing multipart data
+ * @param str_boundary Boundary string from Content-Type header
+ * @param str_filename Output parameter for extracted filename
+ * @param file_data Output parameter for extracted file binary data
+ * @return true if parsing succeeded, false otherwise
+ *
+ * Parses multipart/form-data format (RFC 2388):
+ * 1. Finds boundary markers
+ * 2. Extracts filename from Content-Disposition header
+ * 3. Locates file data between headers and next boundary
+ * 4. Returns binary file data and filename
+ */
 static bool ParseMultipartFile(const std::string& str_body, const std::string& str_boundary,
                                std::string& str_filename, std::vector<uint8_t>& file_data) {
     // Find boundary markers
@@ -187,7 +242,16 @@ static bool ParseMultipartFile(const std::string& str_body, const std::string& s
     return !file_data.empty();
 }
 
-// Generate UUID v4 string
+/**
+ * @brief Generate UUID v4 string
+ * @return UUID v4 string in format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+ *
+ * Generates random UUID version 4 (RFC 4122):
+ * - Uses random device for entropy
+ * - Sets version bits to 0100 (version 4)
+ * - Sets variant bits to 10xx (RFC 4122)
+ * - Returns lowercase hexadecimal UUID string
+ */
 static std::string GenerateUUID() {
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -219,7 +283,15 @@ static std::string GenerateUUID() {
     return ss.str();
 }
 
-// Create directory recursively
+/**
+ * @brief Create directory recursively (like mkdir -p)
+ * @param str_path Directory path to create
+ * @return true if directory exists or was created successfully
+ *
+ * Creates directory and all parent directories as needed.
+ * Uses Unix permissions 0755 (rwxr-xr-x).
+ * Returns true if directory already exists.
+ */
 static bool CreateDirectoryRecursive(const std::string& str_path) {
     if (str_path.empty()) return false;
 
@@ -244,14 +316,38 @@ static bool CreateDirectoryRecursive(const std::string& str_path) {
 
 // ============= CRequestQueue Implementation =============
 
+/**
+ * @brief Constructor - initializes empty queue
+ */
 CRequestQueue::CRequestQueue() : f_shutdown(false) {}
 
+/**
+ * @brief Add request to queue and notify waiting worker
+ * @param request HTTP request to enqueue
+ *
+ * Thread-safe enqueue operation:
+ * 1. Acquire mutex lock
+ * 2. Push request onto queue
+ * 3. Notify one waiting worker thread
+ */
 void CRequestQueue::Enqueue(const CHttpRequest& request) {
     std::lock_guard<std::mutex> lock(cs_queue);
     m_queue.push(request);
     cv_queue.notify_one();
 }
 
+/**
+ * @brief Remove and return request from queue (blocking with timeout)
+ * @param request Output parameter to receive dequeued request
+ * @param n_timeout_ms Maximum wait time in milliseconds
+ * @return true if request dequeued, false on timeout or shutdown
+ *
+ * Thread-safe dequeue with condition variable wait:
+ * 1. Acquire unique lock for condition variable
+ * 2. Wait up to n_timeout_ms for queue to be non-empty
+ * 3. Return false if timeout or shutdown flag set
+ * 4. Pop and return front request if available
+ */
 bool CRequestQueue::Dequeue(CHttpRequest& request, int n_timeout_ms) {
     std::unique_lock<std::mutex> lock(cs_queue);
 
@@ -269,11 +365,21 @@ bool CRequestQueue::Dequeue(CHttpRequest& request, int n_timeout_ms) {
     return true;
 }
 
+/**
+ * @brief Signal shutdown to all waiting threads
+ *
+ * Sets shutdown flag and notifies all waiting worker threads
+ * to exit their dequeue loops.
+ */
 void CRequestQueue::Shutdown() {
     f_shutdown = true;
     cv_queue.notify_all();
 }
 
+/**
+ * @brief Get current queue size (thread-safe)
+ * @return Number of requests in queue
+ */
 size_t CRequestQueue::Size() const {
     std::lock_guard<std::mutex> lock(cs_queue);
     return m_queue.size();
@@ -281,6 +387,17 @@ size_t CRequestQueue::Size() const {
 
 // ============= CRestApiServer Implementation =============
 
+/**
+ * @brief Construct REST API server
+ * @param p_weave Pointer to blockweave instance
+ * @param p_cfg Pointer to configuration object
+ * @param str_miner_addr Mining reward address
+ * @param n_port_num HTTP server port
+ *
+ * Initializes server in stopped state. Reserves space for worker
+ * threads (REST_WORKER_THREADS from settings.h, default 5).
+ * Creates shared request queue for listener/worker coordination.
+ */
 CRestApiServer::CRestApiServer(CBlockweave* p_weave, const CConfig* p_cfg,
                                const std::string& str_miner_addr,
                                int n_port_num)
@@ -291,10 +408,31 @@ CRestApiServer::CRestApiServer(CBlockweave* p_weave, const CConfig* p_cfg,
     m_worker_threads.reserve(REST_WORKER_THREADS);
 }
 
+/**
+ * @brief Destructor - stops server and cleans up resources
+ *
+ * Calls Stop() to ensure all threads are joined and sockets closed.
+ * Safe to call even if server was never started.
+ */
 CRestApiServer::~CRestApiServer() {
     Stop();
 }
 
+/**
+ * @brief Start REST API server
+ * @return true if started successfully, false on error
+ *
+ * Startup sequence:
+ * 1. Create IPv4 TCP socket
+ * 2. Set SO_REUSEADDR option for rapid restart
+ * 3. Bind to INADDR_ANY (all interfaces) on configured port
+ * 4. Start listening with backlog of 10
+ * 5. Set running flags
+ * 6. Start listener thread
+ * 7. Start REST_WORKER_THREADS worker threads (default: 5)
+ *
+ * Returns false if socket creation, bind, or listen fails.
+ */
 bool CRestApiServer::Start() {
     LOG_TRACE("Creating REST API server socket");
 
@@ -349,6 +487,19 @@ bool CRestApiServer::Start() {
     return true;
 }
 
+/**
+ * @brief Stop REST API server
+ *
+ * Shutdown sequence (thread-safe and idempotent):
+ * 1. Check if running (safe to call when stopped)
+ * 2. Set stop flags
+ * 3. Shutdown request queue (unblocks waiting workers)
+ * 4. Close listening socket (unblocks listener)
+ * 5. Join listener thread
+ * 6. Join all worker threads
+ *
+ * Blocks until all threads have terminated.
+ */
 void CRestApiServer::Stop() {
     if (!f_running) return;
 
@@ -379,10 +530,28 @@ void CRestApiServer::Stop() {
     LOG_INFO("REST API server stopped");
 }
 
+/**
+ * @brief Check if server is running
+ * @return true if running, false otherwise
+ *
+ * Thread-safe read of atomic flag.
+ */
 bool CRestApiServer::IsRunning() const {
     return f_running;
 }
 
+/**
+ * @brief Listener thread function - accepts connections and enqueues requests
+ *
+ * Main accept loop:
+ * 1. Accept incoming TCP connection
+ * 2. Read HTTP request from socket (up to 4KB)
+ * 3. Parse request into CHttpRequest structure
+ * 4. Enqueue request for worker processing
+ *
+ * Worker thread will handle response and close socket.
+ * Exits when f_stop_requested is set and socket is closed.
+ */
 void CRestApiServer::ListenerThread() {
     LOG_TRACE("REST API listener thread started");
 
@@ -416,6 +585,18 @@ void CRestApiServer::ListenerThread() {
     LOG_TRACE("REST API listener thread stopped");
 }
 
+/**
+ * @brief Worker thread function - processes requests from queue
+ * @param n_worker_id Worker thread identifier (0-based)
+ *
+ * Processing loop:
+ * 1. Dequeue request from queue (100ms timeout)
+ * 2. Process request and send response
+ * 3. Close client socket
+ * 4. Repeat until shutdown
+ *
+ * Uses short timeout to check f_stop_requested frequently.
+ */
 void CRestApiServer::WorkerThread(int n_worker_id) {
     LOG_TRACE("REST API worker thread " + std::to_string(n_worker_id) + " started");
 

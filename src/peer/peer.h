@@ -10,75 +10,254 @@
 #include <atomic>
 #include <memory>
 
-// Represents a single peer connection
+/**
+ * @struct CPeerConnection
+ * @brief Represents a single P2P network connection
+ *
+ * Encapsulates a TCP socket connection to another blockweave node.
+ * Each connection runs in its own thread for asynchronous communication.
+ * Supports move semantics but not copying (non-copyable due to thread member).
+ *
+ * Features:
+ * - Thread-per-connection model
+ * - Atomic flags for thread-safe status checking
+ * - Move-only semantics for safe transfer of ownership
+ * - Automatic resource cleanup in destructor
+ */
 struct CPeerConnection {
-    int n_socket;                    // Socket file descriptor
-    std::string str_address;         // Peer IP address
-    int n_port;                      // Peer port
-    bool f_connected;                // Connection status
-    std::atomic<bool> f_active;      // Whether connection is active
-    std::thread m_thread;            // Thread handling this connection
+    int n_socket;                    ///< Socket file descriptor (-1 if not connected)
+    std::string str_address;         ///< Peer IP address or hostname
+    int n_port;                      ///< Peer listening port
+    bool f_connected;                ///< Current connection status
+    std::atomic<bool> f_active;      ///< Whether connection thread is active
+    std::thread m_thread;            ///< Thread handling this connection
 
+    /**
+     * @brief Default constructor - creates disconnected peer
+     */
     CPeerConnection();
+
+    /**
+     * @brief Construct peer with address and port
+     * @param str_addr Peer IP address or hostname
+     * @param n_port_num Peer listening port
+     */
     CPeerConnection(const std::string& str_addr, int n_port_num);
+
+    /**
+     * @brief Destructor - closes connection and joins thread
+     */
     ~CPeerConnection();
 
-    // Disable copy constructor and assignment
+    /**
+     * @brief Deleted copy constructor (non-copyable due to thread)
+     */
     CPeerConnection(const CPeerConnection&) = delete;
+
+    /**
+     * @brief Deleted copy assignment (non-copyable due to thread)
+     */
     CPeerConnection& operator=(const CPeerConnection&) = delete;
 
-    // Enable move constructor and assignment
+    /**
+     * @brief Move constructor for transferring ownership
+     * @param other Peer connection to move from
+     */
     CPeerConnection(CPeerConnection&& other) noexcept;
+
+    /**
+     * @brief Move assignment for transferring ownership
+     * @param other Peer connection to move from
+     * @return Reference to this
+     */
     CPeerConnection& operator=(CPeerConnection&& other) noexcept;
 };
 
-// Manages peer-to-peer network connections
+/**
+ * @class CPeerManager
+ * @brief Manages peer-to-peer network connections for blockweave node
+ *
+ * Handles all P2P networking including:
+ * - Listening for inbound connections
+ * - Managing outbound connections to peers
+ * - Thread-safe peer lifecycle management
+ * - Socket configuration (keep-alive, non-blocking)
+ *
+ * Architecture:
+ * - Listener thread accepts incoming connections
+ * - Peer thread manages periodic tasks
+ * - Each connection runs in its own thread
+ * - Mutex-protected peer list for thread safety
+ *
+ * Example usage:
+ *   CPeerManager peer_mgr(1984);
+ *   peer_mgr.Start();
+ *   peer_mgr.AddPeer("192.168.1.100", 1984);
+ *   // ... networking happens in background threads ...
+ *   peer_mgr.Stop();
+ */
 class CPeerManager {
 private:
     // Network configuration
-    int n_listen_port;
-    int n_listen_socket;
+    int n_listen_port;               ///< Port for listening to incoming connections
+    int n_listen_socket;             ///< Server socket file descriptor
 
     // Peer connections
-    std::vector<std::unique_ptr<CPeerConnection>> m_outbound_peers;
-    mutable std::mutex cs_peers;
+    std::vector<std::unique_ptr<CPeerConnection>> m_outbound_peers;  ///< Outbound peer connections
+    mutable std::mutex cs_peers;     ///< Mutex protecting peer list
 
     // Control flags
-    std::atomic<bool> f_running;
-    std::atomic<bool> f_stop_requested;
+    std::atomic<bool> f_running;         ///< Whether peer manager is running
+    std::atomic<bool> f_stop_requested;  ///< Signal to stop all threads
 
     // Threads
-    std::thread m_peer_thread;       // Main peer management thread
-    std::thread m_listener_thread;   // Listens for inbound connections
+    std::thread m_peer_thread;       ///< Main peer management thread
+    std::thread m_listener_thread;   ///< Listens for inbound connections
 
-    // Thread functions
+    /**
+     * @brief Main peer management thread function
+     *
+     * Periodically cleans up disconnected peers and performs
+     * maintenance tasks while manager is running.
+     */
     void PeerThread();
+
+    /**
+     * @brief Listener thread function for accepting connections
+     *
+     * Accepts incoming TCP connections and spawns connection
+     * threads to handle them.
+     */
     void ListenerThread();
+
+    /**
+     * @brief Connection thread function for individual peer
+     * @param p_peer Pointer to peer connection to handle
+     *
+     * Handles communication with a single peer in dedicated thread.
+     * Runs until connection is closed or stop requested.
+     */
     void ConnectionThread(CPeerConnection* p_peer);
 
-    // Connection management
+    /**
+     * @brief Initiate outbound connection to peer
+     * @param str_address Peer IP address or hostname
+     * @param n_port Peer listening port
+     * @return true if connection established, false on error
+     *
+     * Creates socket, connects to peer, and spawns connection thread.
+     */
     bool ConnectToPeer(const std::string& str_address, int n_port);
+
+    /**
+     * @brief Disconnect from peer and cleanup resources
+     * @param p_peer Pointer to peer connection to disconnect
+     *
+     * Closes socket, stops thread, and marks peer inactive.
+     */
     void DisconnectPeer(CPeerConnection* p_peer);
+
+    /**
+     * @brief Remove disconnected peers from peer list
+     *
+     * Thread-safe cleanup of peers that are no longer connected.
+     * Called periodically by peer management thread.
+     */
     void CleanupDisconnectedPeers();
 
-    // Socket utilities
+    /**
+     * @brief Create and bind listening socket
+     * @return true if socket created and bound successfully
+     *
+     * Sets up TCP server socket with SO_REUSEADDR option.
+     */
     bool CreateListenSocket();
+
+    /**
+     * @brief Close listening socket
+     *
+     * Shuts down server socket, causing accept() to fail
+     * and listener thread to exit.
+     */
     void CloseListenSocket();
+
+    /**
+     * @brief Enable TCP keep-alive on socket
+     * @param n_socket Socket file descriptor
+     * @return true if keep-alive enabled successfully
+     *
+     * Configures socket to send periodic keep-alive probes
+     * to detect dead connections.
+     */
     bool SetSocketKeepAlive(int n_socket);
+
+    /**
+     * @brief Set socket blocking/non-blocking mode
+     * @param n_socket Socket file descriptor
+     * @param f_non_blocking true for non-blocking, false for blocking
+     * @return true if mode set successfully
+     */
     bool SetSocketNonBlocking(int n_socket, bool f_non_blocking);
 
 public:
+    /**
+     * @brief Construct peer manager with listening port
+     * @param n_port Port to listen on (default: P2P_PORT from settings.h)
+     */
     CPeerManager(int n_port = P2P_PORT);
+
+    /**
+     * @brief Destructor - stops networking and cleans up resources
+     */
     ~CPeerManager();
 
-    // Control methods
+    /**
+     * @brief Start peer manager and networking threads
+     * @return true if started successfully, false on error
+     *
+     * Creates listening socket and starts listener and peer threads.
+     */
     bool Start();
+
+    /**
+     * @brief Stop peer manager and all networking
+     *
+     * Signals all threads to stop, closes connections, joins threads.
+     * Blocks until all threads have terminated.
+     */
     void Stop();
+
+    /**
+     * @brief Check if peer manager is running
+     * @return true if running, false otherwise
+     */
     bool IsRunning() const;
 
-    // Peer management
+    /**
+     * @brief Add outbound connection to peer
+     * @param str_address Peer IP address or hostname
+     * @param n_port Peer listening port (default: P2P_PORT)
+     * @return true if connection initiated successfully
+     *
+     * Attempts to establish connection to specified peer.
+     * Connection happens asynchronously in background thread.
+     */
     bool AddPeer(const std::string& str_address, int n_port = P2P_PORT);
+
+    /**
+     * @brief Get count of active outbound peer connections
+     * @return Number of outbound peers
+     *
+     * Thread-safe count of peers in outbound peer list.
+     */
     size_t GetOutboundPeerCount() const;
+
+    /**
+     * @brief Get list of connected peer addresses
+     * @return Vector of "address:port" strings for connected peers
+     *
+     * Thread-safe snapshot of currently connected peers.
+     */
     std::vector<std::string> GetConnectedPeers() const;
 };
 
