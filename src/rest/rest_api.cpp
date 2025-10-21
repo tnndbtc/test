@@ -16,6 +16,7 @@
 #include "rest_api.h"
 #include "utils/config.h"
 #include "utils/threadname.h"
+#include "utils/httpcode.h"
 #include "logger/logger.h"
 #include "blockcore/transaction.h"
 #include <iostream>
@@ -688,7 +689,7 @@ void CRestApiServer::ProcessRequest(const CHttpRequest& request) {
     LOG_INFO("Processing request: " + request.str_method + " " + request.str_path);
 
     std::string str_response;
-    int n_status_code = 200;
+    int n_status_code = HTTP_OK;
 
     // Route to appropriate handler based on HTTP method
     if (request.str_method == "GET") {
@@ -699,7 +700,7 @@ void CRestApiServer::ProcessRequest(const CHttpRequest& request) {
     }
     else {
         str_response = "{\"error\": \"Method Not Allowed\"}";
-        n_status_code = 405;
+        n_status_code = HTTP_METHOD_NOT_ALLOWED;
         LOG_ERROR("Unsupported HTTP method: " + request.str_method);
         SendHttpResponse(request.n_client_socket, n_status_code, "application/json", str_response);
         return;
@@ -710,23 +711,23 @@ void CRestApiServer::ProcessRequest(const CHttpRequest& request) {
         // Check for specific error types
         if (str_response.find("Not found") != std::string::npos ||
             str_response.find("not found") != std::string::npos) {
-            n_status_code = 404;  // Not Found
+            n_status_code = HTTP_NOT_FOUND;
         }
         else if (str_response.find("Bad Request") != std::string::npos ||
                  str_response.find("Missing required field") != std::string::npos ||
                  str_response.find("Invalid") != std::string::npos) {
-            n_status_code = 400;  // Bad Request
+            n_status_code = HTTP_BAD_REQUEST;
         }
         else if (str_response.find("Internal Server Error") != std::string::npos ||
                  str_response.find("Internal error") != std::string::npos) {
-            n_status_code = 500;  // Internal Server Error
+            n_status_code = HTTP_INTERNAL_SERVER_ERROR;
         }
         else if (str_response.find("Not implemented") != std::string::npos) {
-            n_status_code = 501;  // Not Implemented
+            n_status_code = HTTP_NOT_IMPLEMENTED;
         }
         else {
             // Generic error - use 500
-            n_status_code = 500;
+            n_status_code = HTTP_INTERNAL_SERVER_ERROR;
         }
         LOG_ERROR("Request failed with status " + std::to_string(n_status_code) + ": " + str_response);
     }
