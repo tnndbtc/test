@@ -178,37 +178,37 @@ private:
 
     /**
      * @brief Handle GET /chain endpoint
-     * @return JSON response with blockchain state
+     * @return Tuple of (HTTP status code, JSON response with blockchain state)
      */
-    std::string HandleGetChain();
+    std::tuple<int, std::string> HandleGetChain();
 
     /**
      * @brief Handle GET /block/:hash endpoint
      * @param str_hash Block hash to retrieve
-     * @return JSON response with block data
+     * @return Tuple of (HTTP status code, JSON response with block data)
      */
-    std::string HandleGetBlock(const std::string& str_hash);
+    std::tuple<int, std::string> HandleGetBlock(const std::string& str_hash);
 
     /**
      * @brief Handle GET /data/:txid endpoint
      * @param str_tx_id Transaction ID to retrieve
-     * @return Transaction data as response body
+     * @return Tuple of (HTTP status code, transaction data as response body)
      */
-    std::string HandleGetData(const std::string& str_tx_id);
+    std::tuple<int, std::string> HandleGetData(const std::string& str_tx_id);
 
     /**
      * @brief Handle POST /transaction endpoint
      * @param str_body Request body containing transaction data
-     * @return JSON response with transaction ID
+     * @return Tuple of (HTTP status code, JSON response with transaction ID)
      */
-    std::string HandlePostTransaction(const std::string& str_body);
+    std::tuple<int, std::string> HandlePostTransaction(const std::string& str_body);
 
     /**
      * @brief Handle POST /files endpoint (multipart/form-data)
      * @param request HTTP request with file upload
-     * @return JSON response with transaction ID
+     * @return Tuple of (HTTP status code, JSON response with transaction ID)
      */
-    std::string HandlePostFiles(const CHttpRequest& request);
+    std::tuple<int, std::string> HandlePostFiles(const CHttpRequest& request);
 
     /**
      * @brief Parse raw HTTP request into structured form
@@ -272,17 +272,17 @@ public:
      * @brief Handle GET request (interface method)
      * @param str_endpoint Endpoint path
      * @param request HTTP request structure
-     * @return Response body
+     * @return Tuple of (HTTP status code, response body)
      */
-    virtual std::string HandleGET(const std::string& str_endpoint, const CHttpRequest& request) override;
+    virtual std::tuple<int, std::string> HandleGET(const std::string& str_endpoint, const CHttpRequest& request) override;
 
     /**
      * @brief Handle POST request (interface method)
      * @param str_endpoint Endpoint path
      * @param request HTTP request structure
-     * @return Response body
+     * @return Tuple of (HTTP status code, response body)
      */
-    virtual std::string HandlePOST(const std::string& str_endpoint, const CHttpRequest& request) override;
+    virtual std::tuple<int, std::string> HandlePOST(const std::string& str_endpoint, const CHttpRequest& request) override;
 };
 
 #endif

@@ -688,54 +688,33 @@ void CRestApiServer::SendHttpResponse(int n_client_socket, int n_status_code,
 void CRestApiServer::ProcessRequest(const CHttpRequest& request) {
     LOG_INFO("Processing request: " + request.str_method + " " + request.str_path);
 
+    int n_status_code;
     std::string str_response;
-    int n_status_code = HTTP_OK;
 
     // Route to appropriate handler based on HTTP method
     if (request.str_method == "GET") {
-        str_response = HandleGET(request.str_path, request);
+        std::tie(n_status_code, str_response) = HandleGET(request.str_path, request);
     }
     else if (request.str_method == "POST") {
-        str_response = HandlePOST(request.str_path, request);
+        std::tie(n_status_code, str_response) = HandlePOST(request.str_path, request);
     }
     else {
-        str_response = "{\"error\": \"Method Not Allowed\"}";
         n_status_code = HTTP_METHOD_NOT_ALLOWED;
+        str_response = "{\"error\": \"Method Not Allowed\"}";
         LOG_ERROR("Unsupported HTTP method: " + request.str_method);
         SendHttpResponse(request.n_client_socket, n_status_code, "application/json", str_response);
         return;
     }
 
-    // Determine HTTP status code based on error type in response
-    if (str_response.find("\"error\"") != std::string::npos) {
-        // Check for specific error types
-        if (str_response.find("Not found") != std::string::npos ||
-            str_response.find("not found") != std::string::npos) {
-            n_status_code = HTTP_NOT_FOUND;
-        }
-        else if (str_response.find("Bad Request") != std::string::npos ||
-                 str_response.find("Missing required field") != std::string::npos ||
-                 str_response.find("Invalid") != std::string::npos) {
-            n_status_code = HTTP_BAD_REQUEST;
-        }
-        else if (str_response.find("Internal Server Error") != std::string::npos ||
-                 str_response.find("Internal error") != std::string::npos) {
-            n_status_code = HTTP_INTERNAL_SERVER_ERROR;
-        }
-        else if (str_response.find("Not implemented") != std::string::npos) {
-            n_status_code = HTTP_NOT_IMPLEMENTED;
-        }
-        else {
-            // Generic error - use 500
-            n_status_code = HTTP_INTERNAL_SERVER_ERROR;
-        }
+    // Log errors if status code indicates failure
+    if (n_status_code >= 400) {
         LOG_ERROR("Request failed with status " + std::to_string(n_status_code) + ": " + str_response);
     }
 
     SendHttpResponse(request.n_client_socket, n_status_code, "application/json", str_response);
 }
 
-std::string CRestApiServer::HandleGetChain() {
+std::tuple<int, std::string> CRestApiServer::HandleGetChain() {
     size_t n_mempool_size = p_blockweave->GetMempoolSize();
     bool f_mining = p_blockweave->IsMiningEnabled();
 
@@ -745,20 +724,20 @@ std::string CRestApiServer::HandleGetChain() {
     oss << "  \"mining_enabled\": " << (f_mining ? "true" : "false") << "\n";
     oss << "}";
 
-    return oss.str();
+    return {HTTP_OK, oss.str()};
 }
 
-std::string CRestApiServer::HandleGetBlock(const std::string& str_hash) {
+std::tuple<int, std::string> CRestApiServer::HandleGetBlock(const std::string& str_hash) {
     // TODO: Implement block retrieval
-    return "{\"error\": \"Not implemented\"}";
+    return {HTTP_NOT_IMPLEMENTED, "{\"error\": \"Not implemented\"}"};
 }
 
-std::string CRestApiServer::HandleGetData(const std::string& str_tx_id) {
+std::tuple<int, std::string> CRestApiServer::HandleGetData(const std::string& str_tx_id) {
     // TODO: Implement data retrieval
-    return "{\"error\": \"Not implemented\"}";
+    return {HTTP_NOT_IMPLEMENTED, "{\"error\": \"Not implemented\"}"};
 }
 
-std::string CRestApiServer::HandlePostTransaction(const std::string& str_body) {
+std::tuple<int, std::string> CRestApiServer::HandlePostTransaction(const std::string& str_body) {
     try {
         // Parse JSON body
         std::string str_data = ExtractJsonValue(str_body, "data");
@@ -766,7 +745,7 @@ std::string CRestApiServer::HandlePostTransaction(const std::string& str_body) {
         // Validate required fields
         if (str_data.empty()) {
             LOG_ERROR("POST /transaction: Missing required field 'data'");
-            return "{\"error\": \"Bad Request\", \"message\": \"Missing required field: data\"}";
+            return {HTTP_BAD_REQUEST, "{\"error\": \"Bad Request\", \"message\": \"Missing required field: data\"}"};
         }
 
         // For now, treat data as plain text (not base64)
@@ -790,14 +769,14 @@ std::string CRestApiServer::HandlePostTransaction(const std::string& str_body) {
         LOG_INFO("Transaction created: " + tx->m_id.GetData().substr(0, 16) + "... (size: " +
                  std::to_string(data.size()) + " bytes)");
 
-        return oss.str();
+        return {HTTP_OK, oss.str()};
     } catch (const std::exception& e) {
         LOG_ERROR("POST /transaction exception: " + std::string(e.what()));
-        return "{\"error\": \"Internal Server Error\", \"message\": \"" + std::string(e.what()) + "\"}";
+        return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Internal Server Error\", \"message\": \"" + std::string(e.what()) + "\"}"};
     }
 }
 
-std::string CRestApiServer::HandlePostFiles(const CHttpRequest& request) {
+std::tuple<int, std::string> CRestApiServer::HandlePostFiles(const CHttpRequest& request) {
     try {
         std::string str_filename;
         std::vector<uint8_t> file_data;
@@ -808,7 +787,7 @@ std::string CRestApiServer::HandlePostFiles(const CHttpRequest& request) {
             size_t n_boundary_pos = request.str_content_type.find("boundary=");
             if (n_boundary_pos == std::string::npos) {
                 LOG_ERROR("POST /files: Missing boundary in multipart/form-data");
-                return "{\"error\": \"Missing boundary in Content-Type\"}";
+                return {HTTP_BAD_REQUEST, "{\"error\": \"Missing boundary in Content-Type\"}"};
             }
 
             std::string str_boundary = request.str_content_type.substr(n_boundary_pos + 9);
@@ -823,7 +802,7 @@ std::string CRestApiServer::HandlePostFiles(const CHttpRequest& request) {
             // Parse multipart data
             if (!ParseMultipartFile(request.str_body, str_boundary, str_filename, file_data)) {
                 LOG_ERROR("POST /files: Failed to parse multipart data");
-                return "{\"error\": \"Failed to parse multipart data\"}";
+                return {HTTP_BAD_REQUEST, "{\"error\": \"Failed to parse multipart data\"}"};
             }
 
             if (str_filename.empty()) {
@@ -839,7 +818,7 @@ std::string CRestApiServer::HandlePostFiles(const CHttpRequest& request) {
 
         if (file_data.empty()) {
             LOG_ERROR("POST /files: Empty file data");
-            return "{\"error\": \"Empty file data\"}";
+            return {HTTP_BAD_REQUEST, "{\"error\": \"Empty file data\"}"};
         }
 
         // Generate UUID for file name
@@ -851,7 +830,7 @@ std::string CRestApiServer::HandlePostFiles(const CHttpRequest& request) {
         // Create data directory if it doesn't exist
         if (!CreateDirectoryRecursive(str_data_dir)) {
             LOG_ERROR("POST /files: Failed to create data directory: " + str_data_dir);
-            return "{\"error\": \"Failed to create data directory\"}";
+            return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Failed to create data directory\"}"};
         }
 
         // Build full file path
@@ -861,7 +840,7 @@ std::string CRestApiServer::HandlePostFiles(const CHttpRequest& request) {
         std::ofstream file(str_file_path, std::ios::binary);
         if (!file.is_open()) {
             LOG_ERROR("POST /files: Failed to open file for writing: " + str_file_path);
-            return "{\"error\": \"Failed to save file\"}";
+            return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Failed to save file\"}"};
         }
 
         file.write(reinterpret_cast<const char*>(file_data.data()), file_data.size());
@@ -869,7 +848,7 @@ std::string CRestApiServer::HandlePostFiles(const CHttpRequest& request) {
 
         if (file.fail()) {
             LOG_ERROR("POST /files: Failed to write file data to: " + str_file_path);
-            return "{\"error\": \"Failed to write file\"}";
+            return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Failed to write file\"}"};
         }
 
         // Create transaction with file data
@@ -900,16 +879,16 @@ std::string CRestApiServer::HandlePostFiles(const CHttpRequest& request) {
                  std::to_string(file_data.size()) + " bytes, TX: " +
                  tx->m_id.GetData().substr(0, 16) + "...)");
 
-        return oss.str();
+        return {HTTP_OK, oss.str()};
     } catch (const std::exception& e) {
         LOG_ERROR("POST /files exception: " + std::string(e.what()));
-        return "{\"error\": \"Internal server error\"}";
+        return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Internal server error\"}"};
     }
 }
 
 // ============= HTTP Method Handlers (Interface Implementation) =============
 
-std::string CRestApiServer::HandleGET(const std::string& str_endpoint, const CHttpRequest& request) {
+std::tuple<int, std::string> CRestApiServer::HandleGET(const std::string& str_endpoint, const CHttpRequest& request) {
     LOG_TRACE("Handling GET request for endpoint: " + str_endpoint);
 
     // Route based on endpoint
@@ -928,11 +907,11 @@ std::string CRestApiServer::HandleGET(const std::string& str_endpoint, const CHt
     }
     else {
         LOG_ERROR("GET endpoint not found: " + str_endpoint);
-        return "{\"error\": \"Not found\"}";
+        return {HTTP_NOT_FOUND, "{\"error\": \"Not found\"}"};
     }
 }
 
-std::string CRestApiServer::HandlePOST(const std::string& str_endpoint, const CHttpRequest& request) {
+std::tuple<int, std::string> CRestApiServer::HandlePOST(const std::string& str_endpoint, const CHttpRequest& request) {
     LOG_INFO("Handling POST request for endpoint: " + str_endpoint);
 
     // Route based on endpoint
@@ -944,6 +923,6 @@ std::string CRestApiServer::HandlePOST(const std::string& str_endpoint, const CH
     }
     else {
         LOG_ERROR("POST endpoint not found: " + str_endpoint);
-        return "{\"error\": \"Not found\"}";
+        return {HTTP_NOT_FOUND, "{\"error\": \"Not found\"}"};
     }
 }

@@ -154,16 +154,16 @@ class P2PTest(TestFramework):
         self.log_info("Step 2: Creating transaction on node0...")
 
         # Transaction data - simple text data for testing
-        # transaction_data = {
-        #     "from": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
-        #     "to": "bc1qw508d6qejxtdg4y5r3zarvaryv98gj9p8t5z6",
-        #     "data": "Test transaction for P2P mining verification",
-        #     "fee": 0.00012
-        # }
-
         transaction_data = {
+            "from": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
+            "to": "bc1qw508d6qejxtdg4y5r3zarvaryv98gj9p8t5z6",
             "data": "Test transaction for P2P mining verification",
+            "fee": 0.00012
         }
+
+        # transaction_data = {
+        #     "data": "Test transaction for P2P mining verification",
+        # }
 
         # Try to POST transaction
         # The endpoint might be /transaction or /tx depending on implementation
