@@ -170,41 +170,34 @@ class P2PTest(TestFramework):
         transaction_submitted = False
         tx_id = None
 
-        for endpoint in ["/transaction"]:
-            try:
-                self.log_info(f"Attempting to submit transaction to {endpoint}...")
-                response = node0.post(endpoint, json_data=transaction_data)
+        # for endpoint in ["/transaction"]:
+        endpoint = "/transaction"
+        try:
+            self.log_info(f"Attempting to submit transaction to {endpoint}...")
+            response = node0.post(endpoint, json_data=transaction_data)
 
-                if response.status_code == 200:
-                    self.log_info(f"Transaction submitted successfully via {endpoint}")
-                    self.log_info(f"Response status: {response.status_code}")
+            if response.status_code == 200:
+                self.log_info(f"Transaction submitted successfully via {endpoint}")
+                self.log_info(f"Response status: {response.status_code}")
 
-                    try:
-                        tx_response = response.json()
-                        self.log_info(f"Transaction response: {tx_response}")
+                try:
+                    tx_response = response.json()
+                    self.log_info(f"Transaction response: {tx_response}")
 
-                        # Extract transaction ID if available
-                        if "tx_id" in tx_response:
-                            tx_id = tx_response["tx_id"]
-                        elif "txid" in tx_response:
-                            tx_id = tx_response["txid"]
-                        elif "transaction_id" in tx_response:
-                            tx_id = tx_response["transaction_id"]
+                    # Extract transaction ID if available
+                    tx_id = tx_response["transaction_id"]
+                    self.log_info(f"Transaction ID: {tx_id}")
 
-                        if tx_id:
-                            self.log_info(f"Transaction ID: {tx_id}")
+                    transaction_submitted = True
+                except Exception as e:
+                    self.log_info(f"Could not parse JSON response: {e}")
+                    self.log_info(f"Response text: {response.text}")
+            else:
+                # Log detailed error information
+                raise Exception("response code: %d, response header: %s, response body: %s" % (response.status_code, dict(response.headers), response.text))
 
-                        transaction_submitted = True
-                        break
-                    except Exception as e:
-                        self.log_info(f"Could not parse JSON response: {e}")
-                        self.log_info(f"Response text: {response.text}")
-                else:
-                    # Log detailed error information
-                    raise Exception("response code: %d, response header: %s, response body: %s" % (response.status_code, dict(response.headers), response.text))
-
-            except Exception as e:
-                self.assert_true(False, f"Error submitting to {endpoint}: {e}")
+        except Exception as e:
+            self.assert_true(False, f"Error submitting to {endpoint}: {e}")
 
         if not transaction_submitted:
             self.log_info("Transaction submission failed on all attempted endpoints")
@@ -237,6 +230,7 @@ class P2PTest(TestFramework):
         poll_interval = 0.5  # seconds
         start_time = time.time()
         block_mined = False
+        current_mempool_size = mempool_size_after_tx  # Initialize to avoid NameError
 
         self.log_info(f"Polling mempool every {poll_interval}s for up to {max_wait_time}s...")
 
@@ -283,6 +277,14 @@ class P2PTest(TestFramework):
                 "Mining test completed (block mining in progress)"
             )
 
+    def cleanup(self):
+        """Cleanup - stop all nodes."""
+        self.log_info("Stopping all nodes...")
+        for i, node in enumerate(self.nodes):
+            if node:
+                self.log_info(f"Stopping node {i}...")
+                node.stop()
+        self.log_info("All nodes stopped")
 
 if __name__ == "__main__":
     test = P2PTest()
