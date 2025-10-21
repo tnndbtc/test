@@ -740,20 +740,43 @@ std::tuple<int, std::string> CRestApiServer::HandleGetData(const std::string& st
 std::tuple<int, std::string> CRestApiServer::HandlePostTransaction(const std::string& str_body) {
     try {
         // Parse JSON body
+        std::string str_from = ExtractJsonValue(str_body, "from");
+        std::string str_to = ExtractJsonValue(str_body, "to");
         std::string str_data = ExtractJsonValue(str_body, "data");
+        std::string str_fee = ExtractJsonValue(str_body, "fee");
 
-        // Validate required fields
+        // Validate required fields: from, to, data
+        if (str_from.empty()) {
+            LOG_ERROR("POST /transaction: Missing required field 'from'");
+            return {HTTP_BAD_REQUEST, "{\"error\": \"Bad Request\", \"message\": \"Missing required field: from\"}"};
+        }
+
+        if (str_to.empty()) {
+            LOG_ERROR("POST /transaction: Missing required field 'to'");
+            return {HTTP_BAD_REQUEST, "{\"error\": \"Bad Request\", \"message\": \"Missing required field: to\"}"};
+        }
+
         if (str_data.empty()) {
             LOG_ERROR("POST /transaction: Missing required field 'data'");
             return {HTTP_BAD_REQUEST, "{\"error\": \"Bad Request\", \"message\": \"Missing required field: data\"}"};
         }
 
+        // Parse fee (optional, default to 0)
+        uint64_t n_fee = 0;
+        if (!str_fee.empty()) {
+            try {
+                n_fee = std::stoull(str_fee);
+            } catch (const std::exception& e) {
+                LOG_ERROR("POST /transaction: Invalid fee value: " + str_fee);
+                return {HTTP_BAD_REQUEST, "{\"error\": \"Bad Request\", \"message\": \"Invalid fee value\"}"};
+            }
+        }
+
         // For now, treat data as plain text (not base64)
         std::vector<uint8_t> data(str_data.begin(), str_data.end());
 
-        // Create transaction with default addresses and zero fee
-        std::string str_default_addr = "default_address";
-        auto tx = std::make_shared<CTransaction>(str_default_addr, str_default_addr, data, 0);
+        // Create transaction with provided addresses and fee
+        auto tx = std::make_shared<CTransaction>(str_from, str_to, data, n_fee);
 
         // Add to mempool
         p_blockweave->AddTransaction(tx);
@@ -763,11 +786,15 @@ std::tuple<int, std::string> CRestApiServer::HandlePostTransaction(const std::st
         oss << "{\n";
         oss << "  \"status\": \"success\",\n";
         oss << "  \"transaction_id\": \"" << tx->m_id.GetData().substr(0, 32) << "...\",\n";
-        oss << "  \"data_size\": " << data.size() << "\n";
+        oss << "  \"from\": \"" << str_from << "\",\n";
+        oss << "  \"to\": \"" << str_to << "\",\n";
+        oss << "  \"data_size\": " << data.size() << ",\n";
+        oss << "  \"fee\": " << n_fee << "\n";
         oss << "}";
 
-        LOG_INFO("Transaction created: " + tx->m_id.GetData().substr(0, 16) + "... (size: " +
-                 std::to_string(data.size()) + " bytes)");
+        LOG_INFO("Transaction created: " + tx->m_id.GetData().substr(0, 16) + "... (from: " +
+                 str_from + ", to: " + str_to + ", size: " + std::to_string(data.size()) +
+                 " bytes, fee: " + std::to_string(n_fee) + ")");
 
         return {HTTP_OK, oss.str()};
     } catch (const std::exception& e) {
