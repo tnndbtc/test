@@ -5,6 +5,7 @@
 #include "blockcore/block.h"
 #include "blockcore/transaction.h"
 #include "utils/hash.h"
+#include "peer/i_peer.h"
 #include <unordered_map>
 #include <vector>
 #include <memory>
@@ -24,6 +25,8 @@ private:
     std::atomic<bool> f_mining_enabled;
     std::atomic<bool> f_stop_mining;
 
+    IPeerManager* p_peer_manager;  ///< Pointer to peer manager for broadcasting (optional)
+
     CHash SelectRecallBlock(int64_t n_current_height);
 
 public:
@@ -41,6 +44,9 @@ public:
     bool IsMiningEnabled() const;
     bool ShouldStopMining() const;
     size_t GetMempoolSize() const;
+
+    // Peer management
+    void SetPeerManager(IPeerManager* p_mgr);
 };
 
 #endif

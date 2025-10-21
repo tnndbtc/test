@@ -158,6 +158,9 @@ int main(int argc, char* argv[]) {
     }
     LOG_INFO("Peer manager started successfully");
 
+    // Connect peer manager to blockweave for transaction broadcasting
+    weave.SetPeerManager(&peer_manager);
+
     // Start mining manager
     LOG_INFO("Starting mining manager");
     CMiningManager mining_manager(&weave, str_miner_address);

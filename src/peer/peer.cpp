@@ -13,6 +13,7 @@
 #include "logger/logger.h"
 #include <iostream>
 #include <cstring>
+#include <cerrno>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -511,7 +512,13 @@ void CPeerManager::ConnectionThread(CPeerConnection* p_peer) {
 
     LOG_INFO("Connection thread started for peer " + p_peer->str_address + ":" + std::to_string(p_peer->n_port));
 
-    // Connection keep-alive loop
+    // Set socket to non-blocking mode for receiving
+    SetSocketNonBlocking(p_peer->n_socket, true);
+
+    // Connection keep-alive loop with message handling
+    char buffer[4096];
+    std::string str_receive_buffer;
+
     while (p_peer->f_active && !f_stop_requested) {
         // Check if socket is still connected
         if (p_peer->n_socket < 0) {
@@ -519,9 +526,43 @@ void CPeerManager::ConnectionThread(CPeerConnection* p_peer) {
             break;
         }
 
-        // TODO: Implement message handling
-        // For now, just keep the connection alive
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        // Try to receive data (non-blocking)
+        ssize_t n_bytes_received = recv(p_peer->n_socket, buffer, sizeof(buffer) - 1, 0);
+
+        if (n_bytes_received > 0) {
+            buffer[n_bytes_received] = '\0';
+            str_receive_buffer += std::string(buffer, n_bytes_received);
+
+            // Process complete messages (terminated by newline)
+            size_t n_newline_pos;
+            while ((n_newline_pos = str_receive_buffer.find('\n')) != std::string::npos) {
+                std::string str_message = str_receive_buffer.substr(0, n_newline_pos);
+                str_receive_buffer.erase(0, n_newline_pos + 1);
+
+                // Handle message
+                if (str_message.rfind("TX_IDS:", 0) == 0) {
+                    // Extract transaction IDs
+                    std::string str_tx_ids = str_message.substr(7);  // Skip "TX_IDS:"
+                    LOG_INFO("Received transaction IDs from peer " + p_peer->str_address + ": " + str_tx_ids);
+                    // TODO: Process transaction IDs (e.g., request full transactions if not in mempool)
+                } else {
+                    LOG_TRACE("Received unknown message from peer " + p_peer->str_address + ": " + str_message);
+                }
+            }
+        } else if (n_bytes_received == 0) {
+            // Connection closed by peer
+            LOG_INFO("Peer closed connection: " + p_peer->str_address);
+            break;
+        } else {
+            // Check for errors (EAGAIN/EWOULDBLOCK is normal for non-blocking sockets)
+            if (errno != EAGAIN && errno != EWOULDBLOCK) {
+                LOG_ERROR("Error receiving from peer " + p_peer->str_address + ": " + std::string(strerror(errno)));
+                break;
+            }
+        }
+
+        // Sleep briefly to avoid busy-waiting
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
     LOG_INFO("Connection thread stopped for peer " + p_peer->str_address);
@@ -716,4 +757,52 @@ std::vector<std::string> CPeerManager::GetConnectedPeers() const {
     }
 
     return peers;
+}
+
+/**
+ * @brief Broadcast transaction IDs to all connected peers
+ * @param transaction_ids Vector of transaction ID strings to broadcast
+ *
+ * Constructs a message containing transaction IDs and sends it to
+ * all active outbound peers. Each send operation is independent,
+ * so failures on one peer don't affect others.
+ *
+ * Message format: "TX_IDS:<id1>,<id2>,...\n"
+ */
+void CPeerManager::BroadcastTransactionIds(const std::vector<std::string>& transaction_ids) {
+    if (transaction_ids.empty()) {
+        return;
+    }
+
+    // Build message
+    std::string str_message = "TX_IDS:";
+    for (size_t n_i = 0; n_i < transaction_ids.size(); n_i++) {
+        if (n_i > 0) {
+            str_message += ",";
+        }
+        str_message += transaction_ids[n_i];
+    }
+    str_message += "\n";
+
+    LOG_INFO("Broadcasting " + std::to_string(transaction_ids.size()) + " transaction IDs to peers");
+
+    // Send to all connected peers
+    std::lock_guard<std::mutex> lock(cs_peers);
+    size_t n_sent_count = 0;
+
+    for (const auto& p_peer : m_outbound_peers) {
+        if (p_peer && p_peer->f_connected && p_peer->n_socket >= 0) {
+            ssize_t n_sent = send(p_peer->n_socket, str_message.c_str(), str_message.length(), 0);
+            if (n_sent > 0) {
+                n_sent_count++;
+                LOG_TRACE("Sent transaction IDs to peer " + p_peer->str_address + ":" +
+                         std::to_string(p_peer->n_port));
+            } else {
+                LOG_ERROR("Failed to send transaction IDs to peer " + p_peer->str_address + ":" +
+                         std::to_string(p_peer->n_port));
+            }
+        }
+    }
+
+    LOG_INFO("Broadcast sent to " + std::to_string(n_sent_count) + " peers");
 }

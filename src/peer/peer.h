@@ -2,6 +2,7 @@
 #ifndef PEER_H
 #define PEER_H
 
+#include "peer/i_peer.h"
 #include "utils/settings.h"
 #include <string>
 #include <vector>
@@ -77,6 +78,8 @@ struct CPeerConnection {
  * @class CPeerManager
  * @brief Manages peer-to-peer network connections for blockweave node
  *
+ * Implements IPeerManager interface to provide P2P networking functionality.
+ *
  * Handles all P2P networking including:
  * - Listening for inbound connections
  * - Managing outbound connections to peers
@@ -96,7 +99,7 @@ struct CPeerConnection {
  *   // ... networking happens in background threads ...
  *   peer_mgr.Stop();
  */
-class CPeerManager {
+class CPeerManager : public IPeerManager {
 private:
     // Network configuration
     int n_listen_port;               ///< Port for listening to incoming connections
@@ -209,7 +212,9 @@ public:
     /**
      * @brief Destructor - stops networking and cleans up resources
      */
-    ~CPeerManager();
+    virtual ~CPeerManager() override;
+
+    // IPeerManager interface implementation
 
     /**
      * @brief Start peer manager and networking threads
@@ -217,7 +222,7 @@ public:
      *
      * Creates listening socket and starts listener and peer threads.
      */
-    bool Start();
+    virtual bool Start() override;
 
     /**
      * @brief Stop peer manager and all networking
@@ -225,13 +230,13 @@ public:
      * Signals all threads to stop, closes connections, joins threads.
      * Blocks until all threads have terminated.
      */
-    void Stop();
+    virtual void Stop() override;
 
     /**
      * @brief Check if peer manager is running
      * @return true if running, false otherwise
      */
-    bool IsRunning() const;
+    virtual bool IsRunning() const override;
 
     /**
      * @brief Add outbound connection to peer
@@ -242,7 +247,7 @@ public:
      * Attempts to establish connection to specified peer.
      * Connection happens asynchronously in background thread.
      */
-    bool AddPeer(const std::string& str_address, int n_port = P2P_PORT);
+    virtual bool AddPeer(const std::string& str_address, int n_port = P2P_PORT) override;
 
     /**
      * @brief Get count of active outbound peer connections
@@ -250,7 +255,7 @@ public:
      *
      * Thread-safe count of peers in outbound peer list.
      */
-    size_t GetOutboundPeerCount() const;
+    virtual size_t GetOutboundPeerCount() const override;
 
     /**
      * @brief Get list of connected peer addresses
@@ -258,7 +263,17 @@ public:
      *
      * Thread-safe snapshot of currently connected peers.
      */
-    std::vector<std::string> GetConnectedPeers() const;
+    virtual std::vector<std::string> GetConnectedPeers() const override;
+
+    /**
+     * @brief Broadcast transaction IDs to all connected peers
+     * @param transaction_ids Vector of transaction ID strings to broadcast
+     *
+     * Sends transaction IDs to all active outbound peers.
+     * Non-blocking operation that sends to each peer independently.
+     * Failed sends are logged but don't affect other peers.
+     */
+    virtual void BroadcastTransactionIds(const std::vector<std::string>& transaction_ids) override;
 };
 
 #endif // PEER_H

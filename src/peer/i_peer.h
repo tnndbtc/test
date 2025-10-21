@@ -1,0 +1,100 @@
+// ============= i_peer.h =============
+#ifndef I_PEER_H
+#define I_PEER_H
+
+#include <string>
+#include <vector>
+
+/**
+ * @interface IPeerManager
+ * @brief Interface for peer-to-peer network management
+ *
+ * Defines the contract that all peer manager implementations must follow.
+ * Provides abstraction layer for P2P networking, allowing different
+ * implementations and easier testing through mocking.
+ *
+ * Key responsibilities:
+ * - Starting/stopping P2P network services
+ * - Managing peer connections
+ * - Broadcasting messages to peers
+ * - Providing network status information
+ *
+ * Example usage:
+ *   IPeerManager* p_peer_mgr = new CPeerManager(1984);
+ *   p_peer_mgr->Start();
+ *   p_peer_mgr->AddPeer("192.168.1.100", 1984);
+ *   p_peer_mgr->BroadcastTransactionIds(tx_ids);
+ *   p_peer_mgr->Stop();
+ *   delete p_peer_mgr;
+ */
+class IPeerManager {
+public:
+    /**
+     * @brief Virtual destructor for proper cleanup
+     */
+    virtual ~IPeerManager() = default;
+
+    /**
+     * @brief Start peer manager and networking threads
+     * @return true if started successfully, false on error
+     *
+     * Initializes the P2P network, creates listening socket,
+     * and starts background threads for peer management.
+     */
+    virtual bool Start() = 0;
+
+    /**
+     * @brief Stop peer manager and all networking
+     *
+     * Signals all threads to stop, closes connections, joins threads.
+     * Blocks until all threads have terminated.
+     */
+    virtual void Stop() = 0;
+
+    /**
+     * @brief Check if peer manager is running
+     * @return true if running, false otherwise
+     *
+     * Thread-safe check of peer manager state.
+     */
+    virtual bool IsRunning() const = 0;
+
+    /**
+     * @brief Add outbound connection to peer
+     * @param str_address Peer IP address or hostname
+     * @param n_port Peer listening port
+     * @return true if connection initiated successfully
+     *
+     * Attempts to establish connection to specified peer.
+     * Connection happens asynchronously in background thread.
+     */
+    virtual bool AddPeer(const std::string& str_address, int n_port) = 0;
+
+    /**
+     * @brief Get count of active outbound peer connections
+     * @return Number of outbound peers
+     *
+     * Thread-safe count of peers in outbound peer list.
+     */
+    virtual size_t GetOutboundPeerCount() const = 0;
+
+    /**
+     * @brief Get list of connected peer addresses
+     * @return Vector of "address:port" strings for connected peers
+     *
+     * Thread-safe snapshot of currently connected peers.
+     */
+    virtual std::vector<std::string> GetConnectedPeers() const = 0;
+
+    /**
+     * @brief Broadcast transaction IDs to all connected peers
+     * @param transaction_ids Vector of transaction ID strings to broadcast
+     *
+     * Sends transaction IDs to all active outbound peers.
+     * Non-blocking operation that sends to each peer independently.
+     * Failed sends are logged but don't affect other peers.
+     */
+    virtual void BroadcastTransactionIds(const std::vector<std::string>& transaction_ids) = 0;
+};
+
+#endif // I_PEER_H

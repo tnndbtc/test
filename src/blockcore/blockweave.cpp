@@ -5,7 +5,7 @@
 #include <random>
 #include <algorithm>
 
-CBlockweave::CBlockweave() : f_mining_enabled(false), f_stop_mining(false) {
+CBlockweave::CBlockweave() : f_mining_enabled(false), f_stop_mining(false), p_peer_manager(nullptr) {
     m_genesis_block = std::make_shared<CBlock>(CHash(), 0, "genesis");
     m_genesis_block->Mine();
 
@@ -36,35 +36,47 @@ void CBlockweave::AddTransaction(std::shared_ptr<CTransaction> tx) {
 }
 
 void CBlockweave::MineBlock(const std::string& str_miner_address) {
-    std::lock_guard<std::mutex> lock(cs_blockweave);
+    std::vector<std::string> transaction_ids;
 
-    if(m_mempool.empty()) {
-        return;
+    {
+        std::lock_guard<std::mutex> lock(cs_blockweave);
+
+        if(m_mempool.empty()) {
+            return;
+        }
+
+        auto new_block = std::make_shared<CBlock>(
+            m_current_block->GetHash(),
+            m_current_block->GetHeight() + 1,
+            str_miner_address
+        );
+
+        size_t n_tx_count = std::min(m_mempool.size(), size_t(10));
+
+        // Collect transaction IDs for broadcasting
+        for(size_t n_i = 0; n_i < n_tx_count; n_i++) {
+            new_block->AddTransaction(m_mempool[n_i]);
+            transaction_ids.push_back(m_mempool[n_i]->m_id.GetData());
+        }
+        m_mempool.erase(m_mempool.begin(), m_mempool.begin() + n_tx_count);
+
+        CHash recall_hash = SelectRecallBlock(new_block->GetHeight());
+        new_block->SetRecallBlock(recall_hash);
+
+        LOG_INFO("Mining block #" + std::to_string(new_block->GetHeight()) + " with " + std::to_string(n_tx_count) + " transactions");
+        new_block->Mine();
+
+        map_blocks[new_block->GetHash().GetData()] = new_block;
+        m_block_hashes.push_back(new_block->GetHash());
+        m_current_block = new_block;
+
+        LOG_INFO("Block #" + std::to_string(new_block->GetHeight()) + " mined successfully, hash: " + new_block->GetHash().GetData().substr(0, 16) + "...");
     }
 
-    auto new_block = std::make_shared<CBlock>(
-        m_current_block->GetHash(),
-        m_current_block->GetHeight() + 1,
-        str_miner_address
-    );
-
-    size_t n_tx_count = std::min(m_mempool.size(), size_t(10));
-    for(size_t n_i = 0; n_i < n_tx_count; n_i++) {
-        new_block->AddTransaction(m_mempool[n_i]);
+    // Broadcast transaction IDs to peers (outside lock to avoid deadlock)
+    if (p_peer_manager != nullptr && !transaction_ids.empty()) {
+        p_peer_manager->BroadcastTransactionIds(transaction_ids);
     }
-    m_mempool.erase(m_mempool.begin(), m_mempool.begin() + n_tx_count);
-
-    CHash recall_hash = SelectRecallBlock(new_block->GetHeight());
-    new_block->SetRecallBlock(recall_hash);
-
-    LOG_INFO("Mining block #" + std::to_string(new_block->GetHeight()) + " with " + std::to_string(n_tx_count) + " transactions");
-    new_block->Mine();
-
-    map_blocks[new_block->GetHash().GetData()] = new_block;
-    m_block_hashes.push_back(new_block->GetHash());
-    m_current_block = new_block;
-
-    LOG_INFO("Block #" + std::to_string(new_block->GetHeight()) + " mined successfully, hash: " + new_block->GetHash().GetData().substr(0, 16) + "...");
 }
 
 std::shared_ptr<CBlock> CBlockweave::GetBlock(const CHash& hash) {
@@ -128,4 +140,11 @@ bool CBlockweave::ShouldStopMining() const {
 size_t CBlockweave::GetMempoolSize() const {
     std::lock_guard<std::mutex> lock(cs_blockweave);
     return m_mempool.size();
+}
+
+void CBlockweave::SetPeerManager(IPeerManager* p_mgr) {
+    p_peer_manager = p_mgr;
+    if (p_peer_manager != nullptr) {
+        LOG_INFO("Peer manager connected to blockweave");
+    }
 }
