@@ -155,11 +155,52 @@ class BlockcoreTest(TestFramework):
                 "Mining test completed (block mining in progress)"
             )
 
+    def test_invalid_transaction(self):
+        """Test that submitting transaction with only data field returns bad request."""
+        self.log_info("%s: Testing invalid transaction submission..." % inspect.currentframe().f_code.co_name)
+
+        # Transaction with only 'data' field (missing required 'from' and 'to')
+        invalid_transaction_data = {
+            "data": "Test transaction with missing fields"
+        }
+
+        endpoint = "/transaction"
+        self.log_info(f"Attempting to submit invalid transaction to {endpoint}...")
+        response = self.node.post(endpoint, json_data=invalid_transaction_data)
+
+        # Should return 400 Bad Request
+        self.assert_equal(
+            response.status_code,
+            400,
+            "POST /transaction with missing 'from' and 'to' returns 400 Bad Request"
+        )
+
+        # Parse error response
+        try:
+            error_data = response.json()
+            self.log_info(f"Error response: {error_data}")
+        except Exception as e:
+            self.assert_true(False, f"Error response is valid JSON (failed: {e})")
+            return
+
+        # Verify error message mentions missing field
+        error_message = error_data.get("message", "")
+        self.assert_true(
+            "from" in error_message.lower() or "to" in error_message.lower(),
+            f"Error message mentions missing 'from' or 'to' field: {error_message}"
+        )
+
+        self.log_info(f"Error message: {error_message}")
+        self.log_info("Invalid transaction correctly rejected")
+
     def run_test(self):
         """Run all blockcore tests."""
         self.log_info("Running blockcore tests...")
 
-        # Test transaction creation and mining
+        # Test invalid transaction (should fail)
+        self.test_invalid_transaction()
+
+        # Test valid transaction creation and mining
         self.test_transaction_and_mining()
 
         self.log_info("Blockcore test completed successfully")
