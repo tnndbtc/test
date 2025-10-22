@@ -574,76 +574,11 @@ void CRestApiServer::ListenerThread() {
             continue;
         }
 
-        // Read request - need to read in chunks and reassemble
-        std::string str_request_data;
-        char buffer[4096] = {0};
-        size_t n_content_length = 0;
-        size_t n_header_end_pos = std::string::npos;
-        bool f_headers_complete = false;
-
-        // Read until we have complete headers and body
-        while (true) {
-            ssize_t n_bytes_read = recv(n_client_socket, buffer, sizeof(buffer) - 1, 0);
-
-            if (n_bytes_read <= 0) {
-                // Connection closed or error
-                if (str_request_data.empty()) {
-                    close(n_client_socket);
-                    break;
-                }
-                // Process whatever we got
-                CHttpRequest request = ParseHttpRequest(str_request_data, n_client_socket);
-                p_request_queue->Enqueue(request);
-                break;
-            }
-
-            buffer[n_bytes_read] = '\0';
-            str_request_data.append(buffer, n_bytes_read);
-
-            // Look for end of headers (double CRLF)
-            if (!f_headers_complete) {
-                n_header_end_pos = str_request_data.find("\r\n\r\n");
-                if (n_header_end_pos != std::string::npos) {
-                    f_headers_complete = true;
-
-                    // Parse Content-Length from headers
-                    size_t n_cl_pos = str_request_data.find("Content-Length:");
-                    if (n_cl_pos == std::string::npos) {
-                        n_cl_pos = str_request_data.find("content-length:");
-                    }
-
-                    if (n_cl_pos != std::string::npos && n_cl_pos < n_header_end_pos) {
-                        size_t n_cl_value_start = n_cl_pos + 15; // Length of "Content-Length:"
-                        size_t n_cl_line_end = str_request_data.find("\r\n", n_cl_value_start);
-                        if (n_cl_line_end != std::string::npos) {
-                            std::string str_cl_value = str_request_data.substr(n_cl_value_start,
-                                                                               n_cl_line_end - n_cl_value_start);
-                            // Trim whitespace
-                            str_cl_value.erase(0, str_cl_value.find_first_not_of(" \t"));
-                            str_cl_value.erase(str_cl_value.find_last_not_of(" \t") + 1);
-                            try {
-                                n_content_length = std::stoull(str_cl_value);
-                            } catch (...) {
-                                n_content_length = 0;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Check if we have the complete request
-            if (f_headers_complete) {
-                size_t n_body_start = n_header_end_pos + 4; // Skip "\r\n\r\n"
-                size_t n_body_received = str_request_data.length() - n_body_start;
-
-                if (n_content_length == 0 || n_body_received >= n_content_length) {
-                    // Complete request received
-                    CHttpRequest request = ParseHttpRequest(str_request_data, n_client_socket);
-                    p_request_queue->Enqueue(request);
-                    break;
-                }
-            }
-        }
+        // Enqueue the client socket for worker threads to handle
+        // Worker threads will read the full request, parse it, process it, and send response
+        CHttpRequest request;
+        request.n_client_socket = n_client_socket;
+        p_request_queue->Enqueue(request);
     }
 
     LOG_TRACE("REST API listener thread stopped");
@@ -670,8 +605,72 @@ void CRestApiServer::WorkerThread(int n_worker_id) {
     while (!f_stop_requested) {
         CHttpRequest request;
         if (p_request_queue->Dequeue(request, 100)) {
-            ProcessRequest(request);
-            close(request.n_client_socket);
+            // Read the full HTTP request from the socket
+            std::string str_request_data;
+            char buffer[4096] = {0};
+            size_t n_content_length = 0;
+            size_t n_header_end_pos = std::string::npos;
+            bool f_headers_complete = false;
+
+            // Read until we have complete headers and body
+            while (true) {
+                ssize_t n_bytes_read = recv(request.n_client_socket, buffer, sizeof(buffer) - 1, 0);
+
+                if (n_bytes_read <= 0) {
+                    // Connection closed or error
+                    LOG_ERROR("Failed to read request from client socket");
+                    close(request.n_client_socket);
+                    break;
+                }
+
+                buffer[n_bytes_read] = '\0';
+                str_request_data.append(buffer, n_bytes_read);
+
+                // Look for end of headers (double CRLF)
+                if (!f_headers_complete) {
+                    n_header_end_pos = str_request_data.find("\r\n\r\n");
+                    if (n_header_end_pos != std::string::npos) {
+                        f_headers_complete = true;
+
+                        // Parse Content-Length from headers
+                        size_t n_cl_pos = str_request_data.find("Content-Length:");
+                        if (n_cl_pos == std::string::npos) {
+                            n_cl_pos = str_request_data.find("content-length:");
+                        }
+
+                        if (n_cl_pos != std::string::npos && n_cl_pos < n_header_end_pos) {
+                            size_t n_cl_value_start = n_cl_pos + 15; // Length of "Content-Length:"
+                            size_t n_cl_line_end = str_request_data.find("\r\n", n_cl_value_start);
+                            if (n_cl_line_end != std::string::npos) {
+                                std::string str_cl_value = str_request_data.substr(n_cl_value_start,
+                                                                                   n_cl_line_end - n_cl_value_start);
+                                // Trim whitespace
+                                str_cl_value.erase(0, str_cl_value.find_first_not_of(" \t"));
+                                str_cl_value.erase(str_cl_value.find_last_not_of(" \t") + 1);
+                                try {
+                                    n_content_length = std::stoull(str_cl_value);
+                                } catch (...) {
+                                    n_content_length = 0;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Check if we have the complete request
+                if (f_headers_complete) {
+                    size_t n_body_start = n_header_end_pos + 4; // Skip "\r\n\r\n"
+                    size_t n_body_received = str_request_data.length() - n_body_start;
+
+                    if (n_content_length == 0 || n_body_received >= n_content_length) {
+                        // Complete request received - parse and process it
+                        CHttpRequest parsed_request = ParseHttpRequest(str_request_data, request.n_client_socket);
+                        ProcessRequest(parsed_request);
+                        close(request.n_client_socket);
+                        break;
+                    }
+                }
+            }
         }
     }
 
