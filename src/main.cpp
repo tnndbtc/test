@@ -16,6 +16,7 @@
 #include <chrono>
 #include <unistd.h>
 #include <limits.h>
+#include <sys/stat.h>
 
 void PrintUsage(const char* program_name) {
     std::cout << "Usage: " << program_name << " [OPTIONS]\n\n";
@@ -135,9 +136,23 @@ int main(int argc, char* argv[]) {
     LOG_INFO("REST API port: " + std::to_string(n_rest_port));
     LOG_INFO("P2P port: " + std::to_string(n_p2p_port));
     LOG_INFO("REST worker threads: " + std::to_string(REST_WORKER_THREADS));
+    LOG_INFO("Data directory: " + str_data_dir);
 
-    CBlockweave weave;
-    LOG_INFO("Blockweave instance created");
+    // Create data directory if it doesn't exist
+    struct stat st;
+    if (stat(str_data_dir.c_str(), &st) != 0) {
+#ifdef PLATFORM_WINDOWS
+        _mkdir(str_data_dir.c_str());
+#else
+        mkdir(str_data_dir.c_str(), 0755);
+#endif
+        LOG_INFO("Created data directory: " + str_data_dir);
+    }
+
+    // Create blockweave with data/blocks subdirectory for block storage
+    std::string str_blocks_dir = str_data_dir + "/blocks";
+    CBlockweave weave(str_blocks_dir);
+    LOG_INFO("Blockweave instance created with block storage at: " + str_blocks_dir);
 
     // Start REST API server (1 listener thread + N worker threads)
     LOG_INFO("Starting REST API server on port " + std::to_string(n_rest_port));

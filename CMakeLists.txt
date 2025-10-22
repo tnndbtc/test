@@ -136,7 +136,7 @@ target_link_libraries(bfpeer
 
 # ============================================================
 # Blockcore Library (libbfblockcore.so / .dylib / .dll)
-# Core blockchain implementation: block, blockweave, transaction, daemon, mining
+# Core blockchain implementation: block, blockweave, transaction, daemon, mining, blockfile
 # ============================================================
 add_library(bfblockcore SHARED
     src/blockcore/block.cpp
@@ -144,6 +144,7 @@ add_library(bfblockcore SHARED
     src/blockcore/transaction.cpp
     src/blockcore/daemon.cpp
     src/blockcore/mining.cpp
+    src/blockcore/blockfile.cpp
 )
 
 set_target_properties(bfblockcore PROPERTIES

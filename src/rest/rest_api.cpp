@@ -738,6 +738,7 @@ std::tuple<int, std::string> CRestApiServer::HandleGetData(const std::string& st
 }
 
 std::tuple<int, std::string> CRestApiServer::HandlePostTransaction(const std::string& str_body) {
+    LOG_INFO("HandlePostTransaction: " + str_body);
     try {
         // Parse JSON body
         std::string str_from = ExtractJsonValue(str_body, "from");
@@ -746,19 +747,9 @@ std::tuple<int, std::string> CRestApiServer::HandlePostTransaction(const std::st
         std::string str_fee = ExtractJsonValue(str_body, "fee");
 
         // Validate required fields: from, to, data
-        if (str_from.empty()) {
-            LOG_ERROR("POST /transaction: Missing required field 'from'");
-            return {HTTP_BAD_REQUEST, "{\"error\": \"Bad Request\", \"message\": \"Missing required field: from\"}"};
-        }
-
-        if (str_to.empty()) {
-            LOG_ERROR("POST /transaction: Missing required field 'to'");
-            return {HTTP_BAD_REQUEST, "{\"error\": \"Bad Request\", \"message\": \"Missing required field: to\"}"};
-        }
-
-        if (str_data.empty()) {
-            LOG_ERROR("POST /transaction: Missing required field 'data'");
-            return {HTTP_BAD_REQUEST, "{\"error\": \"Bad Request\", \"message\": \"Missing required field: data\"}"};
+        if (str_from.empty() || str_to.empty() || str_data.empty()) {
+            LOG_ERROR("POST /transaction: Missing required field 'from', 'to', or 'data'");
+            return {HTTP_BAD_REQUEST, "{\"error\": \"Bad Request\", \"message\": \"Missing required field: from, to, data\"}"};
         }
 
         // Parse fee (optional, default to 0)

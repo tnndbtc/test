@@ -5,15 +5,51 @@
 #include <random>
 #include <algorithm>
 
-CBlockweave::CBlockweave() : f_mining_enabled(false), f_stop_mining(false), p_peer_manager(nullptr) {
-    m_genesis_block = std::make_shared<CBlock>(CHash(), 0, "genesis");
-    m_genesis_block->Mine();
+CBlockweave::CBlockweave() : CBlockweave("data/blocks") {
+}
 
-    map_blocks[m_genesis_block->GetHash().GetData()] = m_genesis_block;
-    m_block_hashes.push_back(m_genesis_block->GetHash());
-    m_current_block = m_genesis_block;
+CBlockweave::CBlockweave(const std::string& str_data_dir)
+    : f_mining_enabled(false), f_stop_mining(false), p_peer_manager(nullptr),
+      m_p_blockfile(std::make_unique<CBlockFile>(str_data_dir)) {
 
-    LOG_TRACE("Genesis block created!\n" + m_genesis_block->ToString());
+    // Try to load genesis block from disk first
+    // We don't know the genesis hash yet (it depends on random mining nonce)
+    // So we use GetGenesisBlock() which scans the index for a block at height 0
+    auto p_loaded_genesis = m_p_blockfile ? m_p_blockfile->GetGenesisBlock() : nullptr;
+
+    if (p_loaded_genesis) {
+        // Found existing genesis on disk
+        LOG_INFO("Existing blockchain detected, loading genesis from disk...");
+        m_genesis_block = p_loaded_genesis;
+        LOG_INFO("Genesis block loaded: " + m_genesis_block->GetHash().GetData().substr(0, 16) + "...");
+
+        // Add genesis to in-memory structures
+        map_blocks[m_genesis_block->GetHash().GetData()] = m_genesis_block;
+        m_block_hashes.push_back(m_genesis_block->GetHash());
+        m_current_block = m_genesis_block;
+
+        // Note: We're only loading genesis for now
+        // A full implementation would load the entire chain and rebuild state
+        // For now, blocks will be loaded on-demand via GetBlock()
+
+        LOG_INFO("Blockchain state loaded from disk");
+    } else {
+        // Genesis doesn't exist, create and mine a new one
+        LOG_INFO("No existing blockchain found, creating new genesis block");
+
+        m_genesis_block = std::make_shared<CBlock>(CHash(), 0, "genesis");
+        m_genesis_block->Mine();
+
+        if (m_p_blockfile) {
+            m_p_blockfile->SaveBlock(m_genesis_block);
+        }
+
+        map_blocks[m_genesis_block->GetHash().GetData()] = m_genesis_block;
+        m_block_hashes.push_back(m_genesis_block->GetHash());
+        m_current_block = m_genesis_block;
+
+        LOG_TRACE("Genesis block created!\n" + m_genesis_block->ToString());
+    }
 }
 
 CHash CBlockweave::SelectRecallBlock(int64_t n_current_height) {
@@ -70,6 +106,11 @@ void CBlockweave::MineBlock(const std::string& str_miner_address) {
         m_block_hashes.push_back(new_block->GetHash());
         m_current_block = new_block;
 
+        // Save block to disk
+        if (m_p_blockfile) {
+            m_p_blockfile->SaveBlock(new_block);
+        }
+
         LOG_INFO("Block #" + std::to_string(new_block->GetHeight()) + " mined successfully, hash: " + new_block->GetHash().GetData().substr(0, 16) + "...");
     }
 
@@ -85,6 +126,18 @@ std::shared_ptr<CBlock> CBlockweave::GetBlock(const CHash& hash) {
     if(it != map_blocks.end()) {
         return it->second;
     }
+
+    // Block not in memory, try loading from disk
+    if (m_p_blockfile && m_p_blockfile->BlockExists(hash)) {
+        LOG_TRACE("Loading block from disk: " + hash.GetData().substr(0, 16) + "...");
+        auto p_block = m_p_blockfile->LoadBlock(hash);
+        if (p_block) {
+            // Cache in memory for future access
+            map_blocks[hash.GetData()] = p_block;
+            return p_block;
+        }
+    }
+
     return nullptr;
 }
 
