@@ -625,10 +625,17 @@ bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
     // Start connection thread
     p_peer->m_thread = std::thread(&CPeerManager::ConnectionThread, this, p_peer.get());
 
-    // Add to outbound peers list
+    // Replace the placeholder (nullptr) in the outbound peers list with the actual peer
+    // The placeholder was added by AddPeer() to reserve the slot
     {
         std::lock_guard<std::mutex> lock(cs_peers);
-        m_outbound_peers.push_back(std::move(p_peer));
+        // Find the first nullptr (placeholder) and replace it
+        for (auto& p : m_outbound_peers) {
+            if (p == nullptr) {
+                p = std::move(p_peer);
+                break;
+            }
+        }
     }
 
     LOG_INFO("Successfully connected to peer " + str_address + ":" + std::to_string(n_port));
@@ -705,7 +712,9 @@ void CPeerManager::CleanupDisconnectedPeers() {
  * occurs asynchronously in background thread.
  */
 bool CPeerManager::AddPeer(const std::string& str_address, int n_port) {
-    // Check if we've reached max outbound peers
+    // Check if we've reached max outbound peers and reserve a slot
+    // We need to do this atomically to prevent race conditions where
+    // multiple threads could pass the size check simultaneously
     {
         std::lock_guard<std::mutex> lock(cs_peers);
         if (m_outbound_peers.size() >= MAX_OUTBOUND_PEERS) {
@@ -720,9 +729,28 @@ bool CPeerManager::AddPeer(const std::string& str_address, int n_port) {
                 return false;
             }
         }
+
+        // Reserve a slot by adding a placeholder (nullptr)
+        // This prevents other threads from exceeding MAX_OUTBOUND_PEERS
+        // while we perform the blocking connection operation
+        m_outbound_peers.push_back(nullptr);
     }
 
-    return ConnectToPeer(str_address, n_port);
+    // Perform blocking connection outside the lock
+    bool f_success = ConnectToPeer(str_address, n_port);
+
+    if (!f_success) {
+        // Connection failed, remove the placeholder we added
+        std::lock_guard<std::mutex> lock(cs_peers);
+        // Remove the last nullptr entry (our placeholder)
+        m_outbound_peers.erase(
+            std::remove_if(m_outbound_peers.begin(), m_outbound_peers.end(),
+                [](const std::unique_ptr<CPeerConnection>& p) { return p == nullptr; }),
+            m_outbound_peers.end()
+        );
+    }
+
+    return f_success;
 }
 
 /**
@@ -786,21 +814,37 @@ void CPeerManager::BroadcastTransactionIds(const std::vector<std::string>& trans
 
     LOG_INFO("Broadcasting " + std::to_string(transaction_ids.size()) + " transaction IDs to peers");
 
-    // Send to all connected peers
-    std::lock_guard<std::mutex> lock(cs_peers);
+    // Copy socket descriptors and peer info while holding the lock
+    // This prevents blocking I/O operations from holding the mutex
+    struct PeerInfo {
+        int n_socket;
+        std::string str_peer_address;
+    };
+    std::vector<PeerInfo> peer_sockets;
+
+    {
+        std::lock_guard<std::mutex> lock(cs_peers);
+        for (const auto& p_peer : m_outbound_peers) {
+            if (p_peer && p_peer->f_connected && p_peer->n_socket >= 0) {
+                peer_sockets.push_back({
+                    p_peer->n_socket,
+                    p_peer->str_address + ":" + std::to_string(p_peer->n_port)
+                });
+            }
+        }
+    }
+
+    // Send to all peers without holding the lock
+    // This prevents slow/blocked sockets from blocking other operations
     size_t n_sent_count = 0;
 
-    for (const auto& p_peer : m_outbound_peers) {
-        if (p_peer && p_peer->f_connected && p_peer->n_socket >= 0) {
-            ssize_t n_sent = send(p_peer->n_socket, str_message.c_str(), str_message.length(), 0);
-            if (n_sent > 0) {
-                n_sent_count++;
-                LOG_TRACE("Sent transaction IDs to peer " + p_peer->str_address + ":" +
-                         std::to_string(p_peer->n_port));
-            } else {
-                LOG_ERROR("Failed to send transaction IDs to peer " + p_peer->str_address + ":" +
-                         std::to_string(p_peer->n_port));
-            }
+    for (const auto& peer_info : peer_sockets) {
+        ssize_t n_sent = send(peer_info.n_socket, str_message.c_str(), str_message.length(), 0);
+        if (n_sent > 0) {
+            n_sent_count++;
+            LOG_TRACE("Sent transaction IDs to peer " + peer_info.str_peer_address);
+        } else {
+            LOG_ERROR("Failed to send transaction IDs to peer " + peer_info.str_peer_address);
         }
     }
 

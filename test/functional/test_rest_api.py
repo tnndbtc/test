@@ -11,7 +11,7 @@ import json
 from test_framework import TestFramework, BlockweaveNode
 
 
-class ChainTest(TestFramework):
+class RestTest(TestFramework):
     """Test the /chain REST API endpoint."""
 
     def setup(self):
@@ -186,5 +186,5 @@ class ChainTest(TestFramework):
 
 
 if __name__ == "__main__":
-    test = ChainTest()
+    test = RestTest()
     sys.exit(test.main())
