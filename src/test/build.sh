@@ -42,6 +42,9 @@ REQUIRED_LIBS=(
     "libbfpeer.${LIB_EXT}"
     "libbflogger.${LIB_EXT}"
     "libbfthreadname.${LIB_EXT}"
+    "libbfblockcore.${LIB_EXT}"
+    "libbfrest.${LIB_EXT}"
+    "libbfutils.${LIB_EXT}"
 )
 
 echo "Checking for required libraries in: $BUILD_DIR"
@@ -71,7 +74,7 @@ if [ "$LIBS_EXIST" = false ]; then
 
     # Build the libraries
     echo "Building libraries..."
-    make bfthreadname bflogger bfpeer
+    make bfthreadname bflogger bfpeer bfutils bfblockcore bfrest
     echo ""
 
     # Verify libraries were built
@@ -113,24 +116,29 @@ cmake ..
 echo ""
 
 # Build test executable
-echo "Building test_peer..."
+echo "Building test executable..."
 make
 echo ""
 
 # Check if test executable was created
-if [ -f "test_peer" ]; then
+if [ -f "test_all" ]; then
     echo "========================================"
     echo "✓ Build successful!"
     echo "========================================"
     echo ""
-    echo "Test executable: $TEST_BUILD_DIR/test_peer"
+    echo "Test executable created: $TEST_BUILD_DIR/test_all"
     echo ""
-    echo "To run the tests:"
+    echo "Test modules included:"
+    echo "  - test_peer.cpp (Peer networking - 12 tests)"
+    echo "  - test_rest.cpp (REST API - 15 tests)"
+    echo "  Total: 27 tests"
+    echo ""
+    echo "To run all tests:"
     echo "  cd $TEST_BUILD_DIR"
-    echo "  ./test_peer"
+    echo "  ./test_all"
     echo ""
     echo "Or run directly:"
-    echo "  $TEST_BUILD_DIR/test_peer"
+    echo "  $TEST_BUILD_DIR/test_all"
     echo ""
 else
     echo "========================================"

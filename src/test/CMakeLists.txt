@@ -47,6 +47,9 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         "${BUILD_DIR}/libbfpeer.${LIB_EXT}"
         "${BUILD_DIR}/libbflogger.${LIB_EXT}"
         "${BUILD_DIR}/libbfthreadname.${LIB_EXT}"
+        "${BUILD_DIR}/libbfblockcore.${LIB_EXT}"
+        "${BUILD_DIR}/libbfrest.${LIB_EXT}"
+        "${BUILD_DIR}/libbfutils.${LIB_EXT}"
     )
 
     set(LIBS_MISSING FALSE)
@@ -82,11 +85,18 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     # Link directories for shared libraries
     link_directories(${BUILD_DIR})
 
-    # Define the test executable
-    add_executable(test_peer test_peer.cpp)
+    # Define the unified test executable (includes all test modules)
+    add_executable(test_all
+        test_all.cpp
+        test_peer.cpp
+        test_rest.cpp
+    )
 
-    # Link with libraries from parent build
-    target_link_libraries(test_peer
+    # Link with all required libraries from parent build
+    target_link_libraries(test_all
+        PRIVATE ${BUILD_DIR}/libbfrest.${LIB_EXT}
+        PRIVATE ${BUILD_DIR}/libbfblockcore.${LIB_EXT}
+        PRIVATE ${BUILD_DIR}/libbfutils.${LIB_EXT}
         PRIVATE ${BUILD_DIR}/libbfpeer.${LIB_EXT}
         PRIVATE ${BUILD_DIR}/libbflogger.${LIB_EXT}
         PRIVATE ${BUILD_DIR}/libbfthreadname.${LIB_EXT}
@@ -95,14 +105,14 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
     # Set rpath to find libraries
     if(APPLE)
-        set_target_properties(test_peer PROPERTIES
+        set_target_properties(test_all PROPERTIES
             BUILD_WITH_INSTALL_RPATH FALSE
             BUILD_RPATH "${BUILD_DIR}"
             INSTALL_RPATH "@executable_path/../../build;@executable_path/../lib"
             INSTALL_RPATH_USE_LINK_PATH TRUE
         )
     elseif(UNIX)
-        set_target_properties(test_peer PROPERTIES
+        set_target_properties(test_all PROPERTIES
             BUILD_WITH_INSTALL_RPATH FALSE
             BUILD_RPATH "${BUILD_DIR}"
             INSTALL_RPATH "\$ORIGIN/../../build:\$ORIGIN/../lib"
@@ -117,11 +127,18 @@ else()
     # Include current directory for unit_test.h
     include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-    # Define the test executable
-    add_executable(test_peer test_peer.cpp)
+    # Define the unified test executable (includes all test modules)
+    add_executable(test_all
+        test_all.cpp
+        test_peer.cpp
+        test_rest.cpp
+    )
 
-    # Link with libraries (already defined in parent)
-    target_link_libraries(test_peer
+    # Link with all required libraries (already defined in parent)
+    target_link_libraries(test_all
+        PRIVATE bfrest
+        PRIVATE bfblockcore
+        PRIVATE bfutils
         PRIVATE bfpeer
         PRIVATE bflogger
         PRIVATE bfthreadname
@@ -129,19 +146,19 @@ else()
 
     # Platform-specific thread linking
     if(NOT WIN32)
-        target_link_libraries(test_peer PRIVATE Threads::Threads)
+        target_link_libraries(test_all PRIVATE Threads::Threads)
     endif()
 
     # Set rpath (same as parent project settings)
     if(APPLE)
-        set_target_properties(test_peer PROPERTIES
+        set_target_properties(test_all PROPERTIES
             BUILD_WITH_INSTALL_RPATH FALSE
             BUILD_RPATH "${CMAKE_BINARY_DIR}"
             INSTALL_RPATH "@executable_path/../lib;${CMAKE_INSTALL_PREFIX}/lib"
             INSTALL_RPATH_USE_LINK_PATH TRUE
         )
     elseif(UNIX)
-        set_target_properties(test_peer PROPERTIES
+        set_target_properties(test_all PROPERTIES
             BUILD_WITH_INSTALL_RPATH FALSE
             BUILD_RPATH "${CMAKE_BINARY_DIR}"
             INSTALL_RPATH "\$ORIGIN/../lib:${CMAKE_INSTALL_PREFIX}/lib"
@@ -152,16 +169,17 @@ endif()
 
 # Platform-specific compile options
 if(MSVC)
-    target_compile_options(test_peer PRIVATE /W4)
+    target_compile_options(test_all PRIVATE /W4)
 else()
-    target_compile_options(test_peer PRIVATE -Wall -Wextra -pedantic)
+    target_compile_options(test_all PRIVATE -Wall -Wextra -pedantic)
 endif()
 
 # Windows-specific settings
 if(WIN32)
-    target_compile_definitions(test_peer PRIVATE _WIN32_WINNT=0x0601)
+    target_compile_definitions(test_all PRIVATE _WIN32_WINNT=0x0601)
 endif()
 
 # Print build information
-message(STATUS "Unit test executable: test_peer")
-message(STATUS "Test source: ${CMAKE_CURRENT_SOURCE_DIR}/test_peer.cpp")
+message(STATUS "Unit test executable: test_all")
+message(STATUS "Test sources: ${CMAKE_CURRENT_SOURCE_DIR}/test_all.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_peer.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_rest.cpp")
+message(STATUS "Total tests: 27 (12 peer + 15 REST API)")

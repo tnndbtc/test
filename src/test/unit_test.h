@@ -97,13 +97,33 @@ inline void RegisterTest(const std::string& name, std::function<void()> test_fun
     GetTests().push_back({name, test_func});
 }
 
-// Run all registered tests
-inline int RunAllTests() {
+// Check if test name matches filter
+inline bool MatchesFilter(const std::string& test_name, const std::string& filter) {
+    if (filter.empty()) {
+        return true;  // No filter, match all
+    }
+    // Simple substring match
+    return test_name.find(filter) != std::string::npos;
+}
+
+// Run all registered tests, optionally filtered by name pattern
+inline int RunAllTests(const std::string& filter = "") {
     std::cout << "======================================================================\n";
-    std::cout << "Running Unit Tests\n";
+    std::cout << "Running Unit Tests";
+    if (!filter.empty()) {
+        std::cout << " (filter: \"" << filter << "\")";
+    }
+    std::cout << "\n";
     std::cout << "======================================================================\n\n";
 
+    int skipped = 0;
+
     for (const auto& test : GetTests()) {
+        if (!MatchesFilter(test.name, filter)) {
+            skipped++;
+            continue;
+        }
+
         g_stats.total++;
         std::cout << "Running: " << test.name << " ... ";
 
@@ -128,6 +148,9 @@ inline int RunAllTests() {
     std::cout << "Total:  " << g_stats.total << "\n";
     std::cout << "Passed: \033[32m" << g_stats.passed << "\033[0m\n";
     std::cout << "Failed: \033[31m" << g_stats.failed << "\033[0m\n";
+    if (skipped > 0) {
+        std::cout << "Skipped: " << skipped << "\n";
+    }
     std::cout << "======================================================================\n";
 
     if (g_stats.failed == 0) {
@@ -137,6 +160,19 @@ inline int RunAllTests() {
         std::cout << "\n\033[31m✗ SOME TESTS FAILED\033[0m\n\n";
         return 1;
     }
+}
+
+// List all registered tests
+inline void ListAllTests() {
+    std::cout << "======================================================================\n";
+    std::cout << "Available Tests (" << GetTests().size() << " total)\n";
+    std::cout << "======================================================================\n";
+
+    for (const auto& test : GetTests()) {
+        std::cout << "  " << test.name << "\n";
+    }
+
+    std::cout << "======================================================================\n";
 }
 
 // Helper macro for test registration

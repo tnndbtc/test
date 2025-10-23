@@ -221,7 +221,3 @@ TEST(PeerConnection_AtomicFlag) {
     ASSERT_TRUE(read_count > 1000, "Should have made many atomic reads");
 }
 
-// Main function to run all tests
-int main() {
-    return UnitTest::RunAllTests();
-}

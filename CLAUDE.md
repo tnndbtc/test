@@ -322,17 +322,25 @@ src/
 │   └── wallet_main.cpp         # Wallet generator executable
 ├── logger/
 │   └── logger.cpp, logger.h    # Logging system
-└── utils/
-    ├── hash.cpp, hash.h        # SHA-256 hash wrapper
-    ├── config.h                # Config header (implementation in cli/)
-    ├── threadname.cpp, threadname.h # Thread naming utilities
-    └── settings.h              # Global configuration constants
+├── utils/
+│   ├── hash.cpp, hash.h        # SHA-256 hash wrapper
+│   ├── config.h                # Config header (implementation in cli/)
+│   ├── threadname.cpp, threadname.h # Thread naming utilities
+│   └── settings.h              # Global configuration constants
+└── test/
+    ├── unit_test.h             # Custom C++ unit test framework
+    ├── test_all.cpp            # Main entry point - runs all tests (34 lines)
+    ├── test_peer.cpp           # Unit tests for peer module (224 lines, 12 tests)
+    ├── test_rest.cpp           # Unit tests for REST API (352 lines, 15 tests)
+    ├── build.sh                # Standalone build script for unit tests
+    ├── CMakeLists.txt          # Build configuration for unit tests
+    └── README.md               # Unit testing documentation
 
 test/
 └── functional/
     ├── test_framework.py       # Test framework for functional tests
     ├── test_runner.py          # Test runner utility
-    ├── test_chain.py           # Example functional test
+    ├── test_rest_api.py        # REST API functional test
     └── README.md               # Functional testing documentation
 
 blockweave.conf                 # Configuration file (copied to build/ during build)
@@ -410,3 +418,137 @@ daemon=false
 1. Values specified in `blockweave.conf` take precedence
 2. If not specified, defaults from `src/utils/settings.h` are used
 3. The config file is automatically copied from project root to `build/` directory during build
+
+## Unit Testing
+
+The project includes comprehensive C++ unit tests for core modules located in `src/test/`. These tests verify functionality, thread safety, and edge case handling.
+
+### Test Framework
+
+The tests use a custom lightweight C++ unit test framework (`unit_test.h`) with:
+- **Test registration**: `TEST(test_name)` macro for automatic test registration
+- **Assertions**: `ASSERT_TRUE`, `ASSERT_FALSE`, `ASSERT_EQUAL`, `ASSERT_NOT_EQUAL`, `ASSERT_NULL`, `ASSERT_NOT_NULL`
+- **Test runner**: `RunAllTests()` with color-coded console output
+- **Zero dependencies**: No external testing libraries required
+
+### Test Executable
+
+All tests are combined into a single executable `test_all` (27 tests total):
+
+**test_peer.cpp** (12 tests) - Peer networking module:
+- Constructor tests (default, parameterized, move)
+- Thread-safe concurrent access tests (10 threads querying simultaneously)
+- Broadcast functionality with edge cases (empty lists, no peers)
+- Atomic flag operations
+- Lifecycle management (start/stop, multiple cycles)
+
+**test_rest.cpp** (15 tests) - REST API module:
+- HTTP request structure initialization
+- Request queue operations (FIFO, timeout, shutdown)
+- Thread-safe producer/consumer patterns (5 producers + 5 consumers)
+- REST API server lifecycle management
+- Destructor cleanup verification
+
+**test_all.cpp** - Main entry point that runs all registered tests from both modules
+
+### Building Unit Tests
+
+**Method 1: Using the build script (recommended)**
+```bash
+cd src/test
+chmod +x build.sh
+./build.sh
+```
+
+The script automatically:
+- Checks for required libraries
+- Builds missing dependencies if needed
+- Compiles both test executables
+- Displays test locations and run instructions
+
+**Method 2: Manual standalone build**
+```bash
+# Build required libraries first
+cd build
+cmake ..
+make bfthreadname bflogger bfpeer bfutils bfblockcore bfrest
+
+# Build tests
+cd ../src/test
+mkdir -p build
+cd build
+cmake ..
+make
+
+# Run tests
+./test_all
+```
+
+**Method 3: As part of main project** (if test targets added to root CMakeLists.txt)
+```bash
+cd build
+cmake ..
+make test_all
+```
+
+### Running Unit Tests
+
+```bash
+cd src/test/build
+
+# Run all tests (27 total)
+./test_all
+```
+
+### Test Output
+
+Successful test run displays:
+```
+======================================================================
+Blockweave Unit Test Suite
+======================================================================
+Test modules:
+  - test_peer.cpp (Peer networking - 12 tests)
+  - test_rest.cpp (REST API - 15 tests)
+======================================================================
+
+======================================================================
+Running Unit Tests
+======================================================================
+
+Running: TestName1 ... ✓ PASSED
+Running: TestName2 ... ✓ PASSED
+...
+
+======================================================================
+TEST SUMMARY
+======================================================================
+Total:  27
+Passed: 27
+Failed: 0
+======================================================================
+
+✓ ALL TESTS PASSED
+```
+
+Failed tests show detailed assertion failures with file/line information.
+
+### Test Organization
+
+- **unit_test.h** - Custom test framework (158 lines)
+- **test_all.cpp** - Main entry point (34 lines)
+- **test_peer.cpp** - Peer module tests (224 lines, 12 tests)
+- **test_rest.cpp** - REST API tests (352 lines, 15 tests)
+- **build.sh** - Automated build script (151 lines)
+- **CMakeLists.txt** - Build configuration supporting standalone and integrated builds
+- **README.md** - Detailed testing documentation
+
+### Thread Safety Testing
+
+Many tests verify concurrent access patterns:
+- Multiple threads (5-10) performing operations simultaneously
+- Producer/consumer queue patterns
+- Atomic flag read/write operations
+- No race conditions, deadlocks, or data corruption
+
+See `src/test/README.md` for complete testing documentation.
