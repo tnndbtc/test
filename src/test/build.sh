@@ -4,6 +4,11 @@
 #
 # This script builds the unit tests in standalone mode.
 # It ensures the main project libraries are built first.
+#
+# Automatic setup:
+# - If ../../build doesn't exist, runs ./configure to set up the project
+# - If libraries are missing, builds them automatically
+# - Then builds and links the test executable
 
 set -e  # Exit on error
 
@@ -17,16 +22,6 @@ echo "Building Blockweave Unit Tests"
 echo "========================================"
 echo ""
 
-# Check if main project build directory exists
-if [ ! -d "$BUILD_DIR" ]; then
-    echo "Error: Main project build directory not found: $BUILD_DIR"
-    echo "Please create it first:"
-    echo "  cd $PROJECT_ROOT"
-    echo "  mkdir -p build"
-    echo "  cd build"
-    exit 1
-fi
-
 # Determine library extension based on OS
 if [[ "$OSTYPE" == "darwin"* ]]; then
     LIB_EXT="dylib"
@@ -34,6 +29,35 @@ elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
     LIB_EXT="dll"
 else
     LIB_EXT="so"
+fi
+
+# Check if main project build directory exists
+if [ ! -d "$BUILD_DIR" ]; then
+    echo "Build directory not found: $BUILD_DIR"
+    echo "Setting up main project..."
+    echo ""
+
+    # Check if configure script exists
+    if [ ! -f "$PROJECT_ROOT/configure" ]; then
+        echo "Error: configure script not found at $PROJECT_ROOT/configure"
+        echo "Please ensure you are in the correct project directory."
+        exit 1
+    fi
+
+    # Run configure script
+    echo "Running configure script..."
+    cd "$PROJECT_ROOT"
+    ./configure --generator="Unix Makefiles"
+    echo ""
+
+    # Check if build directory was created
+    if [ ! -d "$BUILD_DIR" ]; then
+        echo "Error: configure script did not create build directory"
+        exit 1
+    fi
+
+    echo "✓ Project configured successfully"
+    echo ""
 fi
 
 # Check if required libraries exist
@@ -63,21 +87,32 @@ if [ "$LIBS_EXIST" = false ]; then
     echo "Required libraries not found. Building main project..."
     echo ""
 
+    # Navigate to build directory
     cd "$BUILD_DIR"
 
-    # Run cmake if Makefile doesn't exist
+    # Check if Makefile exists, if not run cmake
     if [ ! -f "Makefile" ]; then
-        echo "Running cmake..."
+        echo "Running cmake to generate build files..."
         cmake ..
+        if [ $? -ne 0 ]; then
+            echo "Error: cmake configuration failed"
+            exit 1
+        fi
         echo ""
     fi
 
-    # Build the libraries
-    echo "Building libraries..."
+    # Build the required libraries
+    echo "Building libraries (this may take a few minutes)..."
     make bfthreadname bflogger bfpeer bfutils bfblockcore bfrest
+
+    if [ $? -ne 0 ]; then
+        echo ""
+        echo "Error: Build failed. Please check the error messages above."
+        exit 1
+    fi
     echo ""
 
-    # Verify libraries were built
+    # Verify libraries were built successfully
     LIBS_EXIST=true
     for lib in "${REQUIRED_LIBS[@]}"; do
         if [ ! -f "$BUILD_DIR/$lib" ]; then
