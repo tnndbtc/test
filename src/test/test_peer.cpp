@@ -86,6 +86,7 @@ TEST(PeerManager_ThreadSafe_GetOutboundPeerCount) {
         threads.emplace_back([&manager, &query_count, &stop_flag]() {
             while (!stop_flag) {
                 size_t count = manager.GetOutboundPeerCount();
+                (void)count; // Suppress unused warning
                 query_count++;
                 std::this_thread::sleep_for(std::chrono::microseconds(10));
             }

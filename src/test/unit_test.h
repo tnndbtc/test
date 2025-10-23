@@ -83,6 +83,7 @@ public:
 // Test case structure
 struct TestCase {
     std::string name;
+    std::string file;
     std::function<void()> test_func;
 };
 
@@ -93,17 +94,45 @@ inline std::vector<TestCase>& GetTests() {
 }
 
 // Register a test
-inline void RegisterTest(const std::string& name, std::function<void()> test_func) {
-    GetTests().push_back({name, test_func});
+inline void RegisterTest(const std::string& name, const std::string& file, std::function<void()> test_func) {
+    GetTests().push_back({name, file, test_func});
 }
 
-// Check if test name matches filter
-inline bool MatchesFilter(const std::string& test_name, const std::string& filter) {
+// Convert string to lowercase
+inline std::string ToLower(const std::string& str) {
+    std::string result = str;
+    for (char& c : result) {
+        c = std::tolower(static_cast<unsigned char>(c));
+    }
+    return result;
+}
+
+// Check if test file matches filter
+inline bool MatchesFilter(const std::string& test_file, const std::string& filter) {
     if (filter.empty()) {
         return true;  // No filter, match all
     }
-    // Simple substring match
-    return test_name.find(filter) != std::string::npos;
+
+    // Convert both to lowercase for case-insensitive matching
+    std::string lower_file = ToLower(test_file);
+    std::string lower_filter = ToLower(filter);
+
+    // Remove .cpp extension from file for matching
+    std::string file_base = lower_file;
+    if (file_base.length() > 4 && file_base.substr(file_base.length() - 4) == ".cpp") {
+        file_base = file_base.substr(0, file_base.length() - 4);
+    }
+
+    // Add .cpp to filter if not present
+    std::string filter_with_ext = lower_filter;
+    if (filter_with_ext.length() <= 4 || filter_with_ext.substr(filter_with_ext.length() - 4) != ".cpp") {
+        filter_with_ext += ".cpp";
+    }
+
+    // Match: filter matches file with or without .cpp extension
+    return (lower_file == lower_filter ||
+            lower_file == filter_with_ext ||
+            file_base == lower_filter);
 }
 
 // Run all registered tests, optionally filtered by name pattern
@@ -117,11 +146,23 @@ inline int RunAllTests(const std::string& filter = "") {
     std::cout << "======================================================================\n\n";
 
     int skipped = 0;
+    std::string current_file;
 
     for (const auto& test : GetTests()) {
-        if (!MatchesFilter(test.name, filter)) {
+        if (!MatchesFilter(test.file, filter)) {
             skipped++;
             continue;
+        }
+
+        // Print file header when entering a new test file
+        if (test.file != current_file) {
+            if (!current_file.empty()) {
+                std::cout << "\n";  // Add spacing between files
+            }
+            current_file = test.file;
+            std::cout << "----------------------------------------------------------------------\n";
+            std::cout << "Test File: " << current_file << "\n";
+            std::cout << "----------------------------------------------------------------------\n";
         }
 
         g_stats.total++;
@@ -168,11 +209,27 @@ inline void ListAllTests() {
     std::cout << "Available Tests (" << GetTests().size() << " total)\n";
     std::cout << "======================================================================\n";
 
+    std::string current_file;
     for (const auto& test : GetTests()) {
+        // Print file header when entering a new test file
+        if (test.file != current_file) {
+            current_file = test.file;
+            std::cout << "\n" << current_file << ":\n";
+        }
         std::cout << "  " << test.name << "\n";
     }
 
-    std::cout << "======================================================================\n";
+    std::cout << "\n======================================================================\n";
+}
+
+// Extract filename from full path
+inline std::string ExtractFilename(const char* path) {
+    std::string str_path(path);
+    size_t pos = str_path.find_last_of("/\\");
+    if (pos != std::string::npos) {
+        return str_path.substr(pos + 1);
+    }
+    return str_path;
 }
 
 // Helper macro for test registration
@@ -181,7 +238,7 @@ inline void ListAllTests() {
     namespace { \
         struct TestRegistrar_##test_name { \
             TestRegistrar_##test_name() { \
-                UnitTest::RegisterTest(#test_name, test_##test_name); \
+                UnitTest::RegisterTest(#test_name, UnitTest::ExtractFilename(__FILE__), test_##test_name); \
             } \
         }; \
         static TestRegistrar_##test_name g_registrar_##test_name; \

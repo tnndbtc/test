@@ -14,9 +14,9 @@
  * Total: 27 unit tests
  *
  * Command-line options:
- * - --run_test=<filter>  : Run only tests matching filter (substring match)
- * - --list               : List all available tests
- * - --help               : Show usage information
+ * - --run_test=<file>  : Run only tests from specific test file (e.g., test_peer)
+ * - --list             : List all available tests
+ * - --help             : Show usage information
  */
 
 #include "unit_test.h"
@@ -44,20 +44,18 @@ std::string ParseArgument(const char* arg, const char* prefix) {
 void ShowUsage(const char* program_name) {
     std::cout << "Usage: " << program_name << " [options]\n\n";
     std::cout << "Options:\n";
-    std::cout << "  --run_test=<filter>   Run only tests matching filter (substring match)\n";
+    std::cout << "  --run_test=<file>     Run tests from specific test file\n";
     std::cout << "  --list                List all available tests\n";
     std::cout << "  --help                Show this help message\n\n";
     std::cout << "Examples:\n";
-    std::cout << "  " << program_name << "                      # Run all tests\n";
-    std::cout << "  " << program_name << " --run_test=Peer     # Run all peer tests\n";
-    std::cout << "  " << program_name << " --run_test=Rest     # Run all REST API tests\n";
-    std::cout << "  " << program_name << " --run_test=Queue    # Run all RequestQueue tests\n";
-    std::cout << "  " << program_name << " --list              # List all tests\n\n";
-    std::cout << "Test modules:\n";
+    std::cout << "  " << program_name << "                        # Run all tests\n";
+    std::cout << "  " << program_name << " --run_test=test_peer  # Run tests from test_peer.cpp\n";
+    std::cout << "  " << program_name << " --run_test=test_rest  # Run tests from test_rest.cpp\n";
+    std::cout << "  " << program_name << " --run_test=peer       # Also matches test_peer.cpp\n";
+    std::cout << "  " << program_name << " --list                # List all tests\n\n";
+    std::cout << "Test files:\n";
     std::cout << "  - test_peer.cpp (Peer networking - 12 tests)\n";
-    std::cout << "    Patterns: PeerConnection_, PeerManager_\n";
     std::cout << "  - test_rest.cpp (REST API - 15 tests)\n";
-    std::cout << "    Patterns: HttpRequest_, RequestQueue_, RestApiServer_\n";
 }
 
 /**
@@ -68,9 +66,10 @@ void ShowUsage(const char* program_name) {
  *
  * Tests are automatically registered via the TEST() macro in each
  * test file. The RunAllTests() function executes all registered tests
- * and displays results with color-coded output.
+ * and displays results with color-coded output grouped by test file.
  *
- * Supports command-line filtering to run specific test subsets.
+ * Supports command-line filtering to run tests from specific files
+ * (e.g., --run_test=test_peer runs only test_peer.cpp tests).
  */
 int main(int argc, char* argv[]) {
     std::string filter;
