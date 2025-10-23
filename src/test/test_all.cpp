@@ -4,13 +4,14 @@
  * @brief Main entry point for all unit tests
  *
  * This file combines all unit test modules into a single executable.
- * Individual test files (test_peer.cpp, test_rest.cpp, test_blockcore.cpp)
- * contain the actual test implementations and are compiled together with this file.
+ * Individual test files contain the actual test implementations and are compiled
+ * together with this file.
  *
  * Test modules included:
- * - test_peer.cpp      - Peer networking module tests (10 tests)
- * - test_rest.cpp      - REST API module tests (15 tests)
- * - test_blockcore.cpp - Block/Transaction/Wallet tests (22 tests)
+ * - test_peer.cpp          - Peer networking module tests (10 tests)
+ * - test_request_queue.cpp - Request queue module tests (10 tests)
+ * - test_api_server.cpp    - REST API server module tests (5 tests)
+ * - test_blockcore.cpp     - Block/Transaction/Wallet tests (22 tests)
  *
  * Total: 47 unit tests
  *
@@ -49,15 +50,16 @@ void ShowUsage(const char* program_name) {
     std::cout << "  --list                List all available tests\n";
     std::cout << "  --help                Show this help message\n\n";
     std::cout << "Examples:\n";
-    std::cout << "  " << program_name << "                        # Run all tests\n";
-    std::cout << "  " << program_name << " --run_test=test_peer  # Run tests from test_peer.cpp\n";
-    std::cout << "  " << program_name << " --run_test=test_rest  # Run tests from test_rest.cpp\n";
-    std::cout << "  " << program_name << " --run_test=peer       # Also matches test_peer.cpp\n";
-    std::cout << "  " << program_name << " --list                # List all tests\n\n";
+    std::cout << "  " << program_name << "                               # Run all tests\n";
+    std::cout << "  " << program_name << " --run_test=test_peer         # Run tests from test_peer.cpp\n";
+    std::cout << "  " << program_name << " --run_test=test_request_queue# Run tests from test_request_queue.cpp\n";
+    std::cout << "  " << program_name << " --run_test=peer              # Also matches test_peer.cpp\n";
+    std::cout << "  " << program_name << " --list                       # List all tests\n\n";
     std::cout << "Test files:\n";
-    std::cout << "  - test_peer.cpp      (Peer networking - 10 tests)\n";
-    std::cout << "  - test_rest.cpp      (REST API - 15 tests)\n";
-    std::cout << "  - test_blockcore.cpp (Block/Transaction/Wallet - 22 tests)\n";
+    std::cout << "  - test_peer.cpp          (Peer networking - 10 tests)\n";
+    std::cout << "  - test_request_queue.cpp (Request queue - 10 tests)\n";
+    std::cout << "  - test_api_server.cpp    (API server - 5 tests)\n";
+    std::cout << "  - test_blockcore.cpp     (Block/Transaction/Wallet - 22 tests)\n";
 }
 
 /**
@@ -106,9 +108,10 @@ int main(int argc, char* argv[]) {
         std::cout << "Blockweave Unit Test Suite\n";
         std::cout << "======================================================================\n";
         std::cout << "Test modules:\n";
-        std::cout << "  - test_peer.cpp      (Peer networking - 10 tests)\n";
-        std::cout << "  - test_rest.cpp      (REST API - 15 tests)\n";
-        std::cout << "  - test_blockcore.cpp (Block/Transaction/Wallet - 22 tests)\n";
+        std::cout << "  - test_peer.cpp          (Peer networking - 10 tests)\n";
+        std::cout << "  - test_request_queue.cpp (Request queue - 10 tests)\n";
+        std::cout << "  - test_api_server.cpp    (API server - 5 tests)\n";
+        std::cout << "  - test_blockcore.cpp     (Block/Transaction/Wallet - 22 tests)\n";
         std::cout << "======================================================================\n\n";
 
         UnitTest::ListAllTests();
@@ -120,9 +123,10 @@ int main(int argc, char* argv[]) {
     std::cout << "Blockweave Unit Test Suite\n";
     std::cout << "======================================================================\n";
     std::cout << "Test modules:\n";
-    std::cout << "  - test_peer.cpp      (Peer networking - 12 tests)\n";
-    std::cout << "  - test_rest.cpp      (REST API - 15 tests)\n";
-    std::cout << "  - test_blockcore.cpp (Block/Transaction/Wallet - 22 tests)\n";
+    std::cout << "  - test_peer.cpp          (Peer networking - 10 tests)\n";
+    std::cout << "  - test_request_queue.cpp (Request queue - 10 tests)\n";
+    std::cout << "  - test_api_server.cpp    (API server - 5 tests)\n";
+    std::cout << "  - test_blockcore.cpp     (Block/Transaction/Wallet - 22 tests)\n";
     std::cout << "======================================================================\n\n";
 
     return UnitTest::RunAllTests(filter);

@@ -93,6 +93,8 @@ TEST(PeerManager_ThreadSafe_GetOutboundPeerCount) {
     for (int i = 0; i < 10; i++) {
         threads.emplace_back([&manager, &query_count, &stop_flag]() {
             while (!stop_flag) {
+                size_t count = manager.GetOutboundPeerCount();
+                ASSERT_EQUAL(count, 0, "Outbound peer should be 0");
                 query_count++;
                 std::this_thread::sleep_for(std::chrono::microseconds(10));
             }

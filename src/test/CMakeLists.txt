@@ -89,7 +89,8 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     add_executable(test_all
         test_all.cpp
         test_peer.cpp
-        test_rest.cpp
+        test_request_queue.cpp
+        test_api_server.cpp
         test_blockcore.cpp
         ${PROJECT_ROOT}/src/wallet/wallet.cpp
     )
@@ -133,7 +134,8 @@ else()
     add_executable(test_all
         test_all.cpp
         test_peer.cpp
-        test_rest.cpp
+        test_request_queue.cpp
+        test_api_server.cpp
         test_blockcore.cpp
         ../wallet/wallet.cpp
     )
@@ -185,5 +187,5 @@ endif()
 
 # Print build information
 message(STATUS "Unit test executable: test_all")
-message(STATUS "Test sources: ${CMAKE_CURRENT_SOURCE_DIR}/test_all.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_peer.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_rest.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_blockcore.cpp")
-message(STATUS "Total tests: 47 (10 peer + 15 REST API + 22 block/transaction)")
+message(STATUS "Test sources: ${CMAKE_CURRENT_SOURCE_DIR}/test_all.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_peer.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_request_queue.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_api_server.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_blockcore.cpp")
+message(STATUS "Total tests: 47 (10 peer + 10 request queue + 5 API server + 22 block/transaction)")
