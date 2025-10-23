@@ -13,7 +13,6 @@ class CBlock {
 private:
     CHash m_hash;
     CHash m_previous_block;
-    CHash m_recall_block;
     int64_t m_n_height;
     int64_t m_n_timestamp;
     std::vector<std::shared_ptr<CTransaction>> m_transactions;
@@ -29,13 +28,11 @@ public:
     void AddTransaction(std::shared_ptr<CTransaction> tx);
 
     // Block mining
-    void SetRecallBlock(const CHash& recall);
     void Mine();
 
     // Getters
     const CHash& GetHash() const { return m_hash; }
     const CHash& GetPreviousBlock() const { return m_previous_block; }
-    const CHash& GetRecallBlock() const { return m_recall_block; }
     int64_t GetHeight() const { return m_n_height; }
     int64_t GetTimestamp() const { return m_n_timestamp; }
     const std::vector<std::shared_ptr<CTransaction>>& GetTransactions() const { return m_transactions; }

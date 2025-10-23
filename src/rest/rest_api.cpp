@@ -107,9 +107,11 @@ static const std::string base64_chars =
  * @param c Character to check
  * @return true if valid Base64 character
  */
+/*
 static bool IsBase64(unsigned char c) {
     return (std::isalnum(c) || (c == '+') || (c == '/'));
 }
+*/
 
 /**
  * @brief Decode Base64 string to binary data
@@ -120,6 +122,7 @@ static bool IsBase64(unsigned char c) {
  * Handles padding ('=') characters correctly.
  * Returns empty vector if decoding fails.
  */
+/*
 static std::vector<uint8_t> DecodeBase64(const std::string& str_encoded) {
     std::vector<uint8_t> decoded;
     int n_in_len = str_encoded.size();
@@ -167,6 +170,7 @@ static std::vector<uint8_t> DecodeBase64(const std::string& str_encoded) {
 
     return decoded;
 }
+*/
 
 /**
  * @brief Extract filename and file data from multipart/form-data
@@ -751,7 +755,7 @@ void CRestApiServer::ProcessRequest(const CHttpRequest& request) {
 
     // Route to appropriate handler based on HTTP method
     if (request.str_method == "GET") {
-        std::tie(n_status_code, str_response) = HandleGET(request.str_path, request);
+        std::tie(n_status_code, str_response) = HandleGET(request.str_path);
     }
     else if (request.str_method == "POST") {
         std::tie(n_status_code, str_response) = HandlePOST(request.str_path, request);
@@ -964,8 +968,8 @@ std::tuple<int, std::string> CRestApiServer::HandlePostFiles(const CHttpRequest&
 
 // ============= HTTP Method Handlers (Interface Implementation) =============
 
-std::tuple<int, std::string> CRestApiServer::HandleGET(const std::string& str_endpoint, const CHttpRequest& request) {
-    LOG_TRACE("Handling GET request for endpoint: " + str_endpoint);
+std::tuple<int, std::string> CRestApiServer::HandleGET(const std::string& str_endpoint) {
+    LOG_INFO("Handling GET request for endpoint: " + str_endpoint);
 
     // Route based on endpoint
     if (str_endpoint == "/chain") {

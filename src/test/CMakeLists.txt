@@ -90,7 +90,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         test_all.cpp
         test_peer.cpp
         test_rest.cpp
-        test_blockfile.cpp
+        test_blockcore.cpp
         ${PROJECT_ROOT}/src/wallet/wallet.cpp
     )
 
@@ -134,7 +134,7 @@ else()
         test_all.cpp
         test_peer.cpp
         test_rest.cpp
-        test_blockfile.cpp
+        test_blockcore.cpp
         ../wallet/wallet.cpp
     )
 
@@ -185,5 +185,5 @@ endif()
 
 # Print build information
 message(STATUS "Unit test executable: test_all")
-message(STATUS "Test sources: ${CMAKE_CURRENT_SOURCE_DIR}/test_all.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_peer.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_rest.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_blockfile.cpp")
-message(STATUS "Total tests: 49 (12 peer + 15 REST API + 22 block/transaction)")
+message(STATUS "Test sources: ${CMAKE_CURRENT_SOURCE_DIR}/test_all.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_peer.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_rest.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_blockcore.cpp")
+message(STATUS "Total tests: 47 (10 peer + 15 REST API + 22 block/transaction)")

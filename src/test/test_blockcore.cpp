@@ -1,4 +1,4 @@
-// ============= test_blockfile.cpp =============
+// ============= test_blockcore.cpp =============
 #include "unit_test.h"
 #include "blockcore/block.h"
 #include "blockcore/blockweave.h"
@@ -29,13 +29,8 @@ TEST(Block_Constructor) {
  */
 TEST(Block_HashComputation) {
     CHash previous_hash("previous");
-    CHash recall_hash("recall");
     CBlock block1(previous_hash, 1, "miner1");
     CBlock block2(previous_hash, 2, "miner1");
-
-    // Set recall block for both
-    block1.SetRecallBlock(recall_hash);
-    block2.SetRecallBlock(recall_hash);
 
     // Mine both blocks to compute their hashes
     block1.Mine();
@@ -65,19 +60,6 @@ TEST(Block_WithTransactions) {
     block.AddTransaction(tx2);
 
     ASSERT_EQUAL(block.GetTransactions().size(), (size_t)2, "Block should have 2 transactions");
-}
-
-/**
- * @brief Test CBlock recall block
- */
-TEST(Block_RecallBlock) {
-    CHash previous_hash("previous");
-    CHash recall_hash("recall_block_hash");
-    CBlock block(previous_hash, 5, "miner");
-
-    block.SetRecallBlock(recall_hash);
-
-    ASSERT_EQUAL(block.GetRecallBlock().GetData(), recall_hash.GetData(), "Recall block should be set");
 }
 
 /**

@@ -52,22 +52,6 @@ CBlockweave::CBlockweave(const std::string& str_data_dir)
     }
 }
 
-CHash CBlockweave::SelectRecallBlock(int64_t n_current_height) {
-    // NOTE: Caller must hold cs_blockweave lock before calling this method
-    // This method accesses m_block_hashes which requires mutex protection
-
-    if(n_current_height <= 1) {
-        return m_genesis_block->GetHash();
-    }
-
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dis(0, m_block_hashes.size() - 1);
-
-    int n_recall_index = dis(gen);
-    return m_block_hashes[n_recall_index];
-}
-
 void CBlockweave::AddTransaction(std::shared_ptr<CTransaction> tx) {
     std::lock_guard<std::mutex> lock(cs_blockweave);
     m_mempool.push_back(tx);
@@ -98,9 +82,6 @@ void CBlockweave::MineBlock(const std::string& str_miner_address) {
             transaction_ids.push_back(m_mempool[n_i]->m_id.GetData());
         }
         m_mempool.erase(m_mempool.begin(), m_mempool.begin() + n_tx_count);
-
-        CHash recall_hash = SelectRecallBlock(new_block->GetHeight());
-        new_block->SetRecallBlock(recall_hash);
 
         LOG_INFO("Mining block #" + std::to_string(new_block->GetHeight()) + " with " + std::to_string(n_tx_count) + " transactions");
         new_block->Mine();

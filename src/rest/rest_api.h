@@ -271,10 +271,9 @@ public:
     /**
      * @brief Handle GET request (interface method)
      * @param str_endpoint Endpoint path
-     * @param request HTTP request structure
      * @return Tuple of (HTTP status code, response body)
      */
-    virtual std::tuple<int, std::string> HandleGET(const std::string& str_endpoint, const CHttpRequest& request) override;
+    virtual std::tuple<int, std::string> HandleGET(const std::string& str_endpoint) override;
 
     /**
      * @brief Handle POST request (interface method)

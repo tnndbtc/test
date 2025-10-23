@@ -356,11 +356,6 @@ bool CBlockFile::SaveBlock(const std::shared_ptr<CBlock>& p_block) {
         return false;
     }
 
-    if (!WriteHash(ofs, p_block->GetRecallBlock())) {
-        LOG_ERROR("Failed to write recall block hash");
-        return false;
-    }
-
     int64_t n_height = p_block->GetHeight();
     ofs.write(reinterpret_cast<const char*>(&n_height), sizeof(n_height));
 
@@ -456,7 +451,6 @@ std::shared_ptr<CBlock> CBlockFile::LoadBlock(const CHash& hash) {
     // Read block data
     CHash block_hash = ReadHash(ifs);
     CHash previous_hash = ReadHash(ifs);
-    CHash recall_hash = ReadHash(ifs);
 
     int64_t n_height = 0;
     ifs.read(reinterpret_cast<char*>(&n_height), sizeof(n_height));
@@ -483,7 +477,6 @@ std::shared_ptr<CBlock> CBlockFile::LoadBlock(const CHash& hash) {
 
     // Create block
     auto p_block = std::make_shared<CBlock>(previous_hash, n_height, str_miner);
-    p_block->SetRecallBlock(recall_hash);
 
     // Read and add transactions
     for (uint32_t n_i = 0; n_i < n_tx_count; n_i++) {
@@ -513,7 +506,6 @@ std::shared_ptr<CBlock> CBlockFile::GetGenesisBlock() {
     std::lock_guard<std::mutex> lock(cs_blockfile);
 
     for (const auto& pair : map_block_index) {
-        const std::string& str_hash = pair.first;
         const CBlockIndex& index = pair.second;
 
         // Load the block to check its height
@@ -542,9 +534,6 @@ std::shared_ptr<CBlock> CBlockFile::GetGenesisBlock() {
         // Read previous block hash
         CHash prev_hash = ReadHash(ifs);
 
-        // Read recall block hash
-        CHash recall_hash = ReadHash(ifs);
-
         // Read height
         int64_t n_height = 0;
         ifs.read(reinterpret_cast<char*>(&n_height), sizeof(n_height));
@@ -564,7 +553,6 @@ std::shared_ptr<CBlock> CBlockFile::GetGenesisBlock() {
             // Read full block
             block_hash = ReadHash(ifs);
             prev_hash = ReadHash(ifs);
-            recall_hash = ReadHash(ifs);
             ifs.read(reinterpret_cast<char*>(&n_height), sizeof(n_height));
 
             int64_t n_timestamp = 0;

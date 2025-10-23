@@ -29,9 +29,8 @@ public:
     // Handle HTTP GET request
     // Parameters:
     //   str_endpoint - The URL path (e.g., "/chain", "/block")
-    //   request - The full HTTP request object
     // Returns: Tuple of (HTTP status code, JSON response string)
-    virtual std::tuple<int, std::string> HandleGET(const std::string& str_endpoint, const CHttpRequest& request) = 0;
+    virtual std::tuple<int, std::string> HandleGET(const std::string& str_endpoint) = 0;
 
     // Handle HTTP POST request
     // Parameters:

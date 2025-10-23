@@ -16,12 +16,8 @@ void CBlock::AddTransaction(std::shared_ptr<CTransaction> tx) {
     m_n_cumulative_data_size += tx->m_n_data_size;
 }
 
-void CBlock::SetRecallBlock(const CHash& recall) {
-    m_recall_block = recall;
-}
-
 void CBlock::Mine() {
-    std::string str_block_data = m_previous_block.GetData() + m_recall_block.GetData() +
+    std::string str_block_data = m_previous_block.GetData() +
                                  std::to_string(m_n_height) + std::to_string(m_n_timestamp);
 
     for(const auto& tx : m_transactions) {
@@ -47,7 +43,6 @@ std::string CBlock::ToString() const {
     ss << "Block #" << m_n_height << "\n"
        << "  Hash: " << m_hash.GetData().substr(0, 16) << "...\n"
        << "  Previous: " << m_previous_block.GetData().substr(0, 16) << "...\n"
-       << "  Recall: " << m_recall_block.GetData().substr(0, 16) << "...\n"
        << "  Miner: " << m_str_miner << "\n"
        << "  Transactions: " << m_transactions.size() << "\n"
        << "  Data Size: " << m_n_cumulative_data_size << " bytes\n"
