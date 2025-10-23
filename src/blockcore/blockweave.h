@@ -29,6 +29,12 @@ private:
     IPeerManager* p_peer_manager;  ///< Pointer to peer manager for broadcasting (optional)
     std::unique_ptr<CBlockFile> m_p_blockfile;  ///< Block file manager for persistent storage
 
+    /**
+     * @brief Select a random historical block for proof-of-access
+     * @param n_current_height Current block height
+     * @return Hash of randomly selected recall block
+     * @note Caller must hold cs_blockweave lock (accesses m_block_hashes)
+     */
     CHash SelectRecallBlock(int64_t n_current_height);
 
 public:

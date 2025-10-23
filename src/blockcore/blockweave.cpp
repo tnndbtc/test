@@ -53,6 +53,9 @@ CBlockweave::CBlockweave(const std::string& str_data_dir)
 }
 
 CHash CBlockweave::SelectRecallBlock(int64_t n_current_height) {
+    // NOTE: Caller must hold cs_blockweave lock before calling this method
+    // This method accesses m_block_hashes which requires mutex protection
+
     if(n_current_height <= 1) {
         return m_genesis_block->GetHash();
     }
