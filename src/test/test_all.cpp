@@ -11,7 +11,8 @@
  * - test_peer.cpp          - Peer networking module tests (10 tests)
  * - test_request_queue.cpp - Request queue module tests (10 tests)
  * - test_api_server.cpp    - REST API server module tests (5 tests)
- * - test_blockcore.cpp     - Block/Transaction/Wallet tests (22 tests)
+ * - test_block.cpp         - Block module tests (4 tests)
+ * - test_blockcore.cpp     - Blockweave/Transaction/Wallet/Hash tests (18 tests)
  *
  * Total: 47 unit tests
  *
@@ -59,7 +60,8 @@ void ShowUsage(const char* program_name) {
     std::cout << "  - test_peer.cpp          (Peer networking - 10 tests)\n";
     std::cout << "  - test_request_queue.cpp (Request queue - 10 tests)\n";
     std::cout << "  - test_api_server.cpp    (API server - 5 tests)\n";
-    std::cout << "  - test_blockcore.cpp     (Block/Transaction/Wallet - 22 tests)\n";
+    std::cout << "  - test_block.cpp         (Block - 4 tests)\n";
+    std::cout << "  - test_blockcore.cpp     (Blockweave/Transaction/Wallet/Hash - 18 tests)\n";
 }
 
 /**
@@ -111,7 +113,8 @@ int main(int argc, char* argv[]) {
         std::cout << "  - test_peer.cpp          (Peer networking - 10 tests)\n";
         std::cout << "  - test_request_queue.cpp (Request queue - 10 tests)\n";
         std::cout << "  - test_api_server.cpp    (API server - 5 tests)\n";
-        std::cout << "  - test_blockcore.cpp     (Block/Transaction/Wallet - 22 tests)\n";
+        std::cout << "  - test_block.cpp         (Block - 4 tests)\n";
+        std::cout << "  - test_blockcore.cpp     (Blockweave/Transaction/Wallet/Hash - 18 tests)\n";
         std::cout << "======================================================================\n\n";
 
         UnitTest::ListAllTests();
@@ -126,7 +129,8 @@ int main(int argc, char* argv[]) {
     std::cout << "  - test_peer.cpp          (Peer networking - 10 tests)\n";
     std::cout << "  - test_request_queue.cpp (Request queue - 10 tests)\n";
     std::cout << "  - test_api_server.cpp    (API server - 5 tests)\n";
-    std::cout << "  - test_blockcore.cpp     (Block/Transaction/Wallet - 22 tests)\n";
+    std::cout << "  - test_block.cpp         (Block - 4 tests)\n";
+    std::cout << "  - test_blockcore.cpp     (Blockweave/Transaction/Wallet/Hash - 18 tests)\n";
     std::cout << "======================================================================\n\n";
 
     return UnitTest::RunAllTests(filter);
