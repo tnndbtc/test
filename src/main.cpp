@@ -3,7 +3,7 @@
 #include "blockcore/daemon.h"
 #include "blockcore/mining.h"
 #include "wallet/wallet.h"
-#include "rest/rest_api.h"
+#include "rest/rest_api_server.h"
 #include "peer/peer.h"
 #include "utils/config.h"
 #include "utils/threadname.h"

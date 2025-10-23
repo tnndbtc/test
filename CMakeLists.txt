@@ -173,7 +173,8 @@ target_link_libraries(bfblockcore
 # REST API server
 # ============================================================
 add_library(bfrest SHARED
-    src/rest/rest_api.cpp
+    src/rest/rest_api_server.cpp
+    src/rest/request_queue.cpp
 )
 
 set_target_properties(bfrest PROPERTIES

@@ -1,6 +1,6 @@
 // ============= test_rest.cpp =============
 #include "unit_test.h"
-#include "rest/rest_api.h"
+#include "rest/rest_api_server.h"
 #include "blockcore/blockweave.h"
 #include "cli/config.h"
 #include <thread>
