@@ -4,14 +4,15 @@
  * @brief Main entry point for all unit tests
  *
  * This file combines all unit test modules into a single executable.
- * Individual test files (test_peer.cpp, test_rest.cpp) contain the
- * actual test implementations and are compiled together with this file.
+ * Individual test files (test_peer.cpp, test_rest.cpp, test_blockfile.cpp)
+ * contain the actual test implementations and are compiled together with this file.
  *
  * Test modules included:
- * - test_peer.cpp - Peer networking module tests (12 tests)
- * - test_rest.cpp - REST API module tests (15 tests)
+ * - test_peer.cpp      - Peer networking module tests (12 tests)
+ * - test_rest.cpp      - REST API module tests (15 tests)
+ * - test_blockfile.cpp - Block/Transaction/Wallet tests (22 tests)
  *
- * Total: 27 unit tests
+ * Total: 49 unit tests
  *
  * Command-line options:
  * - --run_test=<file>  : Run only tests from specific test file (e.g., test_peer)
@@ -54,8 +55,9 @@ void ShowUsage(const char* program_name) {
     std::cout << "  " << program_name << " --run_test=peer       # Also matches test_peer.cpp\n";
     std::cout << "  " << program_name << " --list                # List all tests\n\n";
     std::cout << "Test files:\n";
-    std::cout << "  - test_peer.cpp (Peer networking - 12 tests)\n";
-    std::cout << "  - test_rest.cpp (REST API - 15 tests)\n";
+    std::cout << "  - test_peer.cpp      (Peer networking - 12 tests)\n";
+    std::cout << "  - test_rest.cpp      (REST API - 15 tests)\n";
+    std::cout << "  - test_blockfile.cpp (Block/Transaction/Wallet - 22 tests)\n";
 }
 
 /**
@@ -104,8 +106,9 @@ int main(int argc, char* argv[]) {
         std::cout << "Blockweave Unit Test Suite\n";
         std::cout << "======================================================================\n";
         std::cout << "Test modules:\n";
-        std::cout << "  - test_peer.cpp (Peer networking - 12 tests)\n";
-        std::cout << "  - test_rest.cpp (REST API - 15 tests)\n";
+        std::cout << "  - test_peer.cpp      (Peer networking - 12 tests)\n";
+        std::cout << "  - test_rest.cpp      (REST API - 15 tests)\n";
+        std::cout << "  - test_blockfile.cpp (Block/Transaction/Wallet - 22 tests)\n";
         std::cout << "======================================================================\n\n";
 
         UnitTest::ListAllTests();
@@ -117,8 +120,9 @@ int main(int argc, char* argv[]) {
     std::cout << "Blockweave Unit Test Suite\n";
     std::cout << "======================================================================\n";
     std::cout << "Test modules:\n";
-    std::cout << "  - test_peer.cpp (Peer networking - 12 tests)\n";
-    std::cout << "  - test_rest.cpp (REST API - 15 tests)\n";
+    std::cout << "  - test_peer.cpp      (Peer networking - 12 tests)\n";
+    std::cout << "  - test_rest.cpp      (REST API - 15 tests)\n";
+    std::cout << "  - test_blockfile.cpp (Block/Transaction/Wallet - 22 tests)\n";
     std::cout << "======================================================================\n\n";
 
     return UnitTest::RunAllTests(filter);

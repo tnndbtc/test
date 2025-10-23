@@ -90,6 +90,8 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         test_all.cpp
         test_peer.cpp
         test_rest.cpp
+        test_blockfile.cpp
+        ${PROJECT_ROOT}/src/wallet/wallet.cpp
     )
 
     # Link with all required libraries from parent build
@@ -132,6 +134,8 @@ else()
         test_all.cpp
         test_peer.cpp
         test_rest.cpp
+        test_blockfile.cpp
+        ../wallet/wallet.cpp
     )
 
     # Link with all required libraries (already defined in parent)
@@ -181,5 +185,5 @@ endif()
 
 # Print build information
 message(STATUS "Unit test executable: test_all")
-message(STATUS "Test sources: ${CMAKE_CURRENT_SOURCE_DIR}/test_all.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_peer.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_rest.cpp")
-message(STATUS "Total tests: 27 (12 peer + 15 REST API)")
+message(STATUS "Test sources: ${CMAKE_CURRENT_SOURCE_DIR}/test_all.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_peer.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_rest.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_blockfile.cpp")
+message(STATUS "Total tests: 49 (12 peer + 15 REST API + 22 block/transaction)")
