@@ -48,6 +48,8 @@ private:
     std::recursive_mutex cs_log;    ///< Recursive mutex for thread safety (allows Initialize() to call Log())
     bool f_initialized;             ///< Flag indicating whether logger has been initialized
     ELogLevel m_min_log_level;      ///< Minimum log level threshold (filters out lower priority messages)
+    size_t m_n_max_file_size;       ///< Maximum log file size in bytes before rotation
+    int m_n_files_to_keep;          ///< Number of rotated log files to keep
 
     /**
      * @brief Get current timestamp as formatted string
@@ -74,6 +76,30 @@ private:
      */
     static std::string GetThreadName();
 
+    /**
+     * @brief Check if current log file size exceeds maximum and rotate if needed
+     * @return true if rotation occurred, false otherwise
+     *
+     * Checks file size and triggers rotation when limit is exceeded.
+     * Should be called before writing log messages.
+     */
+    bool CheckAndRotateIfNeeded();
+
+    /**
+     * @brief Perform log file rotation
+     *
+     * Rotates log files: rest_daemon.log -> rest_daemon.log.1 -> rest_daemon.log.2, etc.
+     * Deletes oldest log file if maximum number of rotated files is exceeded.
+     * Creates new empty log file after rotation.
+     */
+    void RotateLogFiles();
+
+    /**
+     * @brief Get current log file size in bytes
+     * @return File size in bytes, or 0 if file doesn't exist or can't be accessed
+     */
+    size_t GetCurrentLogFileSize() const;
+
 public:
     /**
      * @brief Parse log level from string (case-insensitive)
@@ -96,11 +122,15 @@ public:
      * @brief Initialize logger with log directory and minimum level
      * @param str_log_dir Directory path for log files (will be created if doesn't exist)
      * @param min_level Minimum log level to write (default: INFO)
+     * @param n_max_file_size_mb Maximum log file size in megabytes before rotation (default: 10)
+     * @param n_files_to_keep Number of rotated log files to keep (default: 5)
      * @return true if initialization successful, false on error
      *
-     * Creates timestamped log file in format: rest_daemon_YYYYMMDD_HHMMSS.log
+     * Creates log file named rest_daemon.log. Appends to existing file if present.
+     * Rotates log file when size exceeds n_max_file_size_mb.
      */
-    bool Initialize(const std::string& str_log_dir, ELogLevel min_level = ELogLevel::INFO);
+    bool Initialize(const std::string& str_log_dir, ELogLevel min_level = ELogLevel::INFO,
+                    int n_max_file_size_mb = 10, int n_files_to_keep = 5);
 
     /**
      * @brief Log a trace-level message
@@ -179,12 +209,15 @@ ELogLevel ParseLogLevelString(const std::string& str_level);
  * @brief Initialize global logger instance
  * @param str_log_dir Directory path for log files
  * @param min_level Minimum log level to write (default: INFO)
+ * @param n_max_file_size_mb Maximum log file size in MB before rotation (default: 10)
+ * @param n_files_to_keep Number of rotated log files to keep (default: 5)
  * @return true if initialization successful, false on error
  *
  * Creates and initializes the global g_p_logger instance.
  * Must be called before using LOG_* macros.
  */
-bool InitializeLogger(const std::string& str_log_dir, ELogLevel min_level = ELogLevel::INFO);
+bool InitializeLogger(const std::string& str_log_dir, ELogLevel min_level = ELogLevel::INFO,
+                      int n_max_file_size_mb = 10, int n_files_to_keep = 5);
 
 /**
  * @name Logging Macros

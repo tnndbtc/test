@@ -26,4 +26,10 @@ const std::string LOG_DIR = "./log";
 // Log level (FATAL, ERROR, WARN, INFO, TRACE)
 const std::string LOG_LEVEL = "INFO";
 
+// Maximum log file size in megabytes before rotation
+constexpr int LOG_FILE_SIZE_MB = 10;
+
+// Number of rotated log files to keep
+constexpr int LOG_FILE_KEEP = 5;
+
 #endif // SETTINGS_H

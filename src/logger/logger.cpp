@@ -25,7 +25,8 @@
 /// Global logger instance (initialized by InitializeLogger)
 std::shared_ptr<CLogger> g_p_logger = nullptr;
 
-CLogger::CLogger() : f_initialized(false), m_min_log_level(ELogLevel::INFO) {
+CLogger::CLogger() : f_initialized(false), m_min_log_level(ELogLevel::INFO),
+                     m_n_max_file_size(10 * 1024 * 1024), m_n_files_to_keep(5) {
 }
 
 CLogger::~CLogger() {
@@ -168,16 +169,21 @@ ELogLevel CLogger::ParseLogLevel(const std::string& str_level) {
  * @brief Initialize logger with directory and minimum level
  * @param str_log_dir Directory for log files (created if doesn't exist)
  * @param min_level Minimum log level to record
+ * @param n_max_file_size_mb Maximum log file size in MB before rotation
+ * @param n_files_to_keep Number of rotated log files to keep
  * @return true on success, false on failure
  *
- * Creates timestamped log file in format: rest_daemon_YYYYMMDD_HHMMSS.log
+ * Creates log file named rest_daemon.log. Appends to existing file if present.
  * Creates log directory if it doesn't exist. Thread-safe.
  */
-bool CLogger::Initialize(const std::string& str_log_dir, ELogLevel min_level) {
+bool CLogger::Initialize(const std::string& str_log_dir, ELogLevel min_level,
+                         int n_max_file_size_mb, int n_files_to_keep) {
     std::lock_guard<std::recursive_mutex> lock(cs_log);
 
     m_str_log_dir = str_log_dir;
     m_min_log_level = min_level;
+    m_n_max_file_size = static_cast<size_t>(n_max_file_size_mb) * 1024 * 1024;
+    m_n_files_to_keep = n_files_to_keep;
 
     // Create log directory if it doesn't exist
     struct stat st;
@@ -189,16 +195,10 @@ bool CLogger::Initialize(const std::string& str_log_dir, ELogLevel min_level) {
         }
     }
 
-    // Create log file with timestamp
-    auto now = std::chrono::system_clock::now();
-    auto now_time_t = std::chrono::system_clock::to_time_t(now);
-    std::stringstream ss;
-    ss << str_log_dir << "/rest_daemon_"
-       << std::put_time(std::localtime(&now_time_t), "%Y%m%d_%H%M%S")
-       << ".log";
-    m_str_log_file = ss.str();
+    // Use simple fixed log file name (rest_daemon.log)
+    m_str_log_file = str_log_dir + "/rest_daemon.log";
 
-    // Open log file in append mode
+    // Open log file in append mode (appends to existing file)
     m_log_stream.open(m_str_log_file, std::ios::out | std::ios::app);
     if (!m_log_stream.is_open()) {
         std::cerr << "[Logger] Failed to open log file: " << m_str_log_file << "\n";
@@ -208,9 +208,91 @@ bool CLogger::Initialize(const std::string& str_log_dir, ELogLevel min_level) {
     f_initialized = true;
 
     // Write initial log message
-    Log(ELogLevel::TRACE, "Logger initialized, log file: " + m_str_log_file);
+    Log(ELogLevel::INFO, "Logger initialized (or reopened), log file: " + m_str_log_file +
+                          ", max size: " + std::to_string(n_max_file_size_mb) + " MB" +
+                          ", keep: " + std::to_string(n_files_to_keep) + " files");
 
     return true;
+}
+
+/**
+ * @brief Get current log file size in bytes
+ * @return File size in bytes, or 0 if error
+ *
+ * Uses stat() to get file size without opening the file.
+ */
+size_t CLogger::GetCurrentLogFileSize() const {
+    struct stat st;
+    if (stat(m_str_log_file.c_str(), &st) == 0) {
+        return static_cast<size_t>(st.st_size);
+    }
+    return 0;
+}
+
+/**
+ * @brief Check if rotation is needed and perform it
+ * @return true if rotation occurred, false otherwise
+ *
+ * Checks current file size against maximum. If exceeded, triggers rotation.
+ * Thread-safe (must be called with lock held).
+ */
+bool CLogger::CheckAndRotateIfNeeded() {
+    size_t n_current_size = GetCurrentLogFileSize();
+    if (n_current_size >= m_n_max_file_size) {
+        RotateLogFiles();
+        return true;
+    }
+    return false;
+}
+
+/**
+ * @brief Perform log file rotation
+ *
+ * Rotation strategy:
+ * - rest_daemon.log -> rest_daemon.log.1
+ * - rest_daemon.log.1 -> rest_daemon.log.2
+ * - rest_daemon.log.2 -> rest_daemon.log.3
+ * - ...
+ * - rest_daemon.log.(n_files_to_keep) is deleted
+ * - Creates new empty rest_daemon.log
+ *
+ * Thread-safe (must be called with lock held).
+ */
+void CLogger::RotateLogFiles() {
+    // Close current log file
+    if (m_log_stream.is_open()) {
+        m_log_stream.flush();
+        m_log_stream.close();
+    }
+
+    // Delete oldest log file if it exists (rest_daemon.log.{n_files_to_keep})
+    std::string str_oldest = m_str_log_file + "." + std::to_string(m_n_files_to_keep);
+    std::remove(str_oldest.c_str());
+
+    // Rotate existing log files: .{n-1} -> .{n}, .{n-2} -> .{n-1}, ..., .1 -> .2
+    for (int i = m_n_files_to_keep - 1; i >= 1; i--) {
+        std::string str_from = m_str_log_file + "." + std::to_string(i);
+        std::string str_to = m_str_log_file + "." + std::to_string(i + 1);
+        std::rename(str_from.c_str(), str_to.c_str());
+    }
+
+    // Rename current log file to .1
+    std::string str_backup = m_str_log_file + ".1";
+    std::rename(m_str_log_file.c_str(), str_backup.c_str());
+
+    // Create new log file
+    m_log_stream.open(m_str_log_file, std::ios::out | std::ios::app);
+    if (!m_log_stream.is_open()) {
+        std::cerr << "[Logger] Failed to reopen log file after rotation: " << m_str_log_file << "\n";
+        f_initialized = false;
+        return;
+    }
+
+    // Write rotation notification to new log file
+    std::string str_timestamp = GetTimestamp();
+    m_log_stream << "[" << str_timestamp << "] [INFO ] [logger:rotation] "
+                 << "Log file rotated, previous log saved to " << str_backup << "\n";
+    m_log_stream.flush();
 }
 
 /**
@@ -219,6 +301,7 @@ bool CLogger::Initialize(const std::string& str_log_dir, ELogLevel min_level) {
  * @param str_message Message text to log
  *
  * Thread-safe logging that:
+ * - Checks file size and rotates if needed
  * - Filters messages below minimum level
  * - Writes timestamped message with process name and thread ID to file (OS-buffered)
  * - Also outputs ERROR/FATAL to stderr
@@ -237,6 +320,9 @@ void CLogger::Log(ELogLevel level, const std::string& str_message) {
     }
 
     std::lock_guard<std::recursive_mutex> lock(cs_log);
+
+    // Check file size and rotate if needed
+    CheckAndRotateIfNeeded();
 
     std::string str_timestamp = GetTimestamp();
     std::string str_level = GetLevelString(level);
@@ -318,11 +404,14 @@ ELogLevel ParseLogLevelString(const std::string& str_level) {
  * @brief Initialize global logger instance
  * @param str_log_dir Log directory path
  * @param min_level Minimum log level
+ * @param n_max_file_size_mb Maximum log file size in MB before rotation
+ * @param n_files_to_keep Number of rotated log files to keep
  * @return true on success, false on failure
  *
  * Creates and initializes g_p_logger for use with LOG_* macros.
  */
-bool InitializeLogger(const std::string& str_log_dir, ELogLevel min_level) {
+bool InitializeLogger(const std::string& str_log_dir, ELogLevel min_level,
+                      int n_max_file_size_mb, int n_files_to_keep) {
     g_p_logger = std::make_shared<CLogger>();
-    return g_p_logger->Initialize(str_log_dir, min_level);
+    return g_p_logger->Initialize(str_log_dir, min_level, n_max_file_size_mb, n_files_to_keep);
 }

@@ -146,6 +146,18 @@ public:
     std::string GetLogLevel() const;
 
     /**
+     * @brief Get log file size limit in megabytes
+     * @return Maximum log file size in MB (default: LOG_FILE_SIZE_MB from settings.h)
+     */
+    int GetLogFileSizeMB() const;
+
+    /**
+     * @brief Get number of rotated log files to keep
+     * @return Number of old log files to retain (default: LOG_FILE_KEEP from settings.h)
+     */
+    int GetLogFileKeep() const;
+
+    /**
      * @brief Check if daemon mode is enabled
      * @return true if daemon=true in config, false otherwise
      */

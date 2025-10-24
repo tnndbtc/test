@@ -44,6 +44,8 @@ void CConfig::LoadDefaults() {
     m_config_values["data_dir"] = "./data";
     m_config_values["log_dir"] = LOG_DIR;
     m_config_values["log_level"] = LOG_LEVEL;
+    m_config_values["log_file_size_in_mb"] = std::to_string(LOG_FILE_SIZE_MB);
+    m_config_values["log_file_keep"] = std::to_string(LOG_FILE_KEEP);
     m_config_values["daemon"] = "false";
 }
 
@@ -208,6 +210,14 @@ std::string CConfig::GetLogDir() const {
 
 std::string CConfig::GetLogLevel() const {
     return GetValue("log_level", LOG_LEVEL);
+}
+
+int CConfig::GetLogFileSizeMB() const {
+    return GetIntValue("log_file_size_in_mb", LOG_FILE_SIZE_MB);
+}
+
+int CConfig::GetLogFileKeep() const {
+    return GetIntValue("log_file_keep", LOG_FILE_KEEP);
 }
 
 bool CConfig::IsDaemonMode() const {

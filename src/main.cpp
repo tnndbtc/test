@@ -64,6 +64,8 @@ int main(int argc, char* argv[]) {
     int n_p2p_port = config.GetP2PPort();
     std::string str_log_dir = config.GetLogDir();
     std::string str_log_level = config.GetLogLevel();
+    int n_log_file_size_mb = config.GetLogFileSizeMB();
+    int n_log_file_keep = config.GetLogFileKeep();
     std::string str_data_dir = config.GetDataDir();
 
     // Override daemon mode from command line
@@ -119,7 +121,7 @@ int main(int argc, char* argv[]) {
 
     // Initialize logger (after daemonization to avoid file descriptor issues)
     ELogLevel log_level = ParseLogLevelString(str_log_level);
-    if (!InitializeLogger(str_log_dir, log_level)) {
+    if (!InitializeLogger(str_log_dir, log_level, n_log_file_size_mb, n_log_file_keep)) {
         // In daemon mode, stderr is redirected to /dev/null, so this won't be seen
         // But in non-daemon mode, user will see the error
         std::cerr << "Error: Failed to initialize logger\n";
