@@ -44,12 +44,12 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     endif()
 
     set(REQUIRED_LIBS
-        "${BUILD_DIR}/libbfpeer.${LIB_EXT}"
-        "${BUILD_DIR}/libbflogger.${LIB_EXT}"
-        "${BUILD_DIR}/libbfthreadname.${LIB_EXT}"
-        "${BUILD_DIR}/libbfblockcore.${LIB_EXT}"
-        "${BUILD_DIR}/libbfrest.${LIB_EXT}"
-        "${BUILD_DIR}/libbfutils.${LIB_EXT}"
+        "${BUILD_DIR}/libbwpeer.${LIB_EXT}"
+        "${BUILD_DIR}/libbwlogger.${LIB_EXT}"
+        "${BUILD_DIR}/libbwthreadname.${LIB_EXT}"
+        "${BUILD_DIR}/libbwblockcore.${LIB_EXT}"
+        "${BUILD_DIR}/libbwrest.${LIB_EXT}"
+        "${BUILD_DIR}/libbwutils.${LIB_EXT}"
     )
 
     set(LIBS_MISSING FALSE)
@@ -101,12 +101,12 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
     # Link with all required libraries from parent build
     target_link_libraries(test_all
-        PRIVATE ${BUILD_DIR}/libbfrest.${LIB_EXT}
-        PRIVATE ${BUILD_DIR}/libbfblockcore.${LIB_EXT}
-        PRIVATE ${BUILD_DIR}/libbfutils.${LIB_EXT}
-        PRIVATE ${BUILD_DIR}/libbfpeer.${LIB_EXT}
-        PRIVATE ${BUILD_DIR}/libbflogger.${LIB_EXT}
-        PRIVATE ${BUILD_DIR}/libbfthreadname.${LIB_EXT}
+        PRIVATE ${BUILD_DIR}/libbwrest.${LIB_EXT}
+        PRIVATE ${BUILD_DIR}/libbwblockcore.${LIB_EXT}
+        PRIVATE ${BUILD_DIR}/libbwutils.${LIB_EXT}
+        PRIVATE ${BUILD_DIR}/libbwpeer.${LIB_EXT}
+        PRIVATE ${BUILD_DIR}/libbwlogger.${LIB_EXT}
+        PRIVATE ${BUILD_DIR}/libbwthreadname.${LIB_EXT}
         PRIVATE Threads::Threads
     )
 
@@ -150,12 +150,12 @@ else()
 
     # Link with all required libraries (already defined in parent)
     target_link_libraries(test_all
-        PRIVATE bfrest
-        PRIVATE bfblockcore
-        PRIVATE bfutils
-        PRIVATE bfpeer
-        PRIVATE bflogger
-        PRIVATE bfthreadname
+        PRIVATE bwrest
+        PRIVATE bwblockcore
+        PRIVATE bwutils
+        PRIVATE bwpeer
+        PRIVATE bwlogger
+        PRIVATE bwthreadname
     )
 
     # Platform-specific thread linking

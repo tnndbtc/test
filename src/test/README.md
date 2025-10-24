@@ -88,7 +88,7 @@ Step 1: Build the main project libraries:
 ```bash
 cd build
 cmake ..
-make bfthreadname bflogger bfpeer bfutils bfblockcore bfrest
+make bwthreadname bwlogger bwpeer bwutils bwblockcore bwrest
 ```
 
 Step 2: Build the tests:
@@ -297,18 +297,18 @@ The CMake script automatically detects the build mode and configures paths accor
 Test dependencies:
 
 **test_peer:**
-- **libbfpeer** - Peer networking library (being tested)
-- **libbflogger** - Logging system
-- **libbfthreadname** - Thread naming utilities
+- **libbwpeer** - Peer networking library (being tested)
+- **libbwlogger** - Logging system
+- **libbwthreadname** - Thread naming utilities
 - **Threads** - POSIX threads (pthread)
 - **C++17 compiler** - GCC, Clang, or MSVC
 
 **test_rest:**
-- **libbfrest** - REST API library (being tested)
-- **libbfblockcore** - Core blockchain implementation
-- **libbfutils** - Hash and configuration utilities
-- **libbflogger** - Logging system
-- **libbfthreadname** - Thread naming utilities
+- **libbwrest** - REST API library (being tested)
+- **libbwblockcore** - Core blockchain implementation
+- **libbwutils** - Hash and configuration utilities
+- **libbwlogger** - Logging system
+- **libbwthreadname** - Thread naming utilities
 - **Threads** - POSIX threads (pthread)
 - **C++17 compiler** - GCC, Clang, or MSVC
 

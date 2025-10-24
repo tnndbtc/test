@@ -63,12 +63,12 @@ fi
 # Check if required libraries exist
 LIBS_EXIST=true
 REQUIRED_LIBS=(
-    "libbfpeer.${LIB_EXT}"
-    "libbflogger.${LIB_EXT}"
-    "libbfthreadname.${LIB_EXT}"
-    "libbfblockcore.${LIB_EXT}"
-    "libbfrest.${LIB_EXT}"
-    "libbfutils.${LIB_EXT}"
+    "libbwpeer.${LIB_EXT}"
+    "libbwlogger.${LIB_EXT}"
+    "libbwthreadname.${LIB_EXT}"
+    "libbwblockcore.${LIB_EXT}"
+    "libbwrest.${LIB_EXT}"
+    "libbwutils.${LIB_EXT}"
 )
 
 echo "Checking for required libraries in: $BUILD_DIR"
@@ -103,7 +103,7 @@ if [ "$LIBS_EXIST" = false ]; then
 
     # Build the required libraries
     echo "Building libraries (this may take a few minutes)..."
-    make bfthreadname bflogger bfpeer bfutils bfblockcore bfrest
+    make bwthreadname bwlogger bwpeer bwutils bwblockcore bwrest
 
     if [ $? -ne 0 ]; then
         echo ""

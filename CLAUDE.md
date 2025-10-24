@@ -33,12 +33,12 @@ make
 The project builds the following components:
 
 **Shared Libraries:**
-1. **libbfthreadname.dylib** (or .so on Linux) - Thread naming utilities
-2. **libbflogger.dylib** - Logging system
-3. **libbfutils.dylib** - Hash and configuration utilities
-4. **libbfpeer.dylib** - P2P networking
-5. **libbfblockcore.dylib** - Core blockchain implementation (block, blockweave, transaction, daemon, mining)
-6. **libbfrest.dylib** - REST API server
+1. **libbwthreadname.dylib** (or .so on Linux) - Thread naming utilities
+2. **libbwlogger.dylib** - Logging system
+3. **libbwutils.dylib** - Hash and configuration utilities
+4. **libbwpeer.dylib** - P2P networking
+5. **libbwblockcore.dylib** - Core blockchain implementation (block, blockweave, transaction, daemon, mining)
+6. **libbwrest.dylib** - REST API server
 
 **Executables:**
 1. **rest_daemon** - Main REST API daemon process
@@ -353,12 +353,12 @@ CMakeLists.txt                  # Build configuration
 - **daemon_cli**: Control utility for starting/stopping rest_daemon
 - **wallet**: Standalone wallet address generator
 - **Library Architecture**: Modular design with separate shared libraries:
-  - `libbfthreadname`: Thread naming (no dependencies)
-  - `libbflogger`: Logging (depends on threadname)
-  - `libbfutils`: Hash and config utilities (depends on logger, threadname)
-  - `libbfpeer`: P2P networking (depends on logger, threadname)
-  - `libbfblockcore`: Core blockchain (depends on utils, logger, threadname)
-  - `libbfrest`: REST API server (depends on blockcore, utils, logger, threadname)
+  - `libbwthreadname`: Thread naming (no dependencies)
+  - `libbwlogger`: Logging (depends on threadname)
+  - `libbwutils`: Hash and config utilities (depends on logger, threadname)
+  - `libbwpeer`: P2P networking (depends on logger, threadname)
+  - `libbwblockcore`: Core blockchain (depends on utils, logger, threadname)
+  - `libbwrest`: REST API server (depends on blockcore, utils, logger, threadname)
 - All source files include banner comments: `// ============= filename.ext =============`
 - The project uses smart pointers (`std::shared_ptr`) for transaction and block management
 - Thread-safe design with mutexes (`cs_` prefix) and atomic flags
@@ -471,7 +471,7 @@ The script automatically:
 # Build required libraries first
 cd build
 cmake ..
-make bfthreadname bflogger bfpeer bfutils bfblockcore bfrest
+make bwthreadname bwlogger bwpeer bwutils bwblockcore bwrest
 
 # Build tests
 cd ../src/test

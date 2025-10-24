@@ -27,14 +27,14 @@ endif()
 include_directories(include src ${OPENSSL_INCLUDE_DIR})
 
 # ============================================================
-# Thread Naming Library (libbfthreadname.so / .dylib / .dll)
+# Thread Naming Library (libbwthreadname.so / .dylib / .dll)
 # Thread naming utilities (no dependencies)
 # ============================================================
-add_library(bfthreadname SHARED
+add_library(bwthreadname SHARED
     src/utils/threadname.cpp
 )
 
-set_target_properties(bfthreadname PROPERTIES
+set_target_properties(bwthreadname PROPERTIES
     VERSION 1.0.0
     SOVERSION 1
     POSITION_INDEPENDENT_CODE ON
@@ -42,21 +42,21 @@ set_target_properties(bfthreadname PROPERTIES
 )
 
 if(APPLE)
-    set_target_properties(bfthreadname PROPERTIES
+    set_target_properties(bwthreadname PROPERTIES
         INSTALL_NAME_DIR "@rpath"
         BUILD_WITH_INSTALL_RPATH TRUE
     )
 endif()
 
 # ============================================================
-# Logger Library (libbflogger.so / .dylib / .dll)
+# Logger Library (libbwlogger.so / .dylib / .dll)
 # Logging utilities
 # ============================================================
-add_library(bflogger SHARED
+add_library(bwlogger SHARED
     src/logger/logger.cpp
 )
 
-set_target_properties(bflogger PROPERTIES
+set_target_properties(bwlogger PROPERTIES
     VERSION 1.0.0
     SOVERSION 1
     POSITION_INDEPENDENT_CODE ON
@@ -64,27 +64,27 @@ set_target_properties(bflogger PROPERTIES
 )
 
 if(APPLE)
-    set_target_properties(bflogger PROPERTIES
+    set_target_properties(bwlogger PROPERTIES
         INSTALL_NAME_DIR "@rpath"
         BUILD_WITH_INSTALL_RPATH TRUE
     )
 endif()
 
 # Link threadname to logger (logger needs GetThreadName)
-target_link_libraries(bflogger
-    PUBLIC bfthreadname
+target_link_libraries(bwlogger
+    PUBLIC bwthreadname
 )
 
 # ============================================================
-# Utils Library (libbfutils.so / .dylib / .dll)
+# Utils Library (libbwutils.so / .dylib / .dll)
 # Hash and configuration utilities
 # ============================================================
-add_library(bfutils SHARED
+add_library(bwutils SHARED
     src/utils/hash.cpp
     src/utils/config.cpp
 )
 
-set_target_properties(bfutils PROPERTIES
+set_target_properties(bwutils PROPERTIES
     VERSION 1.0.0
     SOVERSION 1
     POSITION_INDEPENDENT_CODE ON
@@ -92,29 +92,29 @@ set_target_properties(bfutils PROPERTIES
 )
 
 if(APPLE)
-    set_target_properties(bfutils PROPERTIES
+    set_target_properties(bwutils PROPERTIES
         INSTALL_NAME_DIR "@rpath"
         BUILD_WITH_INSTALL_RPATH TRUE
     )
 endif()
 
-# Link OpenSSL and threadname to bfutils (needed for hash and config)
-target_link_libraries(bfutils
+# Link OpenSSL and threadname to bwutils (needed for hash and config)
+target_link_libraries(bwutils
     PUBLIC OpenSSL::SSL
     PUBLIC OpenSSL::Crypto
-    PUBLIC bflogger
-    PUBLIC bfthreadname
+    PUBLIC bwlogger
+    PUBLIC bwthreadname
 )
 
 # ============================================================
-# Peer Library (libbfpeer.so / .dylib / .dll)
+# Peer Library (libbwpeer.so / .dylib / .dll)
 # P2P networking
 # ============================================================
-add_library(bfpeer SHARED
+add_library(bwpeer SHARED
     src/peer/peer.cpp
 )
 
-set_target_properties(bfpeer PROPERTIES
+set_target_properties(bwpeer PROPERTIES
     VERSION 1.0.0
     SOVERSION 1
     POSITION_INDEPENDENT_CODE ON
@@ -122,23 +122,23 @@ set_target_properties(bfpeer PROPERTIES
 )
 
 if(APPLE)
-    set_target_properties(bfpeer PROPERTIES
+    set_target_properties(bwpeer PROPERTIES
         INSTALL_NAME_DIR "@rpath"
         BUILD_WITH_INSTALL_RPATH TRUE
     )
 endif()
 
 # Link logger and threadname to peer
-target_link_libraries(bfpeer
-    PUBLIC bflogger
-    PUBLIC bfthreadname
+target_link_libraries(bwpeer
+    PUBLIC bwlogger
+    PUBLIC bwthreadname
 )
 
 # ============================================================
-# Blockcore Library (libbfblockcore.so / .dylib / .dll)
+# Blockcore Library (libbwblockcore.so / .dylib / .dll)
 # Core blockchain implementation: block, blockweave, transaction, daemon, mining, blockfile
 # ============================================================
-add_library(bfblockcore SHARED
+add_library(bwblockcore SHARED
     src/blockcore/block.cpp
     src/blockcore/blockweave.cpp
     src/blockcore/transaction.cpp
@@ -147,7 +147,7 @@ add_library(bfblockcore SHARED
     src/blockcore/blockfile.cpp
 )
 
-set_target_properties(bfblockcore PROPERTIES
+set_target_properties(bwblockcore PROPERTIES
     VERSION 1.0.0
     SOVERSION 1
     POSITION_INDEPENDENT_CODE ON
@@ -155,29 +155,29 @@ set_target_properties(bfblockcore PROPERTIES
 )
 
 if(APPLE)
-    set_target_properties(bfblockcore PROPERTIES
+    set_target_properties(bwblockcore PROPERTIES
         INSTALL_NAME_DIR "@rpath"
         BUILD_WITH_INSTALL_RPATH TRUE
     )
 endif()
 
-# Link dependencies to bfblockcore
-target_link_libraries(bfblockcore
-    PUBLIC bfutils
-    PUBLIC bflogger
-    PUBLIC bfthreadname
+# Link dependencies to bwblockcore
+target_link_libraries(bwblockcore
+    PUBLIC bwutils
+    PUBLIC bwlogger
+    PUBLIC bwthreadname
 )
 
 # ============================================================
-# REST API Library (libbfrest.so / .dylib / .dll)
+# REST API Library (libbwrest.so / .dylib / .dll)
 # REST API server
 # ============================================================
-add_library(bfrest SHARED
+add_library(bwrest SHARED
     src/rest/rest_api_server.cpp
     src/rest/request_queue.cpp
 )
 
-set_target_properties(bfrest PROPERTIES
+set_target_properties(bwrest PROPERTIES
     VERSION 1.0.0
     SOVERSION 1
     POSITION_INDEPENDENT_CODE ON
@@ -185,18 +185,18 @@ set_target_properties(bfrest PROPERTIES
 )
 
 if(APPLE)
-    set_target_properties(bfrest PROPERTIES
+    set_target_properties(bwrest PROPERTIES
         INSTALL_NAME_DIR "@rpath"
         BUILD_WITH_INSTALL_RPATH TRUE
     )
 endif()
 
-# Link dependencies to bfrest
-target_link_libraries(bfrest
-    PUBLIC bfblockcore
-    PUBLIC bfutils
-    PUBLIC bflogger
-    PUBLIC bfthreadname
+# Link dependencies to bwrest
+target_link_libraries(bwrest
+    PUBLIC bwblockcore
+    PUBLIC bwutils
+    PUBLIC bwlogger
+    PUBLIC bwthreadname
 )
 
 # ============================================================
@@ -210,12 +210,12 @@ add_executable(rest_daemon
 
 # Link rest_daemon with all libraries
 target_link_libraries(rest_daemon
-    PRIVATE bfblockcore
-    PRIVATE bfrest
-    PRIVATE bfpeer
-    PRIVATE bfutils
-    PRIVATE bflogger
-    PRIVATE bfthreadname
+    PRIVATE bwblockcore
+    PRIVATE bwrest
+    PRIVATE bwpeer
+    PRIVATE bwutils
+    PRIVATE bwlogger
+    PRIVATE bwthreadname
     PRIVATE OpenSSL::SSL
     PRIVATE OpenSSL::Crypto
 )
@@ -239,7 +239,7 @@ endif()
 
 # ============================================================
 # Wallet Executable: wallet
-# Links with bfblockcore and its dependencies
+# Links with bwblockcore and its dependencies
 # ============================================================
 add_executable(wallet
     src/wallet/wallet_main.cpp
@@ -248,10 +248,10 @@ add_executable(wallet
 
 # Link wallet executable with libraries
 target_link_libraries(wallet
-    PRIVATE bfblockcore
-    PRIVATE bfutils
-    PRIVATE bflogger
-    PRIVATE bfthreadname
+    PRIVATE bwblockcore
+    PRIVATE bwutils
+    PRIVATE bwlogger
+    PRIVATE bwthreadname
     PRIVATE OpenSSL::SSL
     PRIVATE OpenSSL::Crypto
 )
@@ -294,10 +294,10 @@ if(WIN32)
 else()
     # Linux/macOS: Use POSIX threads for threading support
     find_package(Threads REQUIRED)
-    target_link_libraries(bfthreadname PUBLIC Threads::Threads)
-    target_link_libraries(bfblockcore PUBLIC Threads::Threads)
-    target_link_libraries(bfrest PUBLIC Threads::Threads)
-    target_link_libraries(bfpeer PUBLIC Threads::Threads)
+    target_link_libraries(bwthreadname PUBLIC Threads::Threads)
+    target_link_libraries(bwblockcore PUBLIC Threads::Threads)
+    target_link_libraries(bwrest PUBLIC Threads::Threads)
+    target_link_libraries(bwpeer PUBLIC Threads::Threads)
     target_link_libraries(rest_daemon PRIVATE Threads::Threads)
     target_link_libraries(wallet PRIVATE Threads::Threads)
     # daemon_cli doesn't use threads - no linking needed
@@ -306,23 +306,23 @@ endif()
 # Platform-specific compile options
 if(MSVC)
     # Visual Studio
-    target_compile_options(bfthreadname PRIVATE /W4)
-    target_compile_options(bflogger PRIVATE /W4)
-    target_compile_options(bfutils PRIVATE /W4)
-    target_compile_options(bfpeer PRIVATE /W4)
-    target_compile_options(bfblockcore PRIVATE /W4)
-    target_compile_options(bfrest PRIVATE /W4)
+    target_compile_options(bwthreadname PRIVATE /W4)
+    target_compile_options(bwlogger PRIVATE /W4)
+    target_compile_options(bwutils PRIVATE /W4)
+    target_compile_options(bwpeer PRIVATE /W4)
+    target_compile_options(bwblockcore PRIVATE /W4)
+    target_compile_options(bwrest PRIVATE /W4)
     target_compile_options(rest_daemon PRIVATE /W4)
     target_compile_options(wallet PRIVATE /W4)
     target_compile_options(daemon_cli PRIVATE /W4)
 else()
     # GCC/Clang
-    target_compile_options(bfthreadname PRIVATE -Wall -Wextra -pedantic)
-    target_compile_options(bflogger PRIVATE -Wall -Wextra -pedantic)
-    target_compile_options(bfutils PRIVATE -Wall -Wextra -pedantic)
-    target_compile_options(bfpeer PRIVATE -Wall -Wextra -pedantic)
-    target_compile_options(bfblockcore PRIVATE -Wall -Wextra -pedantic)
-    target_compile_options(bfrest PRIVATE -Wall -Wextra -pedantic)
+    target_compile_options(bwthreadname PRIVATE -Wall -Wextra -pedantic)
+    target_compile_options(bwlogger PRIVATE -Wall -Wextra -pedantic)
+    target_compile_options(bwutils PRIVATE -Wall -Wextra -pedantic)
+    target_compile_options(bwpeer PRIVATE -Wall -Wextra -pedantic)
+    target_compile_options(bwblockcore PRIVATE -Wall -Wextra -pedantic)
+    target_compile_options(bwrest PRIVATE -Wall -Wextra -pedantic)
     target_compile_options(rest_daemon PRIVATE -Wall -Wextra -pedantic)
     target_compile_options(wallet PRIVATE -Wall -Wextra -pedantic)
     target_compile_options(daemon_cli PRIVATE -Wall -Wextra -pedantic)
@@ -349,7 +349,7 @@ add_custom_command(TARGET rest_daemon POST_BUILD
 )
 
 # Installation
-install(TARGETS bfthreadname bflogger bfutils bfpeer bfblockcore bfrest
+install(TARGETS bwthreadname bwlogger bwutils bwpeer bwblockcore bwrest
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
     RUNTIME DESTINATION bin
