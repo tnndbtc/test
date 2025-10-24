@@ -16,8 +16,9 @@
  * - test_blockweave.cpp    - Blockweave module tests (7 tests)
  * - test_wallet.cpp        - Wallet module tests (3 tests)
  * - test_hash.cpp          - Hash module tests (3 tests)
+ * - test_blockfile.cpp     - Block file persistence module tests (21 tests)
  *
- * Total: 47 unit tests
+ * Total: 68 unit tests
  *
  * Command-line options:
  * - --run_test=<file>  : Run only tests from specific test file (e.g., test_peer)
@@ -68,6 +69,7 @@ void ShowUsage(const char* program_name) {
     std::cout << "  - test_blockweave.cpp    (Blockweave - 7 tests)\n";
     std::cout << "  - test_wallet.cpp        (Wallet - 3 tests)\n";
     std::cout << "  - test_hash.cpp          (Hash - 3 tests)\n";
+    std::cout << "  - test_blockfile.cpp     (Block file persistence - 21 tests)\n";
 }
 
 /**
@@ -124,6 +126,7 @@ int main(int argc, char* argv[]) {
         std::cout << "  - test_blockweave.cpp    (Blockweave - 7 tests)\n";
         std::cout << "  - test_wallet.cpp        (Wallet - 3 tests)\n";
         std::cout << "  - test_hash.cpp          (Hash - 3 tests)\n";
+        std::cout << "  - test_blockfile.cpp     (Block file persistence - 21 tests)\n";
         std::cout << "======================================================================\n\n";
 
         UnitTest::ListAllTests();
@@ -143,6 +146,7 @@ int main(int argc, char* argv[]) {
     std::cout << "  - test_blockweave.cpp    (Blockweave - 7 tests)\n";
     std::cout << "  - test_wallet.cpp        (Wallet - 3 tests)\n";
     std::cout << "  - test_hash.cpp          (Hash - 3 tests)\n";
+    std::cout << "  - test_blockfile.cpp     (Block file persistence - 21 tests)\n";
     std::cout << "======================================================================\n\n";
 
     return UnitTest::RunAllTests(filter);

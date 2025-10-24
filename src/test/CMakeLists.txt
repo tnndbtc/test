@@ -96,6 +96,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         test_blockweave.cpp
         test_wallet.cpp
         test_hash.cpp
+        test_blockfile.cpp
         ${PROJECT_ROOT}/src/wallet/wallet.cpp
     )
 
@@ -145,6 +146,7 @@ else()
         test_blockweave.cpp
         test_wallet.cpp
         test_hash.cpp
+        test_blockfile.cpp
         ../wallet/wallet.cpp
     )
 
@@ -195,5 +197,5 @@ endif()
 
 # Print build information
 message(STATUS "Unit test executable: test_all")
-message(STATUS "Test sources: ${CMAKE_CURRENT_SOURCE_DIR}/test_all.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_peer.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_request_queue.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_api_server.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_block.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_transaction.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_blockweave.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_wallet.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_hash.cpp")
-message(STATUS "Total tests: 47 (10 peer + 10 request queue + 5 API server + 4 block + 5 transaction + 7 blockweave + 3 wallet + 3 hash)")
+message(STATUS "Test sources: ${CMAKE_CURRENT_SOURCE_DIR}/test_all.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_peer.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_request_queue.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_api_server.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_block.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_transaction.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_blockweave.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_wallet.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_hash.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_blockfile.cpp")
+message(STATUS "Total tests: 68 (10 peer + 10 request queue + 5 API server + 4 block + 5 transaction + 7 blockweave + 3 wallet + 3 hash + 21 blockfile)")

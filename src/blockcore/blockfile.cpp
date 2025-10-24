@@ -331,12 +331,20 @@ bool CBlockFile::SaveBlock(const std::shared_ptr<CBlock>& p_block) {
     std::string str_file_path = GetBlockFilePath(m_n_current_file_number);
     uint64_t n_file_offset = m_n_current_file_size;
 
-    // Open file in append mode
-    std::ofstream ofs(str_file_path, std::ios::binary | std::ios::app);
+    // Open file in read-write mode (NOT append mode, as we need to seek back to write block size)
+    // If file doesn't exist, create it. If it exists, don't truncate it.
+    std::ofstream ofs(str_file_path, std::ios::binary | std::ios::in | std::ios::out);
     if (!ofs) {
-        LOG_ERROR("Failed to open file for writing: " + str_file_path);
-        return false;
+        // File doesn't exist, create it
+        ofs.open(str_file_path, std::ios::binary | std::ios::out);
+        if (!ofs) {
+            LOG_ERROR("Failed to open file for writing: " + str_file_path);
+            return false;
+        }
     }
+
+    // Seek to the end to append the new block
+    ofs.seekp(0, std::ios::end);
 
     // Remember position before writing
     std::streampos pos_before = ofs.tellp();
@@ -477,6 +485,12 @@ std::shared_ptr<CBlock> CBlockFile::LoadBlock(const CHash& hash) {
 
     // Create block
     auto p_block = std::make_shared<CBlock>(previous_hash, n_height, str_miner);
+
+    // Restore saved block hash and nonce (these getters return references)
+    // Note: timestamp, difficulty, cumulative_data_size getters return by value
+    // so they can't be restored this way, but for block identity the hash is most important
+    const_cast<CHash&>(p_block->GetHash()) = block_hash;
+    const_cast<std::string&>(p_block->GetNonce()) = str_nonce;
 
     // Read and add transactions
     for (uint32_t n_i = 0; n_i < n_tx_count; n_i++) {
