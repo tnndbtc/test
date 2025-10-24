@@ -12,7 +12,10 @@
  * - test_request_queue.cpp - Request queue module tests (10 tests)
  * - test_api_server.cpp    - REST API server module tests (5 tests)
  * - test_block.cpp         - Block module tests (4 tests)
- * - test_blockcore.cpp     - Blockweave/Transaction/Wallet/Hash tests (18 tests)
+ * - test_transaction.cpp   - Transaction module tests (5 tests)
+ * - test_blockweave.cpp    - Blockweave module tests (7 tests)
+ * - test_wallet.cpp        - Wallet module tests (3 tests)
+ * - test_hash.cpp          - Hash module tests (3 tests)
  *
  * Total: 47 unit tests
  *
@@ -61,7 +64,10 @@ void ShowUsage(const char* program_name) {
     std::cout << "  - test_request_queue.cpp (Request queue - 10 tests)\n";
     std::cout << "  - test_api_server.cpp    (API server - 5 tests)\n";
     std::cout << "  - test_block.cpp         (Block - 4 tests)\n";
-    std::cout << "  - test_blockcore.cpp     (Blockweave/Transaction/Wallet/Hash - 18 tests)\n";
+    std::cout << "  - test_transaction.cpp   (Transaction - 5 tests)\n";
+    std::cout << "  - test_blockweave.cpp    (Blockweave - 7 tests)\n";
+    std::cout << "  - test_wallet.cpp        (Wallet - 3 tests)\n";
+    std::cout << "  - test_hash.cpp          (Hash - 3 tests)\n";
 }
 
 /**
@@ -114,7 +120,10 @@ int main(int argc, char* argv[]) {
         std::cout << "  - test_request_queue.cpp (Request queue - 10 tests)\n";
         std::cout << "  - test_api_server.cpp    (API server - 5 tests)\n";
         std::cout << "  - test_block.cpp         (Block - 4 tests)\n";
-        std::cout << "  - test_blockcore.cpp     (Blockweave/Transaction/Wallet/Hash - 18 tests)\n";
+        std::cout << "  - test_transaction.cpp   (Transaction - 5 tests)\n";
+        std::cout << "  - test_blockweave.cpp    (Blockweave - 7 tests)\n";
+        std::cout << "  - test_wallet.cpp        (Wallet - 3 tests)\n";
+        std::cout << "  - test_hash.cpp          (Hash - 3 tests)\n";
         std::cout << "======================================================================\n\n";
 
         UnitTest::ListAllTests();
@@ -130,7 +139,10 @@ int main(int argc, char* argv[]) {
     std::cout << "  - test_request_queue.cpp (Request queue - 10 tests)\n";
     std::cout << "  - test_api_server.cpp    (API server - 5 tests)\n";
     std::cout << "  - test_block.cpp         (Block - 4 tests)\n";
-    std::cout << "  - test_blockcore.cpp     (Blockweave/Transaction/Wallet/Hash - 18 tests)\n";
+    std::cout << "  - test_transaction.cpp   (Transaction - 5 tests)\n";
+    std::cout << "  - test_blockweave.cpp    (Blockweave - 7 tests)\n";
+    std::cout << "  - test_wallet.cpp        (Wallet - 3 tests)\n";
+    std::cout << "  - test_hash.cpp          (Hash - 3 tests)\n";
     std::cout << "======================================================================\n\n";
 
     return UnitTest::RunAllTests(filter);
