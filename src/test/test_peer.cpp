@@ -1,6 +1,7 @@
 // ============= test_peer.cpp =============
 #include "unit_test.h"
 #include "peer/peer.h"
+#include "peer/peer_message.h"
 #include <thread>
 #include <chrono>
 #include <atomic>
@@ -368,5 +369,54 @@ TEST(PeerManager_ThreadSafe_BothPeerCounts) {
     // Verify we made many queries without crashing
     ASSERT_TRUE(inbound_queries > 100, "Should have made multiple inbound queries");
     ASSERT_TRUE(outbound_queries > 100, "Should have made multiple outbound queries");
+}
+
+/**
+ * @brief Test SendMessageToPeer with no connected peers
+ */
+TEST(PeerManager_SendMessageToPeer_NoPeers) {
+    CPeerManager manager(8344);
+
+    // Create a PING message
+    CPeerMessage ping_msg(EMessageType::PING);
+
+    // Try to send to non-existent peer
+    bool result = manager.SendMessageToPeer("192.168.1.100", 8333, ping_msg);
+
+    ASSERT_FALSE(result, "Should fail when peer is not connected");
+}
+
+/**
+ * @brief Test BroadcastMessage with no connected peers
+ */
+TEST(PeerManager_BroadcastMessage_NoPeers) {
+    CPeerManager manager(8345);
+
+    // Create a GET_PEERS message
+    CPeerMessage get_peers_msg(EMessageType::GET_PEERS);
+
+    // Broadcast to no peers
+    size_t sent_count = manager.BroadcastMessage(get_peers_msg);
+
+    ASSERT_EQUAL(sent_count, (size_t)0, "Should send to 0 peers when none connected");
+}
+
+/**
+ * @brief Test BroadcastMessage with different message types
+ */
+TEST(PeerManager_BroadcastMessage_DifferentTypes) {
+    CPeerManager manager(8346);
+
+    // Test different message types
+    CPeerMessage ping(EMessageType::PING);
+    CPeerMessage pong(EMessageType::PONG);
+    CPeerMessage get_peers(EMessageType::GET_PEERS);
+    CPeerMessage tx_ids(EMessageType::TX_IDS, "tx1,tx2,tx3");
+
+    // All should return 0 with no peers
+    ASSERT_EQUAL(manager.BroadcastMessage(ping), (size_t)0, "PING should send to 0 peers");
+    ASSERT_EQUAL(manager.BroadcastMessage(pong), (size_t)0, "PONG should send to 0 peers");
+    ASSERT_EQUAL(manager.BroadcastMessage(get_peers), (size_t)0, "GET_PEERS should send to 0 peers");
+    ASSERT_EQUAL(manager.BroadcastMessage(tx_ids), (size_t)0, "TX_IDS should send to 0 peers");
 }
 

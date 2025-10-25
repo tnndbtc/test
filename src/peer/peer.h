@@ -3,6 +3,7 @@
 #define PEER_H
 
 #include "peer/i_peer.h"
+#include "peer/peer_message.h"
 #include "utils/settings.h"
 #include <string>
 #include <vector>
@@ -287,6 +288,35 @@ public:
      * Failed sends are logged but don't affect other peers.
      */
     virtual void BroadcastTransactionIds(const std::vector<std::string>& transaction_ids) override;
+
+    /**
+     * @brief Send a message to a specific peer
+     * @param str_address Peer IP address or hostname
+     * @param n_port Peer listening port
+     * @param message The peer message to send
+     * @return true if message was sent successfully, false on error
+     *
+     * Sends a CPeerMessage to a specific peer node identified by address and port.
+     * The message is serialized and sent over the TCP connection.
+     * If no active connection exists to this peer, the send will fail.
+     *
+     * Thread-safe operation with mutex protection.
+     */
+    virtual bool SendMessageToPeer(const std::string& str_address, int n_port, const CPeerMessage& message) override;
+
+    /**
+     * @brief Broadcast a message to all connected peers
+     * @param message The peer message to broadcast
+     * @return Number of peers the message was successfully sent to
+     *
+     * Sends a CPeerMessage to all currently connected peers (both inbound and outbound).
+     * The message is serialized and sent to each peer independently.
+     * Failures on individual peers don't prevent sends to other peers.
+     *
+     * Thread-safe operation with mutex protection.
+     * Failed sends are logged but don't affect the return count.
+     */
+    virtual size_t BroadcastMessage(const CPeerMessage& message) override;
 };
 
 #endif // PEER_H

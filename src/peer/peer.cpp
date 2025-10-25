@@ -923,3 +923,146 @@ void CPeerManager::BroadcastTransactionIds(const std::vector<std::string>& trans
 
     LOG_INFO("Broadcast sent to " + std::to_string(n_sent_count) + " peers");
 }
+
+/**
+ * @brief Send a message to a specific peer
+ * @param str_address Peer IP address or hostname
+ * @param n_port Peer listening port
+ * @param message The peer message to send
+ * @return true if message was sent successfully, false on error
+ *
+ * Finds the peer by address and port, serializes the message, and sends it
+ * over the TCP connection. Returns false if peer not found or send fails.
+ */
+bool CPeerManager::SendMessageToPeer(const std::string& str_address, int n_port, const CPeerMessage& message) {
+    // Serialize the message
+    std::string str_serialized = message.Serialize();
+    if (str_serialized.empty()) {
+        LOG_ERROR("Failed to serialize message of type " + message.GetTypeString());
+        return false;
+    }
+
+    // Find the peer and get socket while holding the lock
+    int n_target_socket = -1;
+    std::string str_peer_id;
+
+    {
+        std::lock_guard<std::mutex> lock(cs_peers);
+
+        // Search in outbound peers
+        for (const auto& p_peer : m_outbound_peers) {
+            if (p_peer && p_peer->str_address == str_address && p_peer->n_port == n_port) {
+                if (p_peer->f_connected && p_peer->n_socket >= 0) {
+                    n_target_socket = p_peer->n_socket;
+                    str_peer_id = p_peer->str_address + ":" + std::to_string(p_peer->n_port);
+                }
+                break;
+            }
+        }
+
+        // If not found in outbound, search in inbound peers
+        if (n_target_socket == -1) {
+            for (const auto& p_peer : m_inbound_peers) {
+                if (p_peer && p_peer->str_address == str_address && p_peer->n_port == n_port) {
+                    if (p_peer->f_connected && p_peer->n_socket >= 0) {
+                        n_target_socket = p_peer->n_socket;
+                        str_peer_id = p_peer->str_address + ":" + std::to_string(p_peer->n_port);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    // Check if peer was found
+    if (n_target_socket == -1) {
+        LOG_WARN("Cannot send message to " + str_address + ":" + std::to_string(n_port) + " - peer not connected");
+        return false;
+    }
+
+    // Send the serialized message without holding the lock
+    ssize_t n_sent = send(n_target_socket, str_serialized.c_str(), str_serialized.length(), 0);
+
+    if (n_sent > 0) {
+        LOG_TRACE("Sent " + message.GetTypeString() + " message (" + std::to_string(str_serialized.length()) +
+                  " bytes) to peer " + str_peer_id);
+        return true;
+    } else {
+        LOG_ERROR("Failed to send " + message.GetTypeString() + " message to peer " + str_peer_id +
+                  " (error: " + std::string(strerror(errno)) + ")");
+        return false;
+    }
+}
+
+/**
+ * @brief Broadcast a message to all connected peers
+ * @param message The peer message to broadcast
+ * @return Number of peers the message was successfully sent to
+ *
+ * Serializes the message once and sends it to all connected peers
+ * (both inbound and outbound). Failed sends are logged but don't prevent
+ * sends to other peers.
+ */
+size_t CPeerManager::BroadcastMessage(const CPeerMessage& message) {
+    // Serialize the message once
+    std::string str_serialized = message.Serialize();
+    if (str_serialized.empty()) {
+        LOG_ERROR("Failed to serialize message of type " + message.GetTypeString() + " for broadcast");
+        return 0;
+    }
+
+    LOG_INFO("Broadcasting " + message.GetTypeString() + " message (" +
+             std::to_string(str_serialized.length()) + " bytes) to all peers");
+
+    // Copy socket descriptors and peer info while holding the lock
+    // This prevents blocking I/O operations from holding the mutex
+    struct PeerInfo {
+        int n_socket;
+        std::string str_peer_address;
+    };
+    std::vector<PeerInfo> peer_sockets;
+
+    {
+        std::lock_guard<std::mutex> lock(cs_peers);
+
+        // Add all connected outbound peers
+        for (const auto& p_peer : m_outbound_peers) {
+            if (p_peer && p_peer->f_connected && p_peer->n_socket >= 0) {
+                peer_sockets.push_back({
+                    p_peer->n_socket,
+                    p_peer->str_address + ":" + std::to_string(p_peer->n_port)
+                });
+            }
+        }
+
+        // Add all connected inbound peers
+        for (const auto& p_peer : m_inbound_peers) {
+            if (p_peer && p_peer->f_connected && p_peer->n_socket >= 0) {
+                peer_sockets.push_back({
+                    p_peer->n_socket,
+                    p_peer->str_address + ":" + std::to_string(p_peer->n_port)
+                });
+            }
+        }
+    }
+
+    // Send to all peers without holding the lock
+    // This prevents slow/blocked sockets from blocking other operations
+    size_t n_sent_count = 0;
+
+    for (const auto& peer_info : peer_sockets) {
+        ssize_t n_sent = send(peer_info.n_socket, str_serialized.c_str(), str_serialized.length(), 0);
+        if (n_sent > 0) {
+            n_sent_count++;
+            LOG_TRACE("Sent " + message.GetTypeString() + " to peer " + peer_info.str_peer_address);
+        } else {
+            LOG_ERROR("Failed to send " + message.GetTypeString() + " to peer " + peer_info.str_peer_address +
+                      " (error: " + std::string(strerror(errno)) + ")");
+        }
+    }
+
+    LOG_INFO("Broadcast sent to " + std::to_string(n_sent_count) + " of " +
+             std::to_string(peer_sockets.size()) + " peers");
+
+    return n_sent_count;
+}
