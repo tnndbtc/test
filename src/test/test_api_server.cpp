@@ -2,7 +2,7 @@
 #include "unit_test.h"
 #include "rest/rest_api_server.h"
 #include "blockcore/blockweave.h"
-#include "cli/config.h"
+#include "utils/config.h"
 #include <thread>
 #include <chrono>
 

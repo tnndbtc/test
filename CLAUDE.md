@@ -216,9 +216,9 @@ All threads are synchronized using mutexes and atomic flags for thread-safe oper
 - Endpoints: GET /chain, POST /mine/start, POST /mine/stop
 - Located in src/rest/ subfolder
 
-**CConfig** (src/cli/config.h, src/cli/config.cpp)
+**CConfig** (src/utils/config.h, src/utils/config.cpp)
 - Configuration file parser for blockweave.conf
-- Reads: miner_address, rest_api_port, log_dir, log_level, data_dir, daemon
+- Reads: miner_address, rest_api_port, p2p_port, max_outbound_peers, log_dir, log_level, data_dir, daemon
 - Key-value format: `key=value`
 - Uses default values from settings.h when config values are not specified
 
@@ -315,7 +315,6 @@ src/
 ├── peer/
 │   └── peer.cpp, peer.h        # P2P networking
 ├── cli/
-│   ├── config.cpp, config.h    # Configuration file parser (moved from utils/)
 │   └── daemon_cli.cpp          # Daemon CLI utility
 ├── wallet/
 │   ├── wallet.cpp, wallet.h    # Wallet implementation
@@ -324,7 +323,7 @@ src/
 │   └── logger.cpp, logger.h    # Logging system
 ├── utils/
 │   ├── hash.cpp, hash.h        # SHA-256 hash wrapper
-│   ├── config.h                # Config header (implementation in cli/)
+│   ├── config.cpp, config.h    # Configuration file parser
 │   ├── threadname.cpp, threadname.h # Thread naming utilities
 │   └── settings.h              # Global configuration constants
 └── test/
@@ -397,6 +396,8 @@ The `daemon_cli` utility provides process management:
 |---------|-------------|---------------------------|
 | `miner_address` | Wallet address for mining rewards (REQUIRED) | - |
 | `rest_api_port` | REST API server port | 28443 (REST_API_PORT) |
+| `p2p_port` | Peer-to-peer network port | 28333 (P2P_PORT) |
+| `max_outbound_peers` | Maximum number of outbound peer connections | 8 (MAX_OUTBOUND_PEERS) |
 | `log_dir` | Log directory for daemon logs | ./log (LOG_DIR) |
 | `log_level` | Log level (FATAL/ERROR/WARN/INFO/TRACE) | INFO (LOG_LEVEL) |
 | `data_dir` | Blockchain data storage directory | ./data |
@@ -408,6 +409,8 @@ The `daemon_cli` utility provides process management:
 ```
 miner_address=ea6dc2ca1bd34a376850629cc74510133b7c2a4c318
 rest_api_port=28443
+p2p_port=28333
+max_outbound_peers=8
 log_dir=./log
 log_level=INFO
 data_dir=./data

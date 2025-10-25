@@ -104,6 +104,7 @@ private:
     // Network configuration
     int n_listen_port;               ///< Port for listening to incoming connections
     int n_listen_socket;             ///< Server socket file descriptor
+    int n_max_outbound_peers;        ///< Maximum number of outbound peer connections
 
     // Peer connections
     std::vector<std::unique_ptr<CPeerConnection>> m_outbound_peers;  ///< Outbound peer connections
@@ -204,10 +205,11 @@ private:
 
 public:
     /**
-     * @brief Construct peer manager with listening port
+     * @brief Construct peer manager with listening port and max peers
      * @param n_port Port to listen on (default: P2P_PORT from settings.h)
+     * @param n_max_peers Maximum number of outbound peers (default: MAX_OUTBOUND_PEERS from settings.h)
      */
-    CPeerManager(int n_port = P2P_PORT);
+    CPeerManager(int n_port = P2P_PORT, int n_max_peers = MAX_OUTBOUND_PEERS);
 
     /**
      * @brief Destructor - stops networking and cleans up resources

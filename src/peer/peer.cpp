@@ -127,16 +127,18 @@ CPeerConnection& CPeerConnection::operator=(CPeerConnection&& other) noexcept {
 // ============= CPeerManager Implementation =============
 
 /**
- * @brief Construct peer manager with listening port
+ * @brief Construct peer manager with listening port and max peers
  * @param n_port Port to listen on for inbound connections
+ * @param n_max_peers Maximum number of outbound peer connections
  *
  * Initializes peer manager in stopped state. Reserves space for
- * MAX_OUTBOUND_PEERS to avoid vector reallocations during operation.
+ * n_max_peers to avoid vector reallocations during operation.
  * Call Start() to begin accepting connections.
  */
-CPeerManager::CPeerManager(int n_port)
-    : n_listen_port(n_port), n_listen_socket(-1), f_running(false), f_stop_requested(false) {
-    m_outbound_peers.reserve(MAX_OUTBOUND_PEERS);
+CPeerManager::CPeerManager(int n_port, int n_max_peers)
+    : n_listen_port(n_port), n_listen_socket(-1), n_max_outbound_peers(n_max_peers),
+      f_running(false), f_stop_requested(false) {
+    m_outbound_peers.reserve(n_max_outbound_peers);
 }
 
 /**
@@ -185,7 +187,7 @@ bool CPeerManager::Start() {
     m_peer_thread = std::thread(&CPeerManager::PeerThread, this);
 
     LOG_TRACE("Peer Manager started on port " + std::to_string(n_listen_port));
-    LOG_TRACE("Maximum outbound peers: " + std::to_string(MAX_OUTBOUND_PEERS));
+    LOG_TRACE("Maximum outbound peers: " + std::to_string(n_max_outbound_peers));
 
     return true;
 }
@@ -704,7 +706,7 @@ void CPeerManager::CleanupDisconnectedPeers() {
  * @return true if connection initiated successfully, false on error
  *
  * Validation checks (thread-safe with mutex):
- * 1. Verify we haven't reached MAX_OUTBOUND_PEERS limit
+ * 1. Verify we haven't reached max outbound peers limit
  * 2. Check if already connected to this address:port
  *
  * If validation passes, delegates to ConnectToPeer() for actual
@@ -717,8 +719,8 @@ bool CPeerManager::AddPeer(const std::string& str_address, int n_port) {
     // multiple threads could pass the size check simultaneously
     {
         std::lock_guard<std::mutex> lock(cs_peers);
-        if (m_outbound_peers.size() >= MAX_OUTBOUND_PEERS) {
-            LOG_WARN("Maximum outbound peers reached (" + std::to_string(MAX_OUTBOUND_PEERS) + ")");
+        if (m_outbound_peers.size() >= static_cast<size_t>(n_max_outbound_peers)) {
+            LOG_WARN("Maximum outbound peers reached (" + std::to_string(n_max_outbound_peers) + ")");
             return false;
         }
 
@@ -731,7 +733,7 @@ bool CPeerManager::AddPeer(const std::string& str_address, int n_port) {
         }
 
         // Reserve a slot by adding a placeholder (nullptr)
-        // This prevents other threads from exceeding MAX_OUTBOUND_PEERS
+        // This prevents other threads from exceeding n_max_outbound_peers
         // while we perform the blocking connection operation
         m_outbound_peers.push_back(nullptr);
     }

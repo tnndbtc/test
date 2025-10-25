@@ -128,6 +128,12 @@ public:
     int GetP2PPort() const;
 
     /**
+     * @brief Get maximum number of outbound peer connections
+     * @return Max peers number (default: MAX_OUTBOUND_PEERS from settings.h)
+     */
+    int GetMaxOutboundPeers() const;
+
+    /**
      * @brief Get data directory path
      * @return Directory path for blockchain data
      */
