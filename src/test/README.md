@@ -1,6 +1,6 @@
 # Unit Tests
 
-This directory contains unit tests for the blockweave project. All tests are combined into a single executable (`test_all`) that runs 27 tests across multiple modules.
+This directory contains unit tests for the blockweave project. All tests are combined into a single executable (`test_all`) that runs 94 tests across multiple modules.
 
 ## Test Framework
 
@@ -20,15 +20,18 @@ Unit tests for the peer module (`CPeerConnection` and `CPeerManager`):
 1. **PeerConnection_DefaultConstructor** - Tests default constructor initialization
 2. **PeerConnection_ParameterizedConstructor** - Tests parameterized constructor
 3. **PeerConnection_MoveConstructor** - Tests move semantics
-4. **PeerManager_Constructor** - Tests manager initialization
+4. **PeerManager_Constructor** - Tests manager initialization (both inbound and outbound peer counts)
 5. **PeerManager_GetConnectedPeers_Empty** - Tests empty peer list handling
-6. **PeerManager_ThreadSafe_GetOutboundPeerCount** - Tests thread-safe peer count access
+6. **PeerManager_ThreadSafe_GetOutboundPeerCount** - Tests thread-safe outbound peer count access
 7. **PeerManager_ThreadSafe_GetConnectedPeers** - Tests thread-safe peer retrieval
 8. **PeerManager_BroadcastTransactionIds_Empty** - Tests broadcast with empty transaction list
 9. **PeerManager_BroadcastTransactionIds_NoPeers** - Tests broadcast with no connected peers
 10. **PeerConnection_AtomicFlag** - Tests atomic flag operations
-11. **PeerManager_StartStop** - Tests lifecycle management
-12. **PeerManager_MultipleStartStop** - Tests multiple start/stop cycles
+11. **PeerManager_GetInboundPeerCount** - Tests inbound peer count tracking
+12. **PeerManager_ThreadSafe_GetInboundPeerCount** - Tests thread-safe inbound peer count access
+13. **PeerManager_ConstructorWithLimits** - Tests constructor with custom inbound/outbound limits
+14. **PeerManager_InboundOutboundIndependent** - Tests that inbound and outbound tracking is independent
+15. **PeerManager_ThreadSafe_BothPeerCounts** - Tests concurrent access to both peer count methods
 
 ### test_rest.cpp
 

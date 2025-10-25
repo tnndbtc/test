@@ -174,10 +174,18 @@ The system uses multiple named threads for concurrent operation:
 3. **REST API Listener Thread** (`rest_listener`) - Accepts incoming HTTP connections
 4. **REST API Worker Threads** (`rest_worker0-4`) - Process HTTP requests from queue (5 by default)
 5. **Peer Manager Thread** (`peer_manager`) - Manages P2P connections
-6. **Peer Listener Thread** (`peer_listener`) - Accepts incoming P2P connections
-7. **Peer Connection Threads** (`peer_<address>`) - One per active peer connection
+6. **Peer Listener Thread** (`peer_listener`) - Accepts incoming P2P connections (max 120 inbound)
+7. **Peer Connection Threads** (`peer_<address>`) - One per active peer connection (both inbound and outbound)
 
 All threads are synchronized using mutexes and atomic flags for thread-safe operation. Thread names are visible in logs and debuggers for easier troubleshooting.
+
+### Peer Management Architecture
+
+The peer system uses separate handling of inbound and outbound connections:
+- **Inbound connections** (default: 120 max) - Peers connecting to us
+- **Outbound connections** (default: 8 max) - We initiate connections to them
+
+Both limits are configurable via `blockweave.conf`.
 
 ### Core Components
 
@@ -397,7 +405,8 @@ The `daemon_cli` utility provides process management:
 | `miner_address` | Wallet address for mining rewards (REQUIRED) | - |
 | `rest_api_port` | REST API server port | 28443 (REST_API_PORT) |
 | `p2p_port` | Peer-to-peer network port | 28333 (P2P_PORT) |
-| `max_outbound_peers` | Maximum number of outbound peer connections | 8 (MAX_OUTBOUND_PEERS) |
+| `max_inbound_peers` | Maximum number of inbound peer connections (peers connecting to us) | 120 (MAX_INBOUND_PEERS) |
+| `max_outbound_peers` | Maximum number of outbound peer connections (we connect to them) | 8 (MAX_OUTBOUND_PEERS) |
 | `log_dir` | Log directory for daemon logs | ./log (LOG_DIR) |
 | `log_level` | Log level (FATAL/ERROR/WARN/INFO/TRACE) | INFO (LOG_LEVEL) |
 | `data_dir` | Blockchain data storage directory | ./data |
@@ -410,6 +419,7 @@ The `daemon_cli` utility provides process management:
 miner_address=ea6dc2ca1bd34a376850629cc74510133b7c2a4c318
 rest_api_port=28443
 p2p_port=28333
+max_inbound_peers=120
 max_outbound_peers=8
 log_dir=./log
 log_level=INFO

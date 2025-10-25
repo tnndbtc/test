@@ -166,9 +166,10 @@ int main(int argc, char* argv[]) {
     LOG_INFO("REST API server started successfully");
 
     // Start peer manager
-    int n_max_peers = config.GetMaxOutboundPeers();
+    int n_max_outbound = config.GetMaxOutboundPeers();
+    int n_max_inbound = config.GetMaxInboundPeers();
     LOG_INFO("Starting peer manager on port " + std::to_string(n_p2p_port));
-    CPeerManager peer_manager(n_p2p_port, n_max_peers);
+    CPeerManager peer_manager(n_p2p_port, n_max_outbound, n_max_inbound);
     if (!peer_manager.Start()) {
         LOG_ERROR("Failed to start peer manager on port " + std::to_string(n_p2p_port));
         rest_api.Stop();

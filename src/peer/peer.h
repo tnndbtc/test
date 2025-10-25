@@ -104,11 +104,13 @@ private:
     // Network configuration
     int n_listen_port;               ///< Port for listening to incoming connections
     int n_listen_socket;             ///< Server socket file descriptor
+    int n_max_inbound_peers;         ///< Maximum number of inbound peer connections
     int n_max_outbound_peers;        ///< Maximum number of outbound peer connections
 
-    // Peer connections
-    std::vector<std::unique_ptr<CPeerConnection>> m_outbound_peers;  ///< Outbound peer connections
-    mutable std::mutex cs_peers;     ///< Mutex protecting peer list
+    // Peer connections (separate inbound and outbound tracking)
+    std::vector<std::unique_ptr<CPeerConnection>> m_inbound_peers;   ///< Inbound peer connections (peers connecting to us)
+    std::vector<std::unique_ptr<CPeerConnection>> m_outbound_peers;  ///< Outbound peer connections (we connect to them)
+    mutable std::mutex cs_peers;     ///< Mutex protecting both peer lists
 
     // Control flags
     std::atomic<bool> f_running;         ///< Whether peer manager is running
@@ -207,9 +209,10 @@ public:
     /**
      * @brief Construct peer manager with listening port and max peers
      * @param n_port Port to listen on (default: P2P_PORT from settings.h)
-     * @param n_max_peers Maximum number of outbound peers (default: MAX_OUTBOUND_PEERS from settings.h)
+     * @param n_max_outbound Maximum number of outbound peers (default: MAX_OUTBOUND_PEERS from settings.h)
+     * @param n_max_inbound Maximum number of inbound peers (default: MAX_INBOUND_PEERS from settings.h)
      */
-    CPeerManager(int n_port = P2P_PORT, int n_max_peers = MAX_OUTBOUND_PEERS);
+    CPeerManager(int n_port = P2P_PORT, int n_max_outbound = MAX_OUTBOUND_PEERS, int n_max_inbound = MAX_INBOUND_PEERS);
 
     /**
      * @brief Destructor - stops networking and cleans up resources
@@ -260,10 +263,18 @@ public:
     virtual size_t GetOutboundPeerCount() const override;
 
     /**
+     * @brief Get count of active inbound peer connections
+     * @return Number of inbound peers
+     *
+     * Thread-safe count of peers in inbound peer list.
+     */
+    virtual size_t GetInboundPeerCount() const override;
+
+    /**
      * @brief Get list of connected peer addresses
      * @return Vector of "address:port" strings for connected peers
      *
-     * Thread-safe snapshot of currently connected peers.
+     * Thread-safe snapshot of currently connected peers (both inbound and outbound).
      */
     virtual std::vector<std::string> GetConnectedPeers() const override;
 

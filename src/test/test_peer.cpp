@@ -56,7 +56,8 @@ TEST(PeerManager_Constructor) {
     CPeerManager manager(8333);
 
     ASSERT_FALSE(manager.IsRunning(), "Manager should not be running initially");
-    ASSERT_EQUAL(manager.GetOutboundPeerCount(), (size_t)0, "Should have no peers initially");
+    ASSERT_EQUAL(manager.GetOutboundPeerCount(), (size_t)0, "Should have no outbound peers initially");
+    ASSERT_EQUAL(manager.GetInboundPeerCount(), (size_t)0, "Should have no inbound peers initially");
 }
 
 /**
@@ -228,5 +229,144 @@ TEST(PeerConnection_AtomicFlag) {
 
     // Verify we made many safe accesses
     ASSERT_TRUE(read_count > 1000, "Should have made many atomic reads");
+}
+
+/**
+ * @brief Test GetInboundPeerCount
+ *
+ * Verifies that GetInboundPeerCount() returns correct count
+ * and is separate from outbound peer count.
+ */
+TEST(PeerManager_GetInboundPeerCount) {
+    CPeerManager manager(8339);
+
+    ASSERT_EQUAL(manager.GetInboundPeerCount(), (size_t)0, "Should start with 0 inbound peers");
+    ASSERT_EQUAL(manager.GetOutboundPeerCount(), (size_t)0, "Should start with 0 outbound peers");
+}
+
+/**
+ * @brief Test thread-safe inbound peer count access
+ *
+ * Tests that multiple threads can safely query inbound peer count concurrently.
+ * Verifies thread safety of GetInboundPeerCount() method.
+ */
+TEST(PeerManager_ThreadSafe_GetInboundPeerCount) {
+    CPeerManager manager(8340);
+
+    std::atomic<int> query_count{0};
+    std::atomic<bool> stop_flag{false};
+
+    // Start multiple threads querying inbound peer count
+    std::vector<std::thread> threads;
+    for (int i = 0; i < 10; i++) {
+        threads.emplace_back([&manager, &query_count, &stop_flag]() {
+            while (!stop_flag) {
+                size_t count = manager.GetInboundPeerCount();
+                ASSERT_EQUAL(count, 0, "Inbound peer count should be 0");
+                query_count++;
+                std::this_thread::sleep_for(std::chrono::microseconds(10));
+            }
+        });
+    }
+
+    // Let threads run for a bit
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    stop_flag = true;
+
+    // Join all threads
+    for (auto& t : threads) {
+        t.join();
+    }
+
+    // Verify we made many queries without crashing
+    ASSERT_TRUE(query_count > 100, "Should have made multiple queries");
+}
+
+/**
+ * @brief Test CPeerManager constructor with custom peer limits
+ *
+ * Verifies that peer manager can be constructed with custom
+ * inbound and outbound peer limits.
+ */
+TEST(PeerManager_ConstructorWithLimits) {
+    // Create manager with 4 outbound and 10 inbound peers max
+    CPeerManager manager(8341, 4, 10);
+
+    ASSERT_FALSE(manager.IsRunning(), "Manager should not be running initially");
+    ASSERT_EQUAL(manager.GetOutboundPeerCount(), (size_t)0, "Should have no outbound peers initially");
+    ASSERT_EQUAL(manager.GetInboundPeerCount(), (size_t)0, "Should have no inbound peers initially");
+}
+
+/**
+ * @brief Test that inbound and outbound peer counts are independent
+ *
+ * Verifies that inbound and outbound peer tracking is completely separate.
+ */
+TEST(PeerManager_InboundOutboundIndependent) {
+    CPeerManager manager(8342);
+
+    // Both should start at 0
+    ASSERT_EQUAL(manager.GetInboundPeerCount(), (size_t)0, "Inbound should be 0");
+    ASSERT_EQUAL(manager.GetOutboundPeerCount(), (size_t)0, "Outbound should be 0");
+
+    // GetConnectedPeers should return empty for no peers
+    auto peers = manager.GetConnectedPeers();
+    ASSERT_EQUAL(peers.size(), (size_t)0, "Should have no connected peers");
+}
+
+/**
+ * @brief Test concurrent access to both inbound and outbound peer counts
+ *
+ * Tests that multiple threads can safely query both inbound and outbound
+ * peer counts concurrently without race conditions.
+ */
+TEST(PeerManager_ThreadSafe_BothPeerCounts) {
+    CPeerManager manager(8343);
+
+    std::atomic<int> inbound_queries{0};
+    std::atomic<int> outbound_queries{0};
+    std::atomic<bool> stop_flag{false};
+
+    // Threads querying inbound count
+    std::vector<std::thread> inbound_threads;
+    for (int i = 0; i < 5; i++) {
+        inbound_threads.emplace_back([&manager, &inbound_queries, &stop_flag]() {
+            while (!stop_flag) {
+                size_t count = manager.GetInboundPeerCount();
+                ASSERT_EQUAL(count, 0, "Inbound count should be 0");
+                inbound_queries++;
+                std::this_thread::sleep_for(std::chrono::microseconds(10));
+            }
+        });
+    }
+
+    // Threads querying outbound count
+    std::vector<std::thread> outbound_threads;
+    for (int i = 0; i < 5; i++) {
+        outbound_threads.emplace_back([&manager, &outbound_queries, &stop_flag]() {
+            while (!stop_flag) {
+                size_t count = manager.GetOutboundPeerCount();
+                ASSERT_EQUAL(count, 0, "Outbound count should be 0");
+                outbound_queries++;
+                std::this_thread::sleep_for(std::chrono::microseconds(10));
+            }
+        });
+    }
+
+    // Let threads run
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    stop_flag = true;
+
+    // Join all threads
+    for (auto& t : inbound_threads) {
+        t.join();
+    }
+    for (auto& t : outbound_threads) {
+        t.join();
+    }
+
+    // Verify we made many queries without crashing
+    ASSERT_TRUE(inbound_queries > 100, "Should have made multiple inbound queries");
+    ASSERT_TRUE(outbound_queries > 100, "Should have made multiple outbound queries");
 }
 

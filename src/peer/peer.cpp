@@ -129,15 +129,18 @@ CPeerConnection& CPeerConnection::operator=(CPeerConnection&& other) noexcept {
 /**
  * @brief Construct peer manager with listening port and max peers
  * @param n_port Port to listen on for inbound connections
- * @param n_max_peers Maximum number of outbound peer connections
+ * @param n_max_outbound Maximum number of outbound peer connections
+ * @param n_max_inbound Maximum number of inbound peer connections
  *
  * Initializes peer manager in stopped state. Reserves space for
- * n_max_peers to avoid vector reallocations during operation.
+ * peer connections to avoid vector reallocations during operation.
  * Call Start() to begin accepting connections.
  */
-CPeerManager::CPeerManager(int n_port, int n_max_peers)
-    : n_listen_port(n_port), n_listen_socket(-1), n_max_outbound_peers(n_max_peers),
+CPeerManager::CPeerManager(int n_port, int n_max_outbound, int n_max_inbound)
+    : n_listen_port(n_port), n_listen_socket(-1),
+      n_max_inbound_peers(n_max_inbound), n_max_outbound_peers(n_max_outbound),
       f_running(false), f_stop_requested(false) {
+    m_inbound_peers.reserve(n_max_inbound_peers);
     m_outbound_peers.reserve(n_max_outbound_peers);
 }
 
@@ -187,6 +190,7 @@ bool CPeerManager::Start() {
     m_peer_thread = std::thread(&CPeerManager::PeerThread, this);
 
     LOG_TRACE("Peer Manager started on port " + std::to_string(n_listen_port));
+    LOG_TRACE("Maximum inbound peers: " + std::to_string(n_max_inbound_peers));
     LOG_TRACE("Maximum outbound peers: " + std::to_string(n_max_outbound_peers));
 
     return true;
@@ -219,9 +223,21 @@ void CPeerManager::Stop() {
     // Close listen socket
     CloseListenSocket();
 
-    // Stop all peer connections
+    // Stop all peer connections (both inbound and outbound)
     {
         std::lock_guard<std::mutex> lock(cs_peers);
+        // Stop inbound peers
+        for (auto& p_peer : m_inbound_peers) {
+            if (p_peer) {
+                p_peer->f_active = false;
+                if (p_peer->n_socket >= 0) {
+                    shutdown(p_peer->n_socket, SHUT_RDWR);
+                    close(p_peer->n_socket);
+                    p_peer->n_socket = -1;
+                }
+            }
+        }
+        // Stop outbound peers
         for (auto& p_peer : m_outbound_peers) {
             if (p_peer) {
                 p_peer->f_active = false;
@@ -246,11 +262,19 @@ void CPeerManager::Stop() {
     // Wait for all peer connection threads to finish
     {
         std::lock_guard<std::mutex> lock(cs_peers);
+        // Join inbound peer threads
+        for (auto& p_peer : m_inbound_peers) {
+            if (p_peer && p_peer->m_thread.joinable()) {
+                p_peer->m_thread.join();
+            }
+        }
+        // Join outbound peer threads
         for (auto& p_peer : m_outbound_peers) {
             if (p_peer && p_peer->m_thread.joinable()) {
                 p_peer->m_thread.join();
             }
         }
+        m_inbound_peers.clear();
         m_outbound_peers.clear();
     }
 
@@ -474,14 +498,32 @@ void CPeerManager::ListenerThread() {
         inet_ntop(AF_INET, &client_addr.sin_addr, str_ip, INET_ADDRSTRLEN);
         int n_peer_port = ntohs(client_addr.sin_port);
 
-        LOG_INFO("Inbound peer connection from " + std::string(str_ip) + ":" + std::to_string(n_peer_port));
+        // Check if we've reached max inbound peers
+        {
+            std::lock_guard<std::mutex> lock(cs_peers);
+            if (m_inbound_peers.size() >= static_cast<size_t>(n_max_inbound_peers)) {
+                LOG_WARN("Maximum inbound peers reached (" + std::to_string(n_max_inbound_peers) +
+                         "), rejecting connection from " + std::string(str_ip) + ":" + std::to_string(n_peer_port));
+                close(n_client_socket);
+                continue;
+            }
 
-        // Set socket keepalive
-        SetSocketKeepAlive(n_client_socket);
+            LOG_INFO("Accepted inbound peer connection from " + std::string(str_ip) + ":" + std::to_string(n_peer_port));
 
-        // TODO: Handle inbound peer connection
-        // For now, just close it since we're focusing on outbound connections
-        close(n_client_socket);
+            // Set socket keepalive
+            SetSocketKeepAlive(n_client_socket);
+
+            // Create peer connection object for inbound peer
+            auto p_peer = std::make_unique<CPeerConnection>(std::string(str_ip), n_peer_port);
+            p_peer->n_socket = n_client_socket;
+            p_peer->f_active = true;
+
+            // Start connection thread for this peer
+            p_peer->m_thread = std::thread(&CPeerManager::ConnectionThread, this, p_peer.get());
+
+            // Add to inbound peers list
+            m_inbound_peers.push_back(std::move(p_peer));
+        }
     }
 
     LOG_INFO("Peer listener thread stopped");
@@ -676,12 +718,12 @@ void CPeerManager::DisconnectPeer(CPeerConnection* p_peer) {
 }
 
 /**
- * @brief Remove disconnected peers from peer list
+ * @brief Remove disconnected peers from both inbound and outbound lists
  *
  * Thread-safe cleanup using erase-remove idiom:
  * 1. Acquires mutex lock
  * 2. Finds all peers where f_connected == false
- * 3. Removes them from m_outbound_peers vector
+ * 3. Removes them from both peer vectors
  *
  * Called periodically by PeerThread() every 5 seconds.
  * Assumes peer connection threads have already been joined.
@@ -689,7 +731,16 @@ void CPeerManager::DisconnectPeer(CPeerConnection* p_peer) {
 void CPeerManager::CleanupDisconnectedPeers() {
     std::lock_guard<std::mutex> lock(cs_peers);
 
-    // Remove disconnected peers
+    // Remove disconnected inbound peers
+    m_inbound_peers.erase(
+        std::remove_if(m_inbound_peers.begin(), m_inbound_peers.end(),
+            [](const std::unique_ptr<CPeerConnection>& p_peer) {
+                return p_peer && !p_peer->f_connected;
+            }),
+        m_inbound_peers.end()
+    );
+
+    // Remove disconnected outbound peers
     m_outbound_peers.erase(
         std::remove_if(m_outbound_peers.begin(), m_outbound_peers.end(),
             [](const std::unique_ptr<CPeerConnection>& p_peer) {
@@ -769,7 +820,19 @@ size_t CPeerManager::GetOutboundPeerCount() const {
 }
 
 /**
- * @brief Get list of connected peer addresses
+ * @brief Get count of active inbound peer connections
+ * @return Number of inbound peers
+ *
+ * Thread-safe count using mutex lock. Includes disconnected peers
+ * that haven't been cleaned up yet by CleanupDisconnectedPeers().
+ */
+size_t CPeerManager::GetInboundPeerCount() const {
+    std::lock_guard<std::mutex> lock(cs_peers);
+    return m_inbound_peers.size();
+}
+
+/**
+ * @brief Get list of connected peer addresses (both inbound and outbound)
  * @return Vector of "address:port" strings for connected peers
  *
  * Thread-safe snapshot of currently connected peers.
@@ -780,6 +843,14 @@ std::vector<std::string> CPeerManager::GetConnectedPeers() const {
     std::vector<std::string> peers;
     std::lock_guard<std::mutex> lock(cs_peers);
 
+    // Add inbound peers
+    for (const auto& p_peer : m_inbound_peers) {
+        if (p_peer && p_peer->f_connected) {
+            peers.push_back(p_peer->str_address + ":" + std::to_string(p_peer->n_port));
+        }
+    }
+
+    // Add outbound peers
     for (const auto& p_peer : m_outbound_peers) {
         if (p_peer && p_peer->f_connected) {
             peers.push_back(p_peer->str_address + ":" + std::to_string(p_peer->n_port));

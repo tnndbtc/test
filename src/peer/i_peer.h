@@ -79,6 +79,14 @@ public:
     virtual size_t GetOutboundPeerCount() const = 0;
 
     /**
+     * @brief Get count of active inbound peer connections
+     * @return Number of inbound peers
+     *
+     * Thread-safe count of peers in inbound peer list.
+     */
+    virtual size_t GetInboundPeerCount() const = 0;
+
+    /**
      * @brief Get list of connected peer addresses
      * @return Vector of "address:port" strings for connected peers
      *

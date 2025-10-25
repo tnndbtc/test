@@ -42,6 +42,7 @@ void CConfig::LoadDefaults() {
     m_config_values["rest_api_port"] = std::to_string(REST_API_PORT);
     m_config_values["p2p_port"] = std::to_string(P2P_PORT);
     m_config_values["max_outbound_peers"] = std::to_string(MAX_OUTBOUND_PEERS);
+    m_config_values["max_inbound_peers"] = std::to_string(MAX_INBOUND_PEERS);
     m_config_values["data_dir"] = "./data";
     m_config_values["log_dir"] = LOG_DIR;
     m_config_values["log_level"] = LOG_LEVEL;
@@ -203,6 +204,10 @@ int CConfig::GetP2PPort() const {
 
 int CConfig::GetMaxOutboundPeers() const {
     return GetIntValue("max_outbound_peers", MAX_OUTBOUND_PEERS);
+}
+
+int CConfig::GetMaxInboundPeers() const {
+    return GetIntValue("max_inbound_peers", MAX_INBOUND_PEERS);
 }
 
 std::string CConfig::GetDataDir() const {

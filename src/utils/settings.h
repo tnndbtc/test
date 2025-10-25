@@ -17,7 +17,10 @@ constexpr int REST_API_PORT = 28443;
 // Peer-to-peer network port
 constexpr int P2P_PORT = 28333;
 
-// Maximum number of outbound peer connections
+// Maximum number of inbound peer connections (peers connecting to us)
+constexpr int MAX_INBOUND_PEERS = 120;
+
+// Maximum number of outbound peer connections (we connect to them)
 constexpr int MAX_OUTBOUND_PEERS = 8;
 
 // Log directory for daemon logs

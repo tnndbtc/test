@@ -134,6 +134,12 @@ public:
     int GetMaxOutboundPeers() const;
 
     /**
+     * @brief Get maximum number of inbound peer connections
+     * @return Max inbound peers number (default: MAX_INBOUND_PEERS from settings.h)
+     */
+    int GetMaxInboundPeers() const;
+
+    /**
      * @brief Get data directory path
      * @return Directory path for blockchain data
      */
