@@ -1,6 +1,6 @@
-// ============= i_peer.h =============
-#ifndef I_PEER_H
-#define I_PEER_H
+// ============= i_peer_manager.h =============
+#ifndef I_PEER_MANAGER_H
+#define I_PEER_MANAGER_H
 
 #include <string>
 #include <vector>
@@ -137,4 +137,4 @@ public:
     virtual size_t BroadcastMessage(const CPeerMessage& message) = 0;
 };
 
-#endif // I_PEER_H
+#endif // I_PEER_MANAGER_H

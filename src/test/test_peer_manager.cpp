@@ -1,6 +1,6 @@
-// ============= test_peer.cpp =============
+// ============= test_peer_manager.cpp =============
 #include "unit_test.h"
-#include "peer/peer.h"
+#include "peer/peer_manager.h"
 #include "peer/peer_message.h"
 #include <thread>
 #include <chrono>

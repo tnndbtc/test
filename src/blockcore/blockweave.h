@@ -6,7 +6,7 @@
 #include "blockcore/blockfile.h"
 #include "blockcore/transaction.h"
 #include "utils/hash.h"
-#include "peer/i_peer.h"
+#include "peer/i_peer_manager.h"
 #include <unordered_map>
 #include <vector>
 #include <memory>

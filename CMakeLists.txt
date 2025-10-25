@@ -111,7 +111,7 @@ target_link_libraries(bwutils
 # P2P networking
 # ============================================================
 add_library(bwpeer SHARED
-    src/peer/peer.cpp
+    src/peer/peer_manager.cpp
     src/peer/peer_message.cpp
 )
 

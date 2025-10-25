@@ -8,7 +8,7 @@
  * together with this file.
  *
  * Test modules included:
- * - test_peer.cpp          - Peer networking module tests (10 tests)
+ * - test_peer_manager.cpp          - Peer networking module tests (10 tests)
  * - test_request_queue.cpp - Request queue module tests (10 tests)
  * - test_api_server.cpp    - REST API server module tests (5 tests)
  * - test_block.cpp         - Block module tests (4 tests)
@@ -57,12 +57,12 @@ void ShowUsage(const char* program_name) {
     std::cout << "  --help                Show this help message\n\n";
     std::cout << "Examples:\n";
     std::cout << "  " << program_name << "                               # Run all tests\n";
-    std::cout << "  " << program_name << " --run_test=test_peer         # Run tests from test_peer.cpp\n";
+    std::cout << "  " << program_name << " --run_test=test_peer         # Run tests from test_peer_manager.cpp\n";
     std::cout << "  " << program_name << " --run_test=test_request_queue# Run tests from test_request_queue.cpp\n";
-    std::cout << "  " << program_name << " --run_test=peer              # Also matches test_peer.cpp\n";
+    std::cout << "  " << program_name << " --run_test=peer              # Also matches test_peer_manager.cpp\n";
     std::cout << "  " << program_name << " --list                       # List all tests\n\n";
     std::cout << "Test files:\n";
-    std::cout << "  - test_peer.cpp          (Peer networking - 10 tests)\n";
+    std::cout << "  - test_peer_manager.cpp          (Peer networking - 10 tests)\n";
     std::cout << "  - test_request_queue.cpp (Request queue - 10 tests)\n";
     std::cout << "  - test_api_server.cpp    (API server - 5 tests)\n";
     std::cout << "  - test_block.cpp         (Block - 4 tests)\n";
@@ -85,7 +85,7 @@ void ShowUsage(const char* program_name) {
  * and displays results with color-coded output grouped by test file.
  *
  * Supports command-line filtering to run tests from specific files
- * (e.g., --run_test=test_peer runs only test_peer.cpp tests).
+ * (e.g., --run_test=test_peer runs only test_peer_manager.cpp tests).
  */
 int main(int argc, char* argv[]) {
     std::string filter;
@@ -120,7 +120,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Blockweave Unit Test Suite\n";
         std::cout << "======================================================================\n";
         std::cout << "Test modules:\n";
-        std::cout << "  - test_peer.cpp          (Peer networking - 10 tests)\n";
+        std::cout << "  - test_peer_manager.cpp          (Peer networking - 10 tests)\n";
         std::cout << "  - test_request_queue.cpp (Request queue - 10 tests)\n";
         std::cout << "  - test_api_server.cpp    (API server - 5 tests)\n";
         std::cout << "  - test_block.cpp         (Block - 4 tests)\n";
@@ -141,7 +141,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Blockweave Unit Test Suite\n";
     std::cout << "======================================================================\n";
     std::cout << "Test modules:\n";
-    std::cout << "  - test_peer.cpp          (Peer networking - 10 tests)\n";
+    std::cout << "  - test_peer_manager.cpp          (Peer networking - 10 tests)\n";
     std::cout << "  - test_request_queue.cpp (Request queue - 10 tests)\n";
     std::cout << "  - test_api_server.cpp    (API server - 5 tests)\n";
     std::cout << "  - test_block.cpp         (Block - 4 tests)\n";

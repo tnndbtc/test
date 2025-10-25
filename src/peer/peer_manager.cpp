@@ -1,6 +1,6 @@
-// ============= peer.cpp =============
+// ============= peer_manager.cpp =============
 /**
- * @file peer.cpp
+ * @file peer_manager.cpp
  * @brief Implementation of P2P network connection management
  *
  * Implements TCP-based peer-to-peer networking with thread-per-connection
@@ -8,7 +8,7 @@
  * lifecycle management. Handles both inbound and outbound connections.
  */
 
-#include "peer/peer.h"
+#include "peer/peer_manager.h"
 #include "utils/threadname.h"
 #include "logger/logger.h"
 #include <iostream>

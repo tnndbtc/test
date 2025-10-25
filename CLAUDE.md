@@ -321,7 +321,9 @@ src/
 │   ├── rest_api.cpp, rest_api.h # REST API server
 │   └── i_rest_api.h            # REST API interface
 ├── peer/
-│   └── peer.cpp, peer.h        # P2P networking
+│   ├── peer_manager.cpp, peer_manager.h  # P2P networking (CPeerManager)
+│   ├── peer_message.cpp, peer_message.h  # P2P message protocol
+│   └── i_peer_manager.h                  # P2P manager interface
 ├── cli/
 │   └── daemon_cli.cpp          # Daemon CLI utility
 ├── wallet/
@@ -337,7 +339,7 @@ src/
 └── test/
     ├── unit_test.h             # Custom C++ unit test framework
     ├── test_all.cpp            # Main entry point - runs all tests (34 lines)
-    ├── test_peer.cpp           # Unit tests for peer module (224 lines, 12 tests)
+    ├── test_peer_manager.cpp           # Unit tests for peer module (224 lines, 12 tests)
     ├── test_rest.cpp           # Unit tests for REST API (352 lines, 15 tests)
     ├── build.sh                # Standalone build script for unit tests
     ├── CMakeLists.txt          # Build configuration for unit tests
@@ -448,7 +450,7 @@ The tests use a custom lightweight C++ unit test framework (`unit_test.h`) with:
 
 All tests are combined into a single executable `test_all` (27 tests total):
 
-**test_peer.cpp** (12 tests) - Peer networking module:
+**test_peer_manager.cpp** (12 tests) - Peer networking module:
 - Constructor tests (default, parameterized, move)
 - Thread-safe concurrent access tests (10 threads querying simultaneously)
 - Broadcast functionality with edge cases (empty lists, no peers)
@@ -521,7 +523,7 @@ Successful test run displays:
 Blockweave Unit Test Suite
 ======================================================================
 Test modules:
-  - test_peer.cpp (Peer networking - 12 tests)
+  - test_peer_manager.cpp (Peer networking - 12 tests)
   - test_rest.cpp (REST API - 15 tests)
 ======================================================================
 
@@ -550,7 +552,7 @@ Failed tests show detailed assertion failures with file/line information.
 
 - **unit_test.h** - Custom test framework (158 lines)
 - **test_all.cpp** - Main entry point (34 lines)
-- **test_peer.cpp** - Peer module tests (224 lines, 12 tests)
+- **test_peer_manager.cpp** - Peer module tests (224 lines, 12 tests)
 - **test_rest.cpp** - REST API tests (352 lines, 15 tests)
 - **build.sh** - Automated build script (151 lines)
 - **CMakeLists.txt** - Build configuration supporting standalone and integrated builds

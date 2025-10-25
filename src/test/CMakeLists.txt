@@ -88,7 +88,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     # Define the unified test executable (includes all test modules)
     add_executable(test_all
         test_all.cpp
-        test_peer.cpp
+        test_peer_manager.cpp
         test_peer_message.cpp
         test_request_queue.cpp
         test_api_server.cpp
@@ -140,7 +140,7 @@ else()
     # Define the unified test executable (includes all test modules)
     add_executable(test_all
         test_all.cpp
-        test_peer.cpp
+        test_peer_manager.cpp
         test_peer_message.cpp
         test_request_queue.cpp
         test_api_server.cpp
@@ -201,5 +201,5 @@ endif()
 
 # Print build information
 message(STATUS "Unit test executable: test_all")
-message(STATUS "Test sources: ${CMAKE_CURRENT_SOURCE_DIR}/test_all.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_peer.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_peer_message.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_request_queue.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_api_server.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_block.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_transaction.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_blockweave.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_wallet.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_hash.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_blockfile.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_logger.cpp")
+message(STATUS "Test sources: ${CMAKE_CURRENT_SOURCE_DIR}/test_all.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_peer_manager.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_peer_message.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_request_queue.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_api_server.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_block.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_transaction.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_blockweave.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_wallet.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_hash.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_blockfile.cpp, ${CMAKE_CURRENT_SOURCE_DIR}/test_logger.cpp")
 message(STATUS "Total tests: 118 (18 peer + 21 peer message + 10 request queue + 5 API server + 4 block + 5 transaction + 7 blockweave + 3 wallet + 2 hash + 17 blockfile + 26 logger)")

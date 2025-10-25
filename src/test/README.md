@@ -13,9 +13,9 @@ The tests use a custom lightweight C++ unit test framework defined in `unit_test
 
 ## Current Tests
 
-### test_peer.cpp
+### test_peer_manager.cpp
 
-Unit tests for the peer module (`CPeerConnection` and `CPeerManager`):
+Unit tests for the peer manager module (`CPeerConnection` and `CPeerManager`):
 
 1. **PeerConnection_DefaultConstructor** - Tests default constructor initialization
 2. **PeerConnection_ParameterizedConstructor** - Tests parameterized constructor
@@ -305,7 +305,7 @@ Available Tests (27 total)
 
 - `unit_test.h` - Test framework header with filtering support
 - `test_all.cpp` - Main entry point with command-line parsing
-- `test_peer.cpp` - Peer connection and manager tests (18 tests)
+- `test_peer_manager.cpp` - Peer connection and manager tests (18 tests)
 - `test_peer_message.cpp` - P2P message protocol tests (21 tests)
 - `test_request_queue.cpp` - Request queue tests (10 tests)
 - `test_api_server.cpp` - REST API server tests (5 tests)

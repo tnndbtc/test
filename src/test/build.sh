@@ -166,7 +166,7 @@ if [ -f "test_all" ]; then
     echo "Test executable created: $TEST_BUILD_DIR/test_all"
     echo ""
     echo "Test modules included:"
-    echo "  - test_peer.cpp          (Peer networking - 18 tests)"
+    echo "  - test_peer_manager.cpp  (Peer manager - 18 tests)"
     echo "  - test_peer_message.cpp  (Peer message protocol - 21 tests)"
     echo "  - test_request_queue.cpp (Request queue - 10 tests)"
     echo "  - test_api_server.cpp    (API server - 5 tests)"

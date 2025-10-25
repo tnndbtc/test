@@ -1,8 +1,8 @@
-// ============= peer.h =============
-#ifndef PEER_H
-#define PEER_H
+// ============= peer_manager.h =============
+#ifndef PEER_MANAGER_H
+#define PEER_MANAGER_H
 
-#include "peer/i_peer.h"
+#include "peer/i_peer_manager.h"
 #include "peer/peer_message.h"
 #include "utils/settings.h"
 #include <string>
@@ -319,4 +319,4 @@ public:
     virtual size_t BroadcastMessage(const CPeerMessage& message) override;
 };
 
-#endif // PEER_H
+#endif // PEER_MANAGER_H
