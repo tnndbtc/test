@@ -17,8 +17,9 @@
  * - test_wallet.cpp        - Wallet module tests (3 tests)
  * - test_hash.cpp          - Hash module tests (3 tests)
  * - test_blockfile.cpp     - Block file persistence module tests (21 tests)
+ * - test_logger.cpp        - Logger module tests (33 tests)
  *
- * Total: 68 unit tests
+ * Total: 101 unit tests
  *
  * Command-line options:
  * - --run_test=<file>  : Run only tests from specific test file (e.g., test_peer)
@@ -70,6 +71,7 @@ void ShowUsage(const char* program_name) {
     std::cout << "  - test_wallet.cpp        (Wallet - 3 tests)\n";
     std::cout << "  - test_hash.cpp          (Hash - 3 tests)\n";
     std::cout << "  - test_blockfile.cpp     (Block file persistence - 21 tests)\n";
+    std::cout << "  - test_logger.cpp        (Logger - 33 tests)\n";
 }
 
 /**
@@ -127,6 +129,7 @@ int main(int argc, char* argv[]) {
         std::cout << "  - test_wallet.cpp        (Wallet - 3 tests)\n";
         std::cout << "  - test_hash.cpp          (Hash - 3 tests)\n";
         std::cout << "  - test_blockfile.cpp     (Block file persistence - 21 tests)\n";
+        std::cout << "  - test_logger.cpp        (Logger - 33 tests)\n";
         std::cout << "======================================================================\n\n";
 
         UnitTest::ListAllTests();
@@ -147,6 +150,7 @@ int main(int argc, char* argv[]) {
     std::cout << "  - test_wallet.cpp        (Wallet - 3 tests)\n";
     std::cout << "  - test_hash.cpp          (Hash - 3 tests)\n";
     std::cout << "  - test_blockfile.cpp     (Block file persistence - 21 tests)\n";
+    std::cout << "  - test_logger.cpp        (Logger - 33 tests)\n";
     std::cout << "======================================================================\n\n";
 
     return UnitTest::RunAllTests(filter);

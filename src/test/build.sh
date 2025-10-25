@@ -135,13 +135,15 @@ fi
 echo "Building unit tests..."
 echo ""
 
-# Create test build directory if it doesn't exist
-if [ ! -d "$TEST_BUILD_DIR" ]; then
-    echo "Creating build directory: $TEST_BUILD_DIR"
-    mkdir -p "$TEST_BUILD_DIR"
-else
-    echo "Using existing build directory: $TEST_BUILD_DIR"
+# Remove old test build directory if it exists (for clean build)
+if [ -d "$TEST_BUILD_DIR" ]; then
+    echo "Removing existing build directory: $TEST_BUILD_DIR"
+    rm -rf "$TEST_BUILD_DIR"
 fi
+
+# Create fresh test build directory
+echo "Creating build directory: $TEST_BUILD_DIR"
+mkdir -p "$TEST_BUILD_DIR"
 
 cd "$TEST_BUILD_DIR"
 
@@ -173,7 +175,8 @@ if [ -f "test_all" ]; then
     echo "  - test_wallet.cpp        (Wallet - 3 tests)"
     echo "  - test_hash.cpp          (Hash - 3 tests)"
     echo "  - test_blockfile.cpp     (Block file persistence - 21 tests)"
-    echo "  Total: 68 tests"
+    echo "  - test_logger.cpp        (Logger - 33 tests)"
+    echo "  Total: 101 tests"
     echo ""
     echo "To run all tests:"
     echo "  cd $TEST_BUILD_DIR"
