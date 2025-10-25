@@ -38,9 +38,9 @@ CLogger::~CLogger() {
 
 /**
  * @brief Generate current timestamp string with millisecond precision
- * @return Formatted timestamp string "YYYY-MM-DD HH:MM:SS.mmm"
+ * @return Formatted timestamp string "YYYY-MM-DD HH:MM:SS.mmm UTC"
  *
- * Uses system clock to generate timestamp in local time with
+ * Uses system clock to generate timestamp in UTC time with
  * millisecond precision for accurate log timing.
  */
 std::string CLogger::GetTimestamp() {
@@ -50,8 +50,9 @@ std::string CLogger::GetTimestamp() {
         now.time_since_epoch()) % 1000;
 
     std::stringstream ss;
-    ss << std::put_time(std::localtime(&now_time_t), "%Y-%m-%d %H:%M:%S");
+    ss << std::put_time(std::gmtime(&now_time_t), "%Y-%m-%d %H:%M:%S");
     ss << '.' << std::setfill('0') << std::setw(3) << now_ms.count();
+    ss << " UTC";
     return ss.str();
 }
 

@@ -35,7 +35,7 @@ struct CTransaction {
     std::vector<uint8_t> m_data;   ///< Binary data payload (file contents, message, etc.)
     size_t m_n_data_size;          ///< Size of data in bytes (cached for performance)
     uint64_t m_n_reward;           ///< Mining reward/fee in smallest currency unit
-    int64_t m_n_timestamp;         ///< Unix timestamp (nanoseconds) when transaction created
+    int64_t m_n_timestamp;         ///< UTC timestamp (nanoseconds since Unix epoch) when transaction created
 
     /**
      * @brief Construct a new transaction

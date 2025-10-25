@@ -3,6 +3,27 @@
 #include <chrono>
 #include <random>
 #include <sstream>
+#include <iomanip>
+#include <ctime>
+
+/**
+ * @brief Convert epoch timestamp to human-readable UTC string
+ * @param n_epoch_ns Timestamp in nanoseconds since Unix epoch
+ * @return Formatted UTC timestamp string
+ */
+static std::string TimestampToUTC(int64_t n_epoch_ns) {
+    // Convert nanoseconds to seconds for time_t
+    auto seconds = n_epoch_ns / 1000000000LL;
+    auto ns_remainder = n_epoch_ns % 1000000000LL;
+    auto ms = ns_remainder / 1000000LL;
+
+    std::time_t time_t = static_cast<std::time_t>(seconds);
+
+    std::stringstream ss;
+    ss << std::put_time(std::gmtime(&time_t), "%Y-%m-%d %H:%M:%S");
+    ss << '.' << std::setfill('0') << std::setw(3) << ms << " UTC";
+    return ss.str();
+}
 
 CBlock::CBlock(const CHash& prev_block, int64_t n_height, const std::string& str_miner)
     : m_previous_block(prev_block), m_n_height(n_height), m_str_miner(str_miner),
@@ -46,6 +67,6 @@ std::string CBlock::ToString() const {
        << "  Miner: " << m_str_miner << "\n"
        << "  Transactions: " << m_transactions.size() << "\n"
        << "  Data Size: " << m_n_cumulative_data_size << " bytes\n"
-       << "  Timestamp: " << m_n_timestamp << "\n";
+       << "  Timestamp: " << m_n_timestamp << " (" << TimestampToUTC(m_n_timestamp) << ")\n";
     return ss.str();
 }

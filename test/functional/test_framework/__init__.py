@@ -42,7 +42,7 @@ class BlockweaveNode:
             # Auto-detect project root
             # test_file_path is .../test_framework/__init__.py
             # From build/test/functional/test_framework/__init__.py -> go up 4 levels to project root
-            # From test/functional/test_framework/__init__.py -> go up 3 levels to project root
+            # From test/functional/test_framework/__init__.py -> go up 4 levels to project root
             test_file_path = Path(__file__).resolve()
 
             # Check if we're in build/test/functional/test_framework
@@ -53,9 +53,10 @@ class BlockweaveNode:
                 build_index = test_file_path.parts.index("build")
                 self.project_root = Path(*test_file_path.parts[:build_index])
             else:
-                # Running from test/functional/test_framework -> go up 3 levels
+                # Running from test/functional/test_framework -> go up 4 levels
                 # Path is like: /path/to/project/test/functional/test_framework/__init__.py
-                self.project_root = test_file_path.parent.parent.parent
+                # __init__.py -> test_framework -> functional -> test -> project_root
+                self.project_root = test_file_path.parent.parent.parent.parent
         else:
             self.project_root = Path(project_root).resolve()
 
@@ -355,17 +356,21 @@ class TestFramework:
         self.logger = logging.getLogger("test_framework")
         self.logger.info(f"Test framework initialized in {self.tmpdir}")
 
-    def add_node(self, port=28443, **kwargs):
+    def add_node(self, port=None, **kwargs):
         """
         Create and add a new BlockweaveNode for testing.
 
         Args:
-            port: REST API port for the node
+            port: REST API port for the node (default: auto-assign starting from 28443)
             **kwargs: Additional arguments passed to BlockweaveNode
 
         Returns:
             BlockweaveNode: The created node instance
         """
+        # Auto-assign port if not specified (start from 28443 + node_counter)
+        if port is None:
+            port = 28443 + self.node_counter
+
         node_dir = self.tmpdir / f"node{self.node_counter}"
         node_dir.mkdir(parents=True, exist_ok=True)
 

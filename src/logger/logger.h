@@ -53,7 +53,7 @@ private:
 
     /**
      * @brief Get current timestamp as formatted string
-     * @return Timestamp string in format "YYYY-MM-DD HH:MM:SS.mmm"
+     * @return Timestamp string in format "YYYY-MM-DD HH:MM:SS.mmm UTC"
      */
     static std::string GetTimestamp();
 
