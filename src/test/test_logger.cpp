@@ -36,6 +36,17 @@ static std::string CreateTempLogDirName() {
 }
 
 /**
+ * @brief Get the expected log file path for the current process
+ * @param str_log_dir Log directory
+ * @return Full path to log file (e.g., "./log/test_all.log")
+ */
+static std::string GetLogFilePath(const std::string& str_log_dir) {
+    // Logger uses process name as log file name
+    // For tests, the process is "test_all"
+    return str_log_dir + "/test_all.log";
+}
+
+/**
  * @brief Recursively remove directory and all contents
  * @param str_path Path to directory to remove
  */
@@ -114,7 +125,7 @@ static size_t GetFileSize(const std::string& str_path) {
 /**
  * @brief Count number of files matching pattern in directory
  * @param str_dir Directory path
- * @param str_pattern File name pattern (e.g., "rest_daemon.log")
+ * @param str_pattern File name pattern (e.g., "test_all.log")
  * @return Number of matching files
  */
 static size_t CountFilesWithPattern(const std::string& str_dir, const std::string& str_pattern) {
@@ -157,7 +168,7 @@ TEST(LoggerInitializeCreatesDirectory) {
     ASSERT_TRUE(S_ISDIR(st.st_mode), "Path should be a directory");
 
     // Verify log file was created
-    std::string str_log_file = str_log_dir + "/rest_daemon.log";
+    std::string str_log_file = GetLogFilePath(str_log_dir);
     ASSERT_TRUE(FileExists(str_log_file), "Log file should be created");
 
     CleanupLogDir(str_log_dir);
@@ -173,7 +184,7 @@ TEST(LoggerTraceMessage) {
     logger.Trace("Test trace message");
     logger.Flush();
 
-    std::string str_log_file = str_log_dir + "/rest_daemon.log";
+    std::string str_log_file = GetLogFilePath(str_log_dir);
     std::string str_content = ReadFile(str_log_file);
 
     ASSERT_TRUE(str_content.find("Test trace message") != std::string::npos,
@@ -192,7 +203,7 @@ TEST(LoggerInfoMessage) {
     logger.Info("Test info message");
     logger.Flush();
 
-    std::string str_log_file = str_log_dir + "/rest_daemon.log";
+    std::string str_log_file = GetLogFilePath(str_log_dir);
     std::string str_content = ReadFile(str_log_file);
 
     ASSERT_TRUE(str_content.find("Test info message") != std::string::npos,
@@ -211,7 +222,7 @@ TEST(LoggerWarnMessage) {
     logger.Warn("Test warning message");
     logger.Flush();
 
-    std::string str_log_file = str_log_dir + "/rest_daemon.log";
+    std::string str_log_file = GetLogFilePath(str_log_dir);
     std::string str_content = ReadFile(str_log_file);
 
     ASSERT_TRUE(str_content.find("Test warning message") != std::string::npos,
@@ -230,7 +241,7 @@ TEST(LoggerErrorMessage) {
     logger.Error("Test error message");
     logger.Flush();
 
-    std::string str_log_file = str_log_dir + "/rest_daemon.log";
+    std::string str_log_file = GetLogFilePath(str_log_dir);
     std::string str_content = ReadFile(str_log_file);
 
     ASSERT_TRUE(str_content.find("Test error message") != std::string::npos,
@@ -249,7 +260,7 @@ TEST(LoggerFatalMessage) {
     logger.Fatal("Test fatal message");
     logger.Flush();
 
-    std::string str_log_file = str_log_dir + "/rest_daemon.log";
+    std::string str_log_file = GetLogFilePath(str_log_dir);
     std::string str_content = ReadFile(str_log_file);
 
     ASSERT_TRUE(str_content.find("Test fatal message") != std::string::npos,
@@ -268,7 +279,7 @@ TEST(LoggerGenericLogMethod) {
     logger.Log(ELogLevel::INFO, "Test generic log");
     logger.Flush();
 
-    std::string str_log_file = str_log_dir + "/rest_daemon.log";
+    std::string str_log_file = GetLogFilePath(str_log_dir);
     std::string str_content = ReadFile(str_log_file);
 
     ASSERT_TRUE(str_content.find("Test generic log") != std::string::npos,
@@ -288,7 +299,7 @@ TEST(LoggerLevelFilteringTraceNotLogged) {
     logger.Info("This should be logged");
     logger.Flush();
 
-    std::string str_log_file = str_log_dir + "/rest_daemon.log";
+    std::string str_log_file = GetLogFilePath(str_log_dir);
     std::string str_content = ReadFile(str_log_file);
 
     ASSERT_FALSE(str_content.find("This should not be logged") != std::string::npos,
@@ -309,7 +320,7 @@ TEST(LoggerLevelFilteringInfoNotLogged) {
     logger.Error("Error should appear");
     logger.Flush();
 
-    std::string str_log_file = str_log_dir + "/rest_daemon.log";
+    std::string str_log_file = GetLogFilePath(str_log_dir);
     std::string str_content = ReadFile(str_log_file);
 
     ASSERT_FALSE(str_content.find("Info should not appear") != std::string::npos,
@@ -339,7 +350,7 @@ TEST(LoggerSetMinLogLevel) {
     logger.Warn("Warn 2");
     logger.Flush();
 
-    std::string str_log_file = str_log_dir + "/rest_daemon.log";
+    std::string str_log_file = GetLogFilePath(str_log_dir);
     std::string str_content = ReadFile(str_log_file);
 
     ASSERT_TRUE(str_content.find("Trace 1") != std::string::npos,
@@ -364,7 +375,7 @@ TEST(LoggerTimestampFormat) {
     logger.Info("Test timestamp");
     logger.Flush();
 
-    std::string str_log_file = str_log_dir + "/rest_daemon.log";
+    std::string str_log_file = GetLogFilePath(str_log_dir);
     std::string str_content = ReadFile(str_log_file);
 
     // Timestamp format: [YYYY-MM-DD HH:MM:SS.mmm UTC]
@@ -385,7 +396,7 @@ TEST(LoggerProcessAndThreadName) {
     logger.Info("Test process and thread");
     logger.Flush();
 
-    std::string str_log_file = str_log_dir + "/rest_daemon.log";
+    std::string str_log_file = GetLogFilePath(str_log_dir);
     std::string str_content = ReadFile(str_log_file);
 
     // Log format includes [process:thread]
@@ -408,7 +419,7 @@ TEST(LoggerMultipleMessages) {
     }
     logger.Flush();
 
-    std::string str_log_file = str_log_dir + "/rest_daemon.log";
+    std::string str_log_file = GetLogFilePath(str_log_dir);
     size_t n_lines = CountLines(str_log_file);
 
     // Should have at least 10 messages (plus initialization message)
@@ -425,7 +436,7 @@ TEST(LoggerFlushWritesToDisk) {
     logger.Info("Before flush");
 
     // Flush and verify file has content
-    std::string str_log_file = str_log_dir + "/rest_daemon.log";
+    std::string str_log_file = GetLogFilePath(str_log_dir);
     logger.Flush();
     size_t n_size_after = GetFileSize(str_log_file);
 
@@ -448,8 +459,8 @@ TEST(LoggerRotationFileNaming) {
     }
     logger.Flush();
 
-    // Count log files (rest_daemon.log + rotated files)
-    size_t n_log_files = CountFilesWithPattern(str_log_dir, "rest_daemon.log");
+    // Count log files (test_all.log + rotated files)
+    size_t n_log_files = CountFilesWithPattern(str_log_dir, "test_all.log");
 
     // Should have current log + up to 3 rotated files (1-4 files total)
     ASSERT_TRUE(n_log_files >= 1, "Should have at least the main log file");
@@ -471,7 +482,7 @@ TEST(LoggerRotationDeletesOldFiles) {
     logger.Flush();
 
     // Should not have more than current + 2 rotated files (3 total)
-    size_t n_log_files = CountFilesWithPattern(str_log_dir, "rest_daemon.log");
+    size_t n_log_files = CountFilesWithPattern(str_log_dir, "test_all.log");
     ASSERT_TRUE(n_log_files <= 3, "Should delete old rotated files");
 
     CleanupLogDir(str_log_dir);
@@ -502,7 +513,7 @@ TEST(LoggerThreadSafeConcurrentWrites) {
 
     logger.Flush();
 
-    std::string str_log_file = str_log_dir + "/rest_daemon.log";
+    std::string str_log_file = GetLogFilePath(str_log_dir);
     size_t n_lines = CountLines(str_log_file);
 
     // Should have 10 threads * 10 messages = 100 messages (plus init message)
@@ -557,7 +568,7 @@ TEST(LoggerEmptyMessage) {
     logger.Info(""); // Empty message
     logger.Flush();
 
-    std::string str_log_file = str_log_dir + "/rest_daemon.log";
+    std::string str_log_file = GetLogFilePath(str_log_dir);
     ASSERT_TRUE(FileExists(str_log_file), "Log file should exist even with empty message");
 
     CleanupLogDir(str_log_dir);
@@ -574,7 +585,7 @@ TEST(LoggerVeryLongMessage) {
     logger.Info(str_long_msg);
     logger.Flush();
 
-    std::string str_log_file = str_log_dir + "/rest_daemon.log";
+    std::string str_log_file = GetLogFilePath(str_log_dir);
     std::string str_content = ReadFile(str_log_file);
 
     ASSERT_TRUE(str_content.find(str_long_msg) != std::string::npos,
@@ -591,7 +602,7 @@ TEST(LoggerSpecialCharacters) {
     logger.Info("Special chars: \n\t\"'\\");
     logger.Flush();
 
-    std::string str_log_file = str_log_dir + "/rest_daemon.log";
+    std::string str_log_file = GetLogFilePath(str_log_dir);
     std::string str_content = ReadFile(str_log_file);
 
     ASSERT_TRUE(str_content.find("Special chars:") != std::string::npos,

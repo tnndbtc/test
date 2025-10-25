@@ -174,7 +174,7 @@ ELogLevel CLogger::ParseLogLevel(const std::string& str_level) {
  * @param n_files_to_keep Number of rotated log files to keep
  * @return true on success, false on failure
  *
- * Creates log file named rest_daemon.log. Appends to existing file if present.
+ * Creates log file named <process_name>.log. Appends to existing file if present.
  * Creates log directory if it doesn't exist. Thread-safe.
  */
 bool CLogger::Initialize(const std::string& str_log_dir, ELogLevel min_level,
@@ -196,8 +196,9 @@ bool CLogger::Initialize(const std::string& str_log_dir, ELogLevel min_level,
         }
     }
 
-    // Use simple fixed log file name (rest_daemon.log)
-    m_str_log_file = str_log_dir + "/rest_daemon.log";
+    // Use process name as log file name
+    std::string str_process_name = GetProcessName();
+    m_str_log_file = str_log_dir + "/" + str_process_name + ".log";
 
     // Open log file in append mode (appends to existing file)
     m_log_stream.open(m_str_log_file, std::ios::out | std::ios::app);
