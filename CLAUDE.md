@@ -267,6 +267,26 @@ Both limits are configurable via `blockweave.conf`.
 - Minimum log level filtering and console output for errors
 - Located in src/logger/ subfolder
 
+**CPeerFilter** (src/peer/peer_filter.h, src/peer/peer_filter.cpp)
+- Tracks which peers have knowledge of transactions and blocks
+- Prevents redundant broadcasts by filtering out peers that already know about TX_IDS and BLOCK messages
+- Data structures: `map_tx_peers` (TX_ID → set of peers), `map_block_peers` (block hash → set of peers)
+- Key operations:
+  - `AddTxIdForPeer()`, `AddBlockForPeer()` - Record peer knowledge
+  - `PeerKnowsTxId()`, `PeerKnowsBlock()` - Check if peer knows
+  - `GetPeersWithoutTxId()`, `GetPeersWithoutBlock()` - Filter peers for broadcasts
+  - `RemoveTxId()`, `RemoveBlock()`, `Clear()` - Cleanup operations
+- Thread-safe with mutex protection (`cs_filter`)
+- Peer identifier format: "address:port"
+- Example usage:
+  ```cpp
+  filter.AddTxIdForPeer("tx_abc123", "192.168.1.100", 8333);
+  auto all_peers = peer_manager->GetConnectedPeers();
+  auto filtered_peers = filter.GetPeersWithoutTxId("tx_abc123", all_peers);
+  // Broadcast only to filtered_peers
+  ```
+- Located in src/peer/ subfolder
+
 ### Blockweave vs Blockchain
 
 The key architectural difference is the **recall block mechanism**:
@@ -322,7 +342,8 @@ src/
 │   └── i_rest_api.h            # REST API interface
 ├── peer/
 │   ├── peer_manager.cpp, peer_manager.h  # P2P networking (CPeerManager)
-│   ├── peer_message.cpp, peer_message.h  # P2P message protocol
+│   ├── peer_message.cpp, peer_message.h  # P2P message protocol (string-based types)
+│   ├── peer_filter.cpp, peer_filter.h    # Peer broadcast filter (CPeerFilter)
 │   └── i_peer_manager.h                  # P2P manager interface
 ├── cli/
 │   └── daemon_cli.cpp          # Daemon CLI utility
@@ -339,8 +360,18 @@ src/
 └── test/
     ├── unit_test.h             # Custom C++ unit test framework
     ├── test_all.cpp            # Main entry point - runs all tests (34 lines)
-    ├── test_peer_manager.cpp           # Unit tests for peer module (224 lines, 12 tests)
-    ├── test_rest.cpp           # Unit tests for REST API (352 lines, 15 tests)
+    ├── test_peer_manager.cpp   # Unit tests for peer manager (18 tests)
+    ├── test_peer_message.cpp   # Unit tests for peer message protocol (21 tests)
+    ├── test_peer_filter.cpp    # Unit tests for peer filter (18 tests)
+    ├── test_request_queue.cpp  # Unit tests for request queue (10 tests)
+    ├── test_api_server.cpp     # Unit tests for REST API server (5 tests)
+    ├── test_block.cpp          # Unit tests for block (4 tests)
+    ├── test_transaction.cpp    # Unit tests for transaction (5 tests)
+    ├── test_blockweave.cpp     # Unit tests for blockweave (7 tests)
+    ├── test_wallet.cpp         # Unit tests for wallet (3 tests)
+    ├── test_hash.cpp           # Unit tests for hash (2 tests)
+    ├── test_blockfile.cpp      # Unit tests for blockfile (17 tests)
+    ├── test_logger.cpp         # Unit tests for logger (26 tests)
     ├── build.sh                # Standalone build script for unit tests
     ├── CMakeLists.txt          # Build configuration for unit tests
     └── README.md               # Unit testing documentation
@@ -448,23 +479,62 @@ The tests use a custom lightweight C++ unit test framework (`unit_test.h`) with:
 
 ### Test Executable
 
-All tests are combined into a single executable `test_all` (27 tests total):
+All tests are combined into a single executable `test_all` (136 tests total):
 
-**test_peer_manager.cpp** (12 tests) - Peer networking module:
+**test_peer_manager.cpp** (18 tests) - Peer manager networking:
 - Constructor tests (default, parameterized, move)
 - Thread-safe concurrent access tests (10 threads querying simultaneously)
-- Broadcast functionality with edge cases (empty lists, no peers)
+- Broadcast functionality with edge cases (empty payloads, no peers, different message types)
 - Atomic flag operations
-- Lifecycle management (start/stop, multiple cycles)
+- Inbound/outbound peer count tracking (separate limits: 120 inbound, 8 outbound)
+- SendMessageToPeer and BroadcastMessage functionality
 
-**test_rest.cpp** (15 tests) - REST API module:
-- HTTP request structure initialization
+**test_peer_message.cpp** (21 tests) - P2P message protocol:
+- String-based message types (ping, pong, get_peers, tx_ids, etc.)
+- Serialization/deserialization with new format: [1 byte type_length][N bytes type][4 bytes payload_length][M bytes payload]
+- Round-trip tests (empty payload, string payload, binary payload with nulls)
+- Network byte order conversion
+- Message validation and type string verification
+
+**test_peer_filter.cpp** (18 tests) - Peer broadcast filtering:
+- Transaction and block knowledge tracking
+- Filtering peers for targeted broadcasts
+- Multiple peers knowing same TX/block
+- Thread-safe concurrent operations (5 threads)
+- Cleanup operations (RemoveTxId, RemoveBlock, Clear)
+- Different ports treated as different peers
+
+**test_request_queue.cpp** (10 tests) - HTTP request queue:
 - Request queue operations (FIFO, timeout, shutdown)
 - Thread-safe producer/consumer patterns (5 producers + 5 consumers)
-- REST API server lifecycle management
+- Enqueue/dequeue functionality
+
+**test_api_server.cpp** (5 tests) - REST API server:
+- Server lifecycle management (start/stop, multiple cycles)
 - Destructor cleanup verification
 
-**test_all.cpp** - Main entry point that runs all registered tests from both modules
+**test_block.cpp** (4 tests) - Block implementation:
+- Constructor, hash computation, transactions, mining
+
+**test_transaction.cpp** (5 tests) - Transaction implementation:
+- Constructor, ID generation, empty/large data, timestamps
+
+**test_blockweave.cpp** (7 tests) - Blockweave orchestrator:
+- Adding transactions, mining control, thread safety
+
+**test_wallet.cpp** (3 tests) - Wallet functionality:
+- Address generation, transaction creation
+
+**test_hash.cpp** (2 tests) - Hash utilities:
+- Constructor, empty input handling
+
+**test_blockfile.cpp** (17 tests) - Block persistence:
+- Save/load blocks, index persistence, genesis block handling
+
+**test_logger.cpp** (26 tests) - Logging system:
+- Log levels, thread safety, rotation, timestamp formatting
+
+**test_all.cpp** - Main entry point that runs all registered tests from all modules
 
 ### Building Unit Tests
 
@@ -511,7 +581,7 @@ make test_all
 ```bash
 cd src/test/build
 
-# Run all tests (27 total)
+# Run all tests (136 total)
 ./test_all
 ```
 
@@ -523,8 +593,18 @@ Successful test run displays:
 Blockweave Unit Test Suite
 ======================================================================
 Test modules:
-  - test_peer_manager.cpp (Peer networking - 12 tests)
-  - test_rest.cpp (REST API - 15 tests)
+  - test_peer_manager.cpp          (Peer networking - 18 tests)
+  - test_peer_message.cpp          (Peer message protocol - 21 tests)
+  - test_peer_filter.cpp           (Peer filter - 18 tests)
+  - test_request_queue.cpp         (Request queue - 10 tests)
+  - test_api_server.cpp            (API server - 5 tests)
+  - test_block.cpp                 (Block - 4 tests)
+  - test_transaction.cpp           (Transaction - 5 tests)
+  - test_blockweave.cpp            (Blockweave - 7 tests)
+  - test_wallet.cpp                (Wallet - 3 tests)
+  - test_hash.cpp                  (Hash - 2 tests)
+  - test_blockfile.cpp             (Block file persistence - 17 tests)
+  - test_logger.cpp                (Logger - 26 tests)
 ======================================================================
 
 ======================================================================
@@ -538,8 +618,8 @@ Running: TestName2 ... ✓ PASSED
 ======================================================================
 TEST SUMMARY
 ======================================================================
-Total:  27
-Passed: 27
+Total:  136
+Passed: 136
 Failed: 0
 ======================================================================
 
@@ -550,11 +630,21 @@ Failed tests show detailed assertion failures with file/line information.
 
 ### Test Organization
 
-- **unit_test.h** - Custom test framework (158 lines)
-- **test_all.cpp** - Main entry point (34 lines)
-- **test_peer_manager.cpp** - Peer module tests (224 lines, 12 tests)
-- **test_rest.cpp** - REST API tests (352 lines, 15 tests)
-- **build.sh** - Automated build script (151 lines)
+- **unit_test.h** - Custom test framework
+- **test_all.cpp** - Main entry point
+- **test_peer_manager.cpp** - Peer manager tests (18 tests)
+- **test_peer_message.cpp** - Peer message protocol tests (21 tests)
+- **test_peer_filter.cpp** - Peer filter tests (18 tests)
+- **test_request_queue.cpp** - Request queue tests (10 tests)
+- **test_api_server.cpp** - REST API server tests (5 tests)
+- **test_block.cpp** - Block tests (4 tests)
+- **test_transaction.cpp** - Transaction tests (5 tests)
+- **test_blockweave.cpp** - Blockweave tests (7 tests)
+- **test_wallet.cpp** - Wallet tests (3 tests)
+- **test_hash.cpp** - Hash tests (2 tests)
+- **test_blockfile.cpp** - Blockfile tests (17 tests)
+- **test_logger.cpp** - Logger tests (26 tests)
+- **build.sh** - Automated build script
 - **CMakeLists.txt** - Build configuration supporting standalone and integrated builds
 - **README.md** - Detailed testing documentation
 
