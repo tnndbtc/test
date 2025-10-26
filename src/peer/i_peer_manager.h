@@ -26,7 +26,8 @@ class CPeerMessage;
  *   IPeerManager* p_peer_mgr = new CPeerManager(1984);
  *   p_peer_mgr->Start();
  *   p_peer_mgr->AddPeer("192.168.1.100", 1984);
- *   p_peer_mgr->BroadcastTransactionIds(tx_ids);
+ *   CPeerMessage msg(EMessageType::PING);
+ *   p_peer_mgr->BroadcastMessage(msg);
  *   p_peer_mgr->Stop();
  *   delete p_peer_mgr;
  */
@@ -96,16 +97,6 @@ public:
      * Thread-safe snapshot of currently connected peers.
      */
     virtual std::vector<std::string> GetConnectedPeers() const = 0;
-
-    /**
-     * @brief Broadcast transaction IDs to all connected peers
-     * @param transaction_ids Vector of transaction ID strings to broadcast
-     *
-     * Sends transaction IDs to all active outbound peers.
-     * Non-blocking operation that sends to each peer independently.
-     * Failed sends are logged but don't affect other peers.
-     */
-    virtual void BroadcastTransactionIds(const std::vector<std::string>& transaction_ids) = 0;
 
     /**
      * @brief Send a message to a specific peer

@@ -1,6 +1,7 @@
 // ============= blockweave.cpp =============
 #include "blockweave.h"
 #include "logger/logger.h"
+#include "peer/peer_message.h"
 #include <iostream>
 #include <random>
 #include <algorithm>
@@ -100,7 +101,17 @@ void CBlockweave::MineBlock(const std::string& str_miner_address) {
 
     // Broadcast transaction IDs to peers (outside lock to avoid deadlock)
     if (p_peer_manager != nullptr && !transaction_ids.empty()) {
-        p_peer_manager->BroadcastTransactionIds(transaction_ids);
+        // Create TX_IDS message with comma-separated transaction IDs
+        std::string str_payload;
+        for (size_t n_i = 0; n_i < transaction_ids.size(); n_i++) {
+            if (n_i > 0) {
+                str_payload += ",";
+            }
+            str_payload += transaction_ids[n_i];
+        }
+
+        CPeerMessage tx_ids_msg(EMessageType::TX_IDS, str_payload);
+        p_peer_manager->BroadcastMessage(tx_ids_msg);
     }
 }
 

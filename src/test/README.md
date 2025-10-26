@@ -24,8 +24,8 @@ Unit tests for the peer manager module (`CPeerConnection` and `CPeerManager`):
 5. **PeerManager_GetConnectedPeers_Empty** - Tests empty peer list handling
 6. **PeerManager_ThreadSafe_GetOutboundPeerCount** - Tests thread-safe outbound peer count access
 7. **PeerManager_ThreadSafe_GetConnectedPeers** - Tests thread-safe peer retrieval
-8. **PeerManager_BroadcastTransactionIds_Empty** - Tests broadcast with empty transaction list
-9. **PeerManager_BroadcastTransactionIds_NoPeers** - Tests broadcast with no connected peers
+8. **PeerManager_BroadcastMessage_EmptyPayload** - Tests broadcast with empty payload
+9. **PeerManager_BroadcastMessage_TxIdsPayload** - Tests broadcast with TX_IDS payload
 10. **PeerConnection_AtomicFlag** - Tests atomic flag operations
 11. **PeerManager_GetInboundPeerCount** - Tests inbound peer count tracking
 12. **PeerManager_ThreadSafe_GetInboundPeerCount** - Tests thread-safe inbound peer count access

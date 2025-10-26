@@ -153,34 +153,34 @@ TEST(PeerManager_ThreadSafe_GetConnectedPeers) {
 }
 
 /**
- * @brief Test BroadcastTransactionIds with empty list
+ * @brief Test BroadcastMessage with empty payload
  */
-TEST(PeerManager_BroadcastTransactionIds_Empty) {
+TEST(PeerManager_BroadcastMessage_EmptyPayload) {
     CPeerManager manager(8337);
 
-    std::vector<std::string> empty_ids;
+    // Create TX_IDS message with empty payload
+    CPeerMessage tx_ids_msg(EMessageType::TX_IDS, "");
 
-    // Should not crash with empty list
-    manager.BroadcastTransactionIds(empty_ids);
+    // Should not crash with empty payload
+    size_t sent_count = manager.BroadcastMessage(tx_ids_msg);
 
-    ASSERT_TRUE(true, "Should handle empty transaction list");
+    ASSERT_EQUAL(sent_count, (size_t)0, "Should send to 0 peers when none connected");
 }
 
 /**
- * @brief Test BroadcastTransactionIds with no connected peers
+ * @brief Test BroadcastMessage with TX_IDS payload
  */
-TEST(PeerManager_BroadcastTransactionIds_NoPeers) {
+TEST(PeerManager_BroadcastMessage_TxIdsPayload) {
     CPeerManager manager(8338);
 
-    std::vector<std::string> tx_ids = {
-        "tx1_abcdef1234567890",
-        "tx2_1234567890abcdef"
-    };
+    // Create TX_IDS message with comma-separated transaction IDs
+    std::string tx_ids_payload = "tx1_abcdef1234567890,tx2_1234567890abcdef";
+    CPeerMessage tx_ids_msg(EMessageType::TX_IDS, tx_ids_payload);
 
     // Should not crash with no peers
-    manager.BroadcastTransactionIds(tx_ids);
+    size_t sent_count = manager.BroadcastMessage(tx_ids_msg);
 
-    ASSERT_TRUE(true, "Should handle broadcast with no peers");
+    ASSERT_EQUAL(sent_count, (size_t)0, "Should send to 0 peers when none connected");
 }
 
 /**

@@ -280,16 +280,6 @@ public:
     virtual std::vector<std::string> GetConnectedPeers() const override;
 
     /**
-     * @brief Broadcast transaction IDs to all connected peers
-     * @param transaction_ids Vector of transaction ID strings to broadcast
-     *
-     * Sends transaction IDs to all active outbound peers.
-     * Non-blocking operation that sends to each peer independently.
-     * Failed sends are logged but don't affect other peers.
-     */
-    virtual void BroadcastTransactionIds(const std::vector<std::string>& transaction_ids) override;
-
-    /**
      * @brief Send a message to a specific peer
      * @param str_address Peer IP address or hostname
      * @param n_port Peer listening port

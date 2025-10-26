@@ -167,6 +167,7 @@ target_link_libraries(bwblockcore
     PUBLIC bwutils
     PUBLIC bwlogger
     PUBLIC bwthreadname
+    PUBLIC bwpeer
 )
 
 # ============================================================
