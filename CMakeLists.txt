@@ -113,6 +113,7 @@ target_link_libraries(bwutils
 add_library(bwpeer SHARED
     src/peer/peer_manager.cpp
     src/peer/peer_message.cpp
+    src/peer/peer_filter.cpp
 )
 
 set_target_properties(bwpeer PROPERTIES
