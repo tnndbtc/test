@@ -54,9 +54,20 @@ CBlockweave::CBlockweave(const std::string& str_data_dir)
 }
 
 void CBlockweave::AddTransaction(std::shared_ptr<CTransaction> tx) {
-    std::lock_guard<std::mutex> lock(cs_blockweave);
-    m_mempool.push_back(tx);
-    LOG_INFO("Transaction added to mempool: " + tx->m_id.GetData().substr(0, 16) + "...");
+    std::string str_tx_id;
+
+    {
+        std::lock_guard<std::mutex> lock(cs_blockweave);
+        m_mempool.push_back(tx);
+        str_tx_id = tx->m_id.GetData();
+        LOG_INFO("Transaction added to mempool: " + str_tx_id.substr(0, 16) + "...");
+    }
+
+    // Broadcast transaction ID to peers (outside lock to avoid deadlock)
+    if (p_peer_manager != nullptr && !str_tx_id.empty()) {
+        CPeerMessage tx_ids_msg(MessageType::TX_IDS, str_tx_id);
+        p_peer_manager->BroadcastMessage(tx_ids_msg);
+    }
 }
 
 void CBlockweave::MineBlock(const std::string& str_miner_address) {
@@ -110,7 +121,7 @@ void CBlockweave::MineBlock(const std::string& str_miner_address) {
             str_payload += transaction_ids[n_i];
         }
 
-        CPeerMessage tx_ids_msg(EMessageType::TX_IDS, str_payload);
+        CPeerMessage tx_ids_msg(MessageType::TX_IDS, str_payload);
         p_peer_manager->BroadcastMessage(tx_ids_msg);
     }
 }

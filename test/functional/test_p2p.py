@@ -23,44 +23,37 @@ from test_framework import TestFramework
 
 class MessageType:
     """
-    P2P message types - must match EMessageType enum in peer_message.h.
+    P2P message types - must match MessageType namespace in peer_message.h.
 
     Message format:
-    - 1 byte: Message type
+    - 1 byte: Type string length
+    - N bytes: Type string (e.g., "ping", "get_peers")
     - 4 bytes: Payload length (network byte order / big-endian)
-    - N bytes: Payload data
+    - M bytes: Payload data
     """
-    PING = 0
-    PONG = 1
-    GET_PEERS = 2
-    PEERS = 3
-    TX_IDS = 4
-    GET_TX = 5
-    TX = 6
-    GET_BLOCK = 7
-    BLOCK = 8
-    GET_CHAIN = 9
-    CHAIN_INFO = 10
-    UNKNOWN = 255
+    PING = "ping"
+    PONG = "pong"
+    GET_PEERS = "get_peers"
+    PEERS = "peers"
+    TX_IDS = "tx_ids"
+    GET_TX = "get_tx"
+    TX = "tx"
+    GET_BLOCK = "get_block"
+    BLOCK = "block"
+    GET_CHAIN = "get_chain"
+    CHAIN_INFO = "chain_info"
+    UNKNOWN = "unknown"
 
     @staticmethod
-    def to_string(msg_type):
-        """Convert message type to string representation."""
-        type_names = {
-            MessageType.PING: "PING",
-            MessageType.PONG: "PONG",
-            MessageType.GET_PEERS: "GET_PEERS",
-            MessageType.PEERS: "PEERS",
-            MessageType.TX_IDS: "TX_IDS",
-            MessageType.GET_TX: "GET_TX",
-            MessageType.TX: "TX",
-            MessageType.GET_BLOCK: "GET_BLOCK",
-            MessageType.BLOCK: "BLOCK",
-            MessageType.GET_CHAIN: "GET_CHAIN",
-            MessageType.CHAIN_INFO: "CHAIN_INFO",
-            MessageType.UNKNOWN: "UNKNOWN"
+    def is_valid(msg_type):
+        """Check if a message type string is valid."""
+        valid_types = {
+            MessageType.PING, MessageType.PONG, MessageType.GET_PEERS,
+            MessageType.PEERS, MessageType.TX_IDS, MessageType.GET_TX,
+            MessageType.TX, MessageType.GET_BLOCK, MessageType.BLOCK,
+            MessageType.GET_CHAIN, MessageType.CHAIN_INFO
         }
-        return type_names.get(msg_type, f"UNKNOWN({msg_type})")
+        return msg_type in valid_types
 
 
 class P2PMessage:
@@ -68,19 +61,20 @@ class P2PMessage:
     Helper class for P2P message serialization/deserialization.
 
     Matches CPeerMessage format from peer_message.h:
-    - 1 byte: Message type (EMessageType)
+    - 1 byte: Type string length (uint8_t)
+    - N bytes: Type string (e.g., "ping", "get_peers")
     - 4 bytes: Payload length (uint32_t, network byte order)
-    - N bytes: Payload data
+    - M bytes: Payload data
     """
 
-    HEADER_SIZE = 5  # 1 byte type + 4 bytes length
+    MIN_HEADER_SIZE = 5  # 1 byte type_length + 0 bytes type + 4 bytes payload_length
 
     def __init__(self, msg_type=MessageType.UNKNOWN, payload=b""):
         """
         Create a P2P message.
 
         Args:
-            msg_type: Message type (from MessageType class)
+            msg_type: Message type string (from MessageType class)
             payload: Message payload (bytes or string)
         """
         self.msg_type = msg_type
@@ -94,12 +88,19 @@ class P2PMessage:
         Serialize message to bytes for network transmission.
 
         Returns:
-            bytes: Serialized message [type][length][payload]
+            bytes: Serialized message [type_length][type_string][payload_length][payload]
         """
-        payload_len = len(self.payload)
-        # Pack as: 1 byte type + 4 bytes length (big-endian) + payload
-        header = struct.pack('!BI', self.msg_type, payload_len)
-        return header + self.payload
+        # Convert type to bytes
+        type_bytes = self.msg_type.encode('utf-8')
+        type_len = len(type_bytes)
+
+        # Pack as: 1 byte type_length + N bytes type + 4 bytes payload_length + M bytes payload
+        result = struct.pack('B', type_len)  # Type length (1 byte)
+        result += type_bytes                  # Type string (N bytes)
+        result += struct.pack('!I', len(self.payload))  # Payload length (4 bytes, big-endian)
+        result += self.payload                # Payload data (M bytes)
+
+        return result
 
     @staticmethod
     def deserialize(data):
@@ -112,24 +113,43 @@ class P2PMessage:
         Returns:
             P2PMessage: Deserialized message, or None if invalid
         """
-        if len(data) < P2PMessage.HEADER_SIZE:
+        if len(data) < 1:
             return None
 
-        # Unpack header: 1 byte type + 4 bytes length (big-endian)
-        msg_type, payload_len = struct.unpack('!BI', data[:P2PMessage.HEADER_SIZE])
+        offset = 0
 
-        # Check if we have enough data for payload
-        if len(data) < P2PMessage.HEADER_SIZE + payload_len:
+        # 1. Parse type length (1 byte)
+        type_len = struct.unpack('B', data[offset:offset+1])[0]
+        offset += 1
+
+        # 2. Check if we have enough data for type string
+        if len(data) < offset + type_len:
             return None
 
-        # Extract payload
-        payload = data[P2PMessage.HEADER_SIZE:P2PMessage.HEADER_SIZE + payload_len]
+        # 3. Parse type string (N bytes)
+        msg_type = data[offset:offset+type_len].decode('utf-8')
+        offset += type_len
+
+        # 4. Check if we have enough data for payload length
+        if len(data) < offset + 4:
+            return None
+
+        # 5. Parse payload length (4 bytes, big-endian)
+        payload_len = struct.unpack('!I', data[offset:offset+4])[0]
+        offset += 4
+
+        # 6. Check if we have enough data for payload
+        if len(data) < offset + payload_len:
+            return None
+
+        # 7. Extract payload
+        payload = data[offset:offset+payload_len]
 
         return P2PMessage(msg_type, payload)
 
     def get_type_string(self):
         """Get string representation of message type."""
-        return MessageType.to_string(self.msg_type)
+        return self.msg_type.upper()
 
     def __str__(self):
         """String representation of message."""
@@ -491,12 +511,17 @@ class P2PTest(TestFramework):
         ping_msg = P2PMessage(MessageType.PING)
         serialized = ping_msg.serialize()
 
-        # Verify serialization format
-        self.assert_equal(len(serialized), 5, "PING message should be 5 bytes (header only)")
-        self.assert_equal(serialized[0], MessageType.PING, "First byte should be message type")
+        # Format: [1 byte type_length][4 bytes "ping"][4 bytes payload_length]
+        # Total: 1 + 4 + 4 = 9 bytes
+        self.assert_equal(len(serialized), 9, "PING message should be 9 bytes")
+        self.assert_equal(serialized[0], 4, "First byte should be type length (4)")
 
-        # Verify payload length is 0 (bytes 1-4, big-endian)
-        payload_len = struct.unpack('!I', serialized[1:5])[0]
+        # Verify type string is "ping"
+        type_str = serialized[1:5].decode('utf-8')
+        self.assert_equal(type_str, "ping", "Type string should be 'ping'")
+
+        # Verify payload length is 0 (bytes 5-8, big-endian)
+        payload_len = struct.unpack('!I', serialized[5:9])[0]
         self.assert_equal(payload_len, 0, "PING message should have 0 payload length")
 
         self.log_info("Message serialization test completed")
@@ -506,9 +531,15 @@ class P2PTest(TestFramework):
         self.log_info("%s: Testing P2P message deserialization..." % inspect.currentframe().f_code.co_name)
 
         # Create a raw PONG message manually
+        # Format: [1 byte type_length][4 bytes "pong"][4 bytes payload_length]
         msg_type = MessageType.PONG
+        type_bytes = msg_type.encode('utf-8')
         payload = b""
-        raw_msg = struct.pack('!BI', msg_type, len(payload)) + payload
+
+        raw_msg = struct.pack('B', len(type_bytes))  # Type length
+        raw_msg += type_bytes                         # Type string
+        raw_msg += struct.pack('!I', len(payload))   # Payload length
+        raw_msg += payload                            # Payload data
 
         # Deserialize
         pong_msg = P2PMessage.deserialize(raw_msg)
@@ -564,12 +595,12 @@ class P2PTest(TestFramework):
 
             self.assert_true(
                 deserialized is not None,
-                f"{MessageType.to_string(msg_type)} should serialize/deserialize"
+                f"{msg_type.upper()} should serialize/deserialize"
             )
             self.assert_equal(
                 deserialized.msg_type,
                 msg_type,
-                f"{MessageType.to_string(msg_type)} type should match"
+                f"{msg_type.upper()} type should match"
             )
 
         self.log_info("All message types test completed")
@@ -603,8 +634,10 @@ class P2PTest(TestFramework):
         # Create message with empty string payload
         msg = P2PMessage(MessageType.GET_CHAIN, "")
 
+        # Format: [1 byte type_length][9 bytes "get_chain"][4 bytes payload_length][0 bytes payload]
+        # Total: 1 + 9 + 4 = 14 bytes
         serialized = msg.serialize()
-        self.assert_equal(len(serialized), 5, "Empty payload message should be 5 bytes")
+        self.assert_equal(len(serialized), 14, "Empty payload message should be 14 bytes")
 
         deserialized = P2PMessage.deserialize(serialized)
         self.assert_true(deserialized is not None, "Deserialization should succeed")
@@ -620,9 +653,10 @@ class P2PTest(TestFramework):
         large_payload = b"X" * 1000
         msg = P2PMessage(MessageType.BLOCK, large_payload)
 
-        # Serialize and deserialize
+        # Format: [1 byte type_length][5 bytes "block"][4 bytes payload_length][1000 bytes payload]
+        # Total: 1 + 5 + 4 + 1000 = 1010 bytes
         serialized = msg.serialize()
-        self.assert_equal(len(serialized), 1005, "Serialized size should be 5 + 1000")
+        self.assert_equal(len(serialized), 1010, "Serialized size should be 1010 bytes")
 
         deserialized = P2PMessage.deserialize(serialized)
         self.assert_true(deserialized is not None, "Deserialization should succeed")
@@ -728,8 +762,10 @@ class P2PTest(TestFramework):
             self.assert_true(sent, "TX_IDS message should be sent successfully")
 
             # Verify message size
+            # Format: [1 byte type_length][6 bytes "tx_ids"][4 bytes payload_length][payload]
+            # Total: 1 + 6 + 4 + len(payload) = 11 + len(payload)
             serialized = tx_ids_msg.serialize()
-            expected_size = 5 + len(tx_ids.encode('utf-8'))
+            expected_size = 11 + len(tx_ids.encode('utf-8'))
             self.assert_equal(
                 len(serialized),
                 expected_size,

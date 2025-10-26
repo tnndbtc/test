@@ -6,7 +6,7 @@
 using namespace UnitTest;
 
 // Helper function to compare message types
-static bool CompareMessageType(EMessageType actual, EMessageType expected) {
+static bool CompareMessageType(const std::string& actual, const std::string& expected) {
     return actual == expected;
 }
 
@@ -25,22 +25,22 @@ static bool CompareByteVectors(const std::vector<uint8_t>& v1, const std::vector
 TEST(PeerMessage_DefaultConstructor) {
     CPeerMessage msg;
 
-    ASSERT_TRUE(CompareMessageType(msg.GetType(), EMessageType::UNKNOWN), "Default type should be UNKNOWN");
+    ASSERT_TRUE(CompareMessageType(msg.GetType(), MessageType::UNKNOWN), "Default type should be UNKNOWN");
     ASSERT_EQUAL(msg.GetPayloadSize(), (size_t)0, "Default payload should be empty");
     ASSERT_FALSE(msg.IsValid(), "Default message should be invalid");
-    ASSERT_EQUAL(msg.GetTypeString(), std::string("UNKNOWN"), "Default type string should be 'UNKNOWN'");
+    ASSERT_EQUAL(msg.GetTypeString(), std::string("unknown"), "Default type string should be 'unknown'");
 }
 
 /**
  * @brief Test CPeerMessage constructor with type
  */
 TEST(PeerMessage_ConstructorWithType) {
-    CPeerMessage ping(EMessageType::PING);
+    CPeerMessage ping(MessageType::PING);
 
-    ASSERT_TRUE(CompareMessageType(ping.GetType(), EMessageType::PING), "Type should be PING");
+    ASSERT_TRUE(CompareMessageType(ping.GetType(), MessageType::PING), "Type should be PING");
     ASSERT_EQUAL(ping.GetPayloadSize(), (size_t)0, "Payload should be empty");
     ASSERT_TRUE(ping.IsValid(), "PING message should be valid");
-    ASSERT_EQUAL(ping.GetTypeString(), std::string("PING"), "Type string should be 'PING'");
+    ASSERT_EQUAL(ping.GetTypeString(), std::string("ping"), "Type string should be 'ping'");
 }
 
 /**
@@ -48,9 +48,9 @@ TEST(PeerMessage_ConstructorWithType) {
  */
 TEST(PeerMessage_ConstructorWithStringPayload) {
     std::string payload = "Hello, Peer!";
-    CPeerMessage msg(EMessageType::TX, payload);
+    CPeerMessage msg(MessageType::TX, payload);
 
-    ASSERT_TRUE(CompareMessageType(msg.GetType(), EMessageType::TX), "Type should be TX");
+    ASSERT_TRUE(CompareMessageType(msg.GetType(), MessageType::TX), "Type should be TX");
     ASSERT_EQUAL(msg.GetPayloadSize(), payload.size(), "Payload size should match");
     ASSERT_EQUAL(msg.GetPayloadString(), payload, "Payload string should match");
     ASSERT_TRUE(msg.IsValid(), "TX message should be valid");
@@ -61,9 +61,9 @@ TEST(PeerMessage_ConstructorWithStringPayload) {
  */
 TEST(PeerMessage_ConstructorWithBinaryPayload) {
     std::vector<uint8_t> payload = {0x00, 0x01, 0x02, 0xFF, 0xFE, 0xFD};
-    CPeerMessage msg(EMessageType::BLOCK, payload);
+    CPeerMessage msg(MessageType::BLOCK, payload);
 
-    ASSERT_TRUE(CompareMessageType(msg.GetType(), EMessageType::BLOCK), "Type should be BLOCK");
+    ASSERT_TRUE(CompareMessageType(msg.GetType(), MessageType::BLOCK), "Type should be BLOCK");
     ASSERT_EQUAL(msg.GetPayloadSize(), payload.size(), "Payload size should match");
     ASSERT_TRUE(CompareByteVectors(msg.GetPayloadBytes(), payload), "Payload bytes should match");
 }
@@ -72,17 +72,23 @@ TEST(PeerMessage_ConstructorWithBinaryPayload) {
  * @brief Test serialization with empty payload
  */
 TEST(PeerMessage_SerializeEmpty) {
-    CPeerMessage ping(EMessageType::PING);
+    CPeerMessage ping(MessageType::PING);
     std::string serialized = ping.Serialize();
 
-    // Should be 5 bytes: 1 byte type + 4 bytes length (0)
-    ASSERT_EQUAL(serialized.size(), (size_t)5, "Serialized size should be 5 bytes (header only)");
-    ASSERT_EQUAL((uint8_t)serialized[0], (uint8_t)0, "First byte should be PING (0)");
+    // Format: [1 byte type_length][4 bytes "ping"][4 bytes payload_length]
+    // Should be 1 + 4 + 4 = 9 bytes
+    ASSERT_EQUAL(serialized.size(), (size_t)9, "Serialized size should be 9 bytes");
+    ASSERT_EQUAL((uint8_t)serialized[0], (uint8_t)4, "First byte should be type length (4)");
 
-    // Length should be 0 (4 bytes, all zero in network byte order)
-    uint32_t length;
-    std::memcpy(&length, serialized.data() + 1, 4);
-    ASSERT_EQUAL(length, (uint32_t)0, "Length field should be 0");
+    // Extract type string
+    std::string type_str = serialized.substr(1, 4);
+    ASSERT_EQUAL(type_str, std::string("ping"), "Type string should be 'ping'");
+
+    // Payload length should be 0 (4 bytes at offset 5, network byte order)
+    uint32_t length_network;
+    std::memcpy(&length_network, serialized.data() + 5, 4);
+    uint32_t length = ntohl(length_network);
+    ASSERT_EQUAL(length, (uint32_t)0, "Payload length field should be 0");
 }
 
 /**
@@ -90,15 +96,20 @@ TEST(PeerMessage_SerializeEmpty) {
  */
 TEST(PeerMessage_SerializeSmallPayload) {
     std::string payload = "test";
-    CPeerMessage msg(EMessageType::PONG, payload);
+    CPeerMessage msg(MessageType::PONG, payload);
     std::string serialized = msg.Serialize();
 
-    // Should be 5 + 4 = 9 bytes
-    ASSERT_EQUAL(serialized.size(), (size_t)9, "Serialized size should be 9 bytes");
-    ASSERT_EQUAL((uint8_t)serialized[0], (uint8_t)1, "First byte should be PONG (1)");
+    // Format: [1 byte type_length][4 bytes "pong"][4 bytes payload_length][4 bytes "test"]
+    // Should be 1 + 4 + 4 + 4 = 13 bytes
+    ASSERT_EQUAL(serialized.size(), (size_t)13, "Serialized size should be 13 bytes");
+    ASSERT_EQUAL((uint8_t)serialized[0], (uint8_t)4, "First byte should be type length (4)");
 
-    // Extract and verify payload
-    std::string extracted_payload = serialized.substr(5);
+    // Extract type string
+    std::string type_str = serialized.substr(1, 4);
+    ASSERT_EQUAL(type_str, std::string("pong"), "Type string should be 'pong'");
+
+    // Extract and verify payload (starts at offset 9: 1 + 4 + 4)
+    std::string extracted_payload = serialized.substr(9);
     ASSERT_EQUAL(extracted_payload, payload, "Payload should match");
 }
 
@@ -107,15 +118,20 @@ TEST(PeerMessage_SerializeSmallPayload) {
  */
 TEST(PeerMessage_SerializeLargePayload) {
     std::string large_payload(1000, 'X');
-    CPeerMessage msg(EMessageType::TX, large_payload);
+    CPeerMessage msg(MessageType::TX, large_payload);
     std::string serialized = msg.Serialize();
 
-    // Should be 5 + 1000 = 1005 bytes
-    ASSERT_EQUAL(serialized.size(), (size_t)1005, "Serialized size should be 1005 bytes");
-    ASSERT_EQUAL((uint8_t)serialized[0], (uint8_t)6, "First byte should be TX (6)");
+    // Format: [1 byte type_length][2 bytes "tx"][4 bytes payload_length][1000 bytes payload]
+    // Should be 1 + 2 + 4 + 1000 = 1007 bytes
+    ASSERT_EQUAL(serialized.size(), (size_t)1007, "Serialized size should be 1007 bytes");
+    ASSERT_EQUAL((uint8_t)serialized[0], (uint8_t)2, "First byte should be type length (2)");
 
-    // Extract and verify payload
-    std::string extracted_payload = serialized.substr(5);
+    // Extract type string
+    std::string type_str = serialized.substr(1, 2);
+    ASSERT_EQUAL(type_str, std::string("tx"), "Type string should be 'tx'");
+
+    // Extract and verify payload (starts at offset 7: 1 + 2 + 4)
+    std::string extracted_payload = serialized.substr(7);
     ASSERT_EQUAL(extracted_payload, large_payload, "Large payload should match");
 }
 
@@ -124,17 +140,20 @@ TEST(PeerMessage_SerializeLargePayload) {
  */
 TEST(PeerMessage_DeserializeValid) {
     // Create a simple PING message manually
+    // Format: [1 byte type_length][4 bytes "ping"][4 bytes payload_length]
     std::string data;
-    data.push_back((char)0); // PING type
-    // Length = 0 (4 bytes, network byte order)
-    uint32_t length = 0;
+    data.push_back((char)4); // Type length = 4
+    data.append("ping");     // Type string
+
+    // Payload length = 0 (4 bytes, network byte order)
+    uint32_t length = htonl(0);
     data.append(reinterpret_cast<const char*>(&length), 4);
 
     CPeerMessage msg;
     bool result = msg.Deserialize(data);
 
     ASSERT_TRUE(result, "Deserialization should succeed");
-    ASSERT_TRUE(CompareMessageType(msg.GetType(), EMessageType::PING), "Type should be PING");
+    ASSERT_TRUE(CompareMessageType(msg.GetType(), MessageType::PING), "Type should be PING");
     ASSERT_EQUAL(msg.GetPayloadSize(), (size_t)0, "Payload should be empty");
 }
 
@@ -145,10 +164,12 @@ TEST(PeerMessage_DeserializeWithPayload) {
     std::string payload_data = "Hello";
 
     // Manually construct serialized message
+    // Format: [1 byte type_length][4 bytes "pong"][4 bytes payload_length][5 bytes "Hello"]
     std::string data;
-    data.push_back((char)1); // PONG type
+    data.push_back((char)4); // Type length = 4
+    data.append("pong");     // Type string
 
-    // Length = 5 (network byte order)
+    // Payload length = 5 (network byte order)
     uint32_t length = htonl(5);
     data.append(reinterpret_cast<const char*>(&length), 4);
     data.append(payload_data);
@@ -157,7 +178,7 @@ TEST(PeerMessage_DeserializeWithPayload) {
     bool result = msg.Deserialize(data);
 
     ASSERT_TRUE(result, "Deserialization should succeed");
-    ASSERT_TRUE(CompareMessageType(msg.GetType(), EMessageType::PONG), "Type should be PONG");
+    ASSERT_TRUE(CompareMessageType(msg.GetType(), MessageType::PONG), "Type should be PONG");
     ASSERT_EQUAL(msg.GetPayloadSize(), (size_t)5, "Payload size should be 5");
     ASSERT_EQUAL(msg.GetPayloadString(), payload_data, "Payload should match");
 }
@@ -166,7 +187,11 @@ TEST(PeerMessage_DeserializeWithPayload) {
  * @brief Test deserialization with insufficient header data
  */
 TEST(PeerMessage_DeserializeTooShort) {
-    std::string data = "ABC"; // Only 3 bytes, need at least 5
+    // Only 3 bytes, but minimum is 1 + type_length + 4
+    // If first byte claims type_length=4, we need at least 1+4+4=9 bytes
+    std::string data;
+    data.push_back((char)4); // Type length = 4
+    data.append("AB");       // Only 2 bytes of type, not 4
 
     CPeerMessage msg;
     bool result = msg.Deserialize(data);
@@ -178,10 +203,12 @@ TEST(PeerMessage_DeserializeTooShort) {
  * @brief Test deserialization with insufficient payload data
  */
 TEST(PeerMessage_DeserializeInsufficientPayload) {
+    // Format: [1 byte type_length][9 bytes "get_peers"][4 bytes payload_length][payload]
     std::string data;
-    data.push_back((char)2); // GET_PEERS type
+    data.push_back((char)9);    // Type length = 9
+    data.append("get_peers");   // Type string
 
-    // Claim length = 100, but only provide 5 bytes
+    // Claim payload length = 100, but only provide 5 bytes
     uint32_t length = htonl(100);
     data.append(reinterpret_cast<const char*>(&length), 4);
     data.append("ABCDE"); // Only 5 bytes, not 100
@@ -196,7 +223,7 @@ TEST(PeerMessage_DeserializeInsufficientPayload) {
  * @brief Test round-trip serialization and deserialization
  */
 TEST(PeerMessage_RoundTripEmpty) {
-    CPeerMessage original(EMessageType::GET_PEERS);
+    CPeerMessage original(MessageType::GET_PEERS);
 
     std::string serialized = original.Serialize();
 
@@ -213,7 +240,7 @@ TEST(PeerMessage_RoundTripEmpty) {
  */
 TEST(PeerMessage_RoundTripWithPayload) {
     std::string original_payload = "This is a test message!";
-    CPeerMessage original(EMessageType::TX, original_payload);
+    CPeerMessage original(MessageType::TX, original_payload);
 
     std::string serialized = original.Serialize();
 
@@ -231,7 +258,7 @@ TEST(PeerMessage_RoundTripWithPayload) {
  */
 TEST(PeerMessage_RoundTripBinaryWithNulls) {
     std::vector<uint8_t> original_payload = {0x00, 0xFF, 0x00, 0x42, 0x00};
-    CPeerMessage original(EMessageType::BLOCK, original_payload);
+    CPeerMessage original(MessageType::BLOCK, original_payload);
 
     std::string serialized = original.Serialize();
 
@@ -245,21 +272,21 @@ TEST(PeerMessage_RoundTripBinaryWithNulls) {
 }
 
 /**
- * @brief Test TypeToString for all message types
+ * @brief Test MessageType constants are correct strings
  */
-TEST(PeerMessage_TypeToString) {
-    ASSERT_EQUAL(CPeerMessage::TypeToString(EMessageType::PING), std::string("PING"), "PING string");
-    ASSERT_EQUAL(CPeerMessage::TypeToString(EMessageType::PONG), std::string("PONG"), "PONG string");
-    ASSERT_EQUAL(CPeerMessage::TypeToString(EMessageType::GET_PEERS), std::string("GET_PEERS"), "GET_PEERS string");
-    ASSERT_EQUAL(CPeerMessage::TypeToString(EMessageType::PEERS), std::string("PEERS"), "PEERS string");
-    ASSERT_EQUAL(CPeerMessage::TypeToString(EMessageType::TX_IDS), std::string("TX_IDS"), "TX_IDS string");
-    ASSERT_EQUAL(CPeerMessage::TypeToString(EMessageType::GET_TX), std::string("GET_TX"), "GET_TX string");
-    ASSERT_EQUAL(CPeerMessage::TypeToString(EMessageType::TX), std::string("TX"), "TX string");
-    ASSERT_EQUAL(CPeerMessage::TypeToString(EMessageType::GET_BLOCK), std::string("GET_BLOCK"), "GET_BLOCK string");
-    ASSERT_EQUAL(CPeerMessage::TypeToString(EMessageType::BLOCK), std::string("BLOCK"), "BLOCK string");
-    ASSERT_EQUAL(CPeerMessage::TypeToString(EMessageType::GET_CHAIN), std::string("GET_CHAIN"), "GET_CHAIN string");
-    ASSERT_EQUAL(CPeerMessage::TypeToString(EMessageType::CHAIN_INFO), std::string("CHAIN_INFO"), "CHAIN_INFO string");
-    ASSERT_EQUAL(CPeerMessage::TypeToString(EMessageType::UNKNOWN), std::string("UNKNOWN"), "UNKNOWN string");
+TEST(PeerMessage_TypeStrings) {
+    ASSERT_EQUAL(MessageType::PING, std::string("ping"), "PING string");
+    ASSERT_EQUAL(MessageType::PONG, std::string("pong"), "PONG string");
+    ASSERT_EQUAL(MessageType::GET_PEERS, std::string("get_peers"), "GET_PEERS string");
+    ASSERT_EQUAL(MessageType::PEERS, std::string("peers"), "PEERS string");
+    ASSERT_EQUAL(MessageType::TX_IDS, std::string("tx_ids"), "TX_IDS string");
+    ASSERT_EQUAL(MessageType::GET_TX, std::string("get_tx"), "GET_TX string");
+    ASSERT_EQUAL(MessageType::TX, std::string("tx"), "TX string");
+    ASSERT_EQUAL(MessageType::GET_BLOCK, std::string("get_block"), "GET_BLOCK string");
+    ASSERT_EQUAL(MessageType::BLOCK, std::string("block"), "BLOCK string");
+    ASSERT_EQUAL(MessageType::GET_CHAIN, std::string("get_chain"), "GET_CHAIN string");
+    ASSERT_EQUAL(MessageType::CHAIN_INFO, std::string("chain_info"), "CHAIN_INFO string");
+    ASSERT_EQUAL(MessageType::UNKNOWN, std::string("unknown"), "UNKNOWN string");
 }
 
 /**
@@ -272,8 +299,8 @@ TEST(PeerMessage_SettersAndGetters) {
     ASSERT_FALSE(msg.IsValid(), "Should be invalid initially");
 
     // Set type
-    msg.SetType(EMessageType::PING);
-    ASSERT_TRUE(CompareMessageType(msg.GetType(), EMessageType::PING), "Type should be PING");
+    msg.SetType(MessageType::PING);
+    ASSERT_TRUE(CompareMessageType(msg.GetType(), MessageType::PING), "Type should be PING");
     ASSERT_TRUE(msg.IsValid(), "Should be valid after setting type");
 
     // Set payload from string
@@ -290,28 +317,29 @@ TEST(PeerMessage_SettersAndGetters) {
 }
 
 /**
- * @brief Test GetHeaderSize
+ * @brief Test GetMinHeaderSize
  */
-TEST(PeerMessage_GetHeaderSize) {
-    ASSERT_EQUAL(CPeerMessage::GetHeaderSize(), (size_t)5, "Header size should be 5 bytes");
+TEST(PeerMessage_GetMinHeaderSize) {
+    // Minimum header size is 1 (type_length) + 0 (empty type) + 4 (payload_length) = 5 bytes
+    ASSERT_EQUAL(CPeerMessage::GetMinHeaderSize(), (size_t)5, "Minimum header size should be 5 bytes");
 }
 
 /**
  * @brief Test all message types are valid except UNKNOWN
  */
 TEST(PeerMessage_MessageTypeValidity) {
-    CPeerMessage ping(EMessageType::PING);
-    CPeerMessage pong(EMessageType::PONG);
-    CPeerMessage get_peers(EMessageType::GET_PEERS);
-    CPeerMessage peers(EMessageType::PEERS);
-    CPeerMessage tx_ids(EMessageType::TX_IDS);
-    CPeerMessage get_tx(EMessageType::GET_TX);
-    CPeerMessage tx(EMessageType::TX);
-    CPeerMessage get_block(EMessageType::GET_BLOCK);
-    CPeerMessage block(EMessageType::BLOCK);
-    CPeerMessage get_chain(EMessageType::GET_CHAIN);
-    CPeerMessage chain_info(EMessageType::CHAIN_INFO);
-    CPeerMessage unknown(EMessageType::UNKNOWN);
+    CPeerMessage ping(MessageType::PING);
+    CPeerMessage pong(MessageType::PONG);
+    CPeerMessage get_peers(MessageType::GET_PEERS);
+    CPeerMessage peers(MessageType::PEERS);
+    CPeerMessage tx_ids(MessageType::TX_IDS);
+    CPeerMessage get_tx(MessageType::GET_TX);
+    CPeerMessage tx(MessageType::TX);
+    CPeerMessage get_block(MessageType::GET_BLOCK);
+    CPeerMessage block(MessageType::BLOCK);
+    CPeerMessage get_chain(MessageType::GET_CHAIN);
+    CPeerMessage chain_info(MessageType::CHAIN_INFO);
+    CPeerMessage unknown(MessageType::UNKNOWN);
 
     ASSERT_TRUE(ping.IsValid(), "PING should be valid");
     ASSERT_TRUE(pong.IsValid(), "PONG should be valid");
@@ -332,23 +360,28 @@ TEST(PeerMessage_MessageTypeValidity) {
  */
 TEST(PeerMessage_SerializationFormat) {
     std::string payload = "ABC";
-    CPeerMessage msg(EMessageType::TX, payload);
+    CPeerMessage msg(MessageType::TX, payload);
     std::string serialized = msg.Serialize();
 
-    // Verify format: [1 byte type][4 bytes length][N bytes payload]
-    ASSERT_EQUAL(serialized.size(), (size_t)8, "Total size should be 8 bytes");
+    // Verify format: [1 byte type_length][2 bytes "tx"][4 bytes payload_length][3 bytes "ABC"]
+    // Total: 1 + 2 + 4 + 3 = 10 bytes
+    ASSERT_EQUAL(serialized.size(), (size_t)10, "Total size should be 10 bytes");
 
-    // Byte 0: Type
-    ASSERT_EQUAL((uint8_t)serialized[0], (uint8_t)6, "Byte 0 should be TX type (6)");
+    // Byte 0: Type length
+    ASSERT_EQUAL((uint8_t)serialized[0], (uint8_t)2, "Byte 0 should be type length (2)");
 
-    // Bytes 1-4: Length (network byte order)
+    // Bytes 1-2: Type string "tx"
+    std::string type_str = serialized.substr(1, 2);
+    ASSERT_EQUAL(type_str, std::string("tx"), "Type string should be 'tx'");
+
+    // Bytes 3-6: Payload length (network byte order)
     uint32_t length_network;
-    std::memcpy(&length_network, serialized.data() + 1, 4);
+    std::memcpy(&length_network, serialized.data() + 3, 4);
     uint32_t length = ntohl(length_network);
-    ASSERT_EQUAL(length, (uint32_t)3, "Length should be 3");
+    ASSERT_EQUAL(length, (uint32_t)3, "Payload length should be 3");
 
-    // Bytes 5-7: Payload
-    std::string extracted_payload = serialized.substr(5, 3);
+    // Bytes 7-9: Payload
+    std::string extracted_payload = serialized.substr(7, 3);
     ASSERT_EQUAL(extracted_payload, payload, "Payload should match");
 }
 
@@ -357,7 +390,7 @@ TEST(PeerMessage_SerializationFormat) {
  */
 TEST(PeerMessage_EmptyStringPayload) {
     std::string empty_payload = "";
-    CPeerMessage msg(EMessageType::PING, empty_payload);
+    CPeerMessage msg(MessageType::PING, empty_payload);
 
     ASSERT_EQUAL(msg.GetPayloadSize(), (size_t)0, "Empty string should have size 0");
     ASSERT_EQUAL(msg.GetPayloadString(), std::string(""), "Should return empty string");
@@ -375,15 +408,16 @@ TEST(PeerMessage_EmptyStringPayload) {
 TEST(PeerMessage_NetworkByteOrder) {
     // Create message with known size payload
     std::string payload(256, 'X'); // 256 bytes
-    CPeerMessage msg(EMessageType::BLOCK, payload);
+    CPeerMessage msg(MessageType::BLOCK, payload);
     std::string serialized = msg.Serialize();
 
-    // Extract length field (bytes 1-4)
+    // Format: [1 byte type_length][5 bytes "block"][4 bytes payload_length][256 bytes payload]
+    // Extract length field (bytes 6-9, after 1 byte type_length + 5 bytes "block")
     uint32_t length_network;
-    std::memcpy(&length_network, serialized.data() + 1, 4);
+    std::memcpy(&length_network, serialized.data() + 6, 4);
     uint32_t length_host = ntohl(length_network);
 
-    ASSERT_EQUAL(length_host, (uint32_t)256, "Length should be 256 in host byte order");
+    ASSERT_EQUAL(length_host, (uint32_t)256, "Payload length should be 256 in host byte order");
 
     // Verify deserialization handles byte order correctly
     CPeerMessage deserialized;

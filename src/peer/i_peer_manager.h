@@ -26,7 +26,7 @@ class CPeerMessage;
  *   IPeerManager* p_peer_mgr = new CPeerManager(1984);
  *   p_peer_mgr->Start();
  *   p_peer_mgr->AddPeer("192.168.1.100", 1984);
- *   CPeerMessage msg(EMessageType::PING);
+ *   CPeerMessage msg(MessageType::PING);
  *   p_peer_mgr->BroadcastMessage(msg);
  *   p_peer_mgr->Stop();
  *   delete p_peer_mgr;

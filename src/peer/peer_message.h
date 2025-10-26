@@ -7,26 +7,34 @@
 #include <cstdint>
 
 /**
- * @enum EMessageType
+ * @namespace MessageType
  * @brief Types of messages that can be exchanged between peers
  *
  * Defines the protocol message types for peer-to-peer communication.
  * Each message type has a specific purpose and payload format.
+ * Message types are string-based for human readability and protocol flexibility.
  */
-enum class EMessageType : uint8_t {
-    PING = 0,           ///< Ping message - keep-alive heartbeat
-    PONG = 1,           ///< Pong response to ping
-    GET_PEERS = 2,      ///< Request list of known peers
-    PEERS = 3,          ///< Response with peer list
-    TX_IDS = 4,         ///< Broadcast transaction IDs
-    GET_TX = 5,         ///< Request transaction by ID
-    TX = 6,             ///< Transaction data
-    GET_BLOCK = 7,      ///< Request block by hash
-    BLOCK = 8,          ///< Block data
-    GET_CHAIN = 9,      ///< Request blockchain info
-    CHAIN_INFO = 10,    ///< Blockchain info response
-    UNKNOWN = 255       ///< Unknown/invalid message type
-};
+namespace MessageType {
+    const std::string PING = "ping";               ///< Ping message - keep-alive heartbeat
+    const std::string PONG = "pong";               ///< Pong response to ping
+    const std::string GET_PEERS = "get_peers";     ///< Request list of known peers
+    const std::string PEERS = "peers";             ///< Response with peer list
+    const std::string TX_IDS = "tx_ids";           ///< Broadcast transaction IDs
+    const std::string GET_TX = "get_tx";           ///< Request transaction by ID
+    const std::string TX = "tx";                   ///< Transaction data
+    const std::string GET_BLOCK = "get_block";     ///< Request block by hash
+    const std::string BLOCK = "block";             ///< Block data
+    const std::string GET_CHAIN = "get_chain";     ///< Request blockchain info
+    const std::string CHAIN_INFO = "chain_info";   ///< Blockchain info response
+    const std::string UNKNOWN = "unknown";         ///< Unknown/invalid message type
+
+    /**
+     * @brief Check if a message type string is valid
+     * @param str_type Message type string
+     * @return true if valid message type, false otherwise
+     */
+    bool IsValid(const std::string& str_type);
+}
 
 /**
  * @class CPeerMessage
@@ -36,26 +44,27 @@ enum class EMessageType : uint8_t {
  * Provides serialization/deserialization for network transmission.
  *
  * Message format:
- * - 1 byte: Message type (EMessageType)
+ * - 1 byte: Message type length (uint8_t)
+ * - N bytes: Message type string (e.g., "ping", "get_peers")
  * - 4 bytes: Payload length (uint32_t, network byte order)
- * - N bytes: Payload data
+ * - M bytes: Payload data
  *
  * Example usage:
  *   // Create and serialize a PING message
- *   CPeerMessage ping_msg(EMessageType::PING);
+ *   CPeerMessage ping_msg(MessageType::PING);
  *   std::string serialized = ping_msg.Serialize();
  *
  *   // Deserialize received message
  *   CPeerMessage received;
  *   if (received.Deserialize(data)) {
- *       if (received.GetType() == EMessageType::PING) {
+ *       if (received.GetType() == MessageType::PING) {
  *           // Handle ping...
  *       }
  *   }
  */
 class CPeerMessage {
 private:
-    EMessageType m_type;           ///< Message type
+    std::string m_str_type;         ///< Message type string
     std::vector<uint8_t> m_payload; ///< Message payload data
 
     /**
@@ -80,35 +89,35 @@ public:
 
     /**
      * @brief Construct message with specific type
-     * @param type Message type
+     * @param str_type Message type string (e.g., MessageType::PING)
      */
-    explicit CPeerMessage(EMessageType type);
+    explicit CPeerMessage(const std::string& str_type);
 
     /**
      * @brief Construct message with type and payload
-     * @param type Message type
+     * @param str_type Message type string
      * @param str_payload Payload string
      */
-    CPeerMessage(EMessageType type, const std::string& str_payload);
+    CPeerMessage(const std::string& str_type, const std::string& str_payload);
 
     /**
      * @brief Construct message with type and binary payload
-     * @param type Message type
+     * @param str_type Message type string
      * @param payload Payload bytes
      */
-    CPeerMessage(EMessageType type, const std::vector<uint8_t>& payload);
+    CPeerMessage(const std::string& str_type, const std::vector<uint8_t>& payload);
 
     /**
      * @brief Get message type
-     * @return Message type
+     * @return Message type string
      */
-    EMessageType GetType() const;
+    const std::string& GetType() const;
 
     /**
      * @brief Set message type
-     * @param type New message type
+     * @param str_type New message type string
      */
-    void SetType(EMessageType type);
+    void SetType(const std::string& str_type);
 
     /**
      * @brief Get payload as string
@@ -142,9 +151,9 @@ public:
 
     /**
      * @brief Serialize message to byte string for transmission
-     * @return Serialized message (type + length + payload)
+     * @return Serialized message (type_length + type + payload_length + payload)
      *
-     * Format: [1 byte type][4 bytes length][N bytes payload]
+     * Format: [1 byte type_length][N bytes type][4 bytes payload_length][M bytes payload]
      */
     std::string Serialize() const;
 
@@ -153,7 +162,7 @@ public:
      * @param str_data Serialized message data
      * @return true if deserialization successful, false otherwise
      *
-     * Parses message format: [1 byte type][4 bytes length][N bytes payload]
+     * Parses message format: [1 byte type_length][N bytes type][4 bytes payload_length][M bytes payload]
      * Returns false if data is too short or length is invalid.
      */
     bool Deserialize(const std::string& str_data);
@@ -165,23 +174,16 @@ public:
     bool IsValid() const;
 
     /**
-     * @brief Get string representation of message type
-     * @param type Message type
-     * @return String name of message type
-     */
-    static std::string TypeToString(EMessageType type);
-
-    /**
      * @brief Get string representation of this message's type
-     * @return String name of message type
+     * @return String name of message type (same as GetType())
      */
     std::string GetTypeString() const;
 
     /**
-     * @brief Get minimum serialized message size (header only)
-     * @return Minimum size in bytes (5 bytes: 1 type + 4 length)
+     * @brief Get minimum serialized message size (header only with smallest type)
+     * @return Minimum size in bytes (varies based on type string length)
      */
-    static constexpr size_t GetHeaderSize() { return 5; }
+    static constexpr size_t GetMinHeaderSize() { return 5; }  // 1 byte type_length + 0 bytes type + 4 bytes payload_length
 };
 
 #endif // PEER_MESSAGE_H

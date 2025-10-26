@@ -3,6 +3,25 @@
 #include <cstring>
 #include <arpa/inet.h>
 
+// ============= MessageType Namespace Functions =============
+
+/**
+ * @brief Check if a message type string is valid
+ */
+bool MessageType::IsValid(const std::string& str_type) {
+    return str_type == PING ||
+           str_type == PONG ||
+           str_type == GET_PEERS ||
+           str_type == PEERS ||
+           str_type == TX_IDS ||
+           str_type == GET_TX ||
+           str_type == TX ||
+           str_type == GET_BLOCK ||
+           str_type == BLOCK ||
+           str_type == GET_CHAIN ||
+           str_type == CHAIN_INFO;
+}
+
 // ============= Helper Functions =============
 
 /**
@@ -24,28 +43,28 @@ uint32_t CPeerMessage::NetworkToHost(uint32_t n_value) {
 /**
  * @brief Default constructor - creates UNKNOWN message
  */
-CPeerMessage::CPeerMessage() : m_type(EMessageType::UNKNOWN) {
+CPeerMessage::CPeerMessage() : m_str_type(MessageType::UNKNOWN) {
 }
 
 /**
  * @brief Construct message with specific type
  */
-CPeerMessage::CPeerMessage(EMessageType type) : m_type(type) {
+CPeerMessage::CPeerMessage(const std::string& str_type) : m_str_type(str_type) {
 }
 
 /**
  * @brief Construct message with type and string payload
  */
-CPeerMessage::CPeerMessage(EMessageType type, const std::string& str_payload)
-    : m_type(type) {
+CPeerMessage::CPeerMessage(const std::string& str_type, const std::string& str_payload)
+    : m_str_type(str_type) {
     SetPayload(str_payload);
 }
 
 /**
  * @brief Construct message with type and binary payload
  */
-CPeerMessage::CPeerMessage(EMessageType type, const std::vector<uint8_t>& payload)
-    : m_type(type), m_payload(payload) {
+CPeerMessage::CPeerMessage(const std::string& str_type, const std::vector<uint8_t>& payload)
+    : m_str_type(str_type), m_payload(payload) {
 }
 
 // ============= Getters and Setters =============
@@ -53,15 +72,15 @@ CPeerMessage::CPeerMessage(EMessageType type, const std::vector<uint8_t>& payloa
 /**
  * @brief Get message type
  */
-EMessageType CPeerMessage::GetType() const {
-    return m_type;
+const std::string& CPeerMessage::GetType() const {
+    return m_str_type;
 }
 
 /**
  * @brief Set message type
  */
-void CPeerMessage::SetType(EMessageType type) {
-    m_type = type;
+void CPeerMessage::SetType(const std::string& str_type) {
+    m_str_type = str_type;
 }
 
 /**
@@ -103,27 +122,32 @@ size_t CPeerMessage::GetPayloadSize() const {
 
 /**
  * @brief Serialize message to byte string for transmission
- * @return Serialized message in format: [1 byte type][4 bytes length][N bytes payload]
+ * @return Serialized message in format: [1 byte type_length][N bytes type][4 bytes payload_length][M bytes payload]
  *
- * The length field is in network byte order (big-endian) for platform independence.
+ * The length fields are in network byte order (big-endian) for platform independence.
  */
 std::string CPeerMessage::Serialize() const {
     std::string str_result;
 
-    // Reserve space for header + payload
-    str_result.reserve(GetHeaderSize() + m_payload.size());
+    // Calculate total size
+    uint8_t n_type_length = static_cast<uint8_t>(m_str_type.length());
+    size_t n_total_size = 1 + n_type_length + 4 + m_payload.size();
+    str_result.reserve(n_total_size);
 
-    // 1. Add message type (1 byte)
-    str_result.push_back(static_cast<char>(m_type));
+    // 1. Add type length (1 byte)
+    str_result.push_back(static_cast<char>(n_type_length));
 
-    // 2. Add payload length (4 bytes, network byte order)
-    uint32_t n_length = static_cast<uint32_t>(m_payload.size());
-    uint32_t n_length_network = HostToNetwork(n_length);
+    // 2. Add type string (N bytes)
+    str_result.append(m_str_type);
+
+    // 3. Add payload length (4 bytes, network byte order)
+    uint32_t n_payload_length = static_cast<uint32_t>(m_payload.size());
+    uint32_t n_length_network = HostToNetwork(n_payload_length);
 
     const char* p_length = reinterpret_cast<const char*>(&n_length_network);
     str_result.append(p_length, 4);
 
-    // 3. Add payload data
+    // 4. Add payload data
     if (!m_payload.empty()) {
         str_result.append(reinterpret_cast<const char*>(m_payload.data()), m_payload.size());
     }
@@ -136,34 +160,51 @@ std::string CPeerMessage::Serialize() const {
  * @param str_data Serialized message data
  * @return true if deserialization successful, false if data is invalid
  *
- * Parses message format: [1 byte type][4 bytes length][N bytes payload]
- * Validates that the data contains enough bytes for the payload.
+ * Parses message format: [1 byte type_length][N bytes type][4 bytes payload_length][M bytes payload]
+ * Validates that the data contains enough bytes for the type and payload.
  */
 bool CPeerMessage::Deserialize(const std::string& str_data) {
-    // Need at least header (5 bytes: 1 type + 4 length)
-    if (str_data.size() < GetHeaderSize()) {
+    // Need at least 1 byte for type length
+    if (str_data.size() < 1) {
         return false;
     }
 
-    // 1. Parse message type (1 byte)
-    m_type = static_cast<EMessageType>(static_cast<uint8_t>(str_data[0]));
+    size_t n_offset = 0;
 
-    // 2. Parse payload length (4 bytes, network byte order)
+    // 1. Parse type length (1 byte)
+    uint8_t n_type_length = static_cast<uint8_t>(str_data[n_offset]);
+    n_offset += 1;
+
+    // 2. Check if we have enough data for type string
+    if (str_data.size() < n_offset + n_type_length) {
+        return false;
+    }
+
+    // 3. Parse type string (N bytes)
+    m_str_type = str_data.substr(n_offset, n_type_length);
+    n_offset += n_type_length;
+
+    // 4. Check if we have enough data for payload length
+    if (str_data.size() < n_offset + 4) {
+        return false;
+    }
+
+    // 5. Parse payload length (4 bytes, network byte order)
     uint32_t n_length_network;
-    std::memcpy(&n_length_network, str_data.data() + 1, 4);
-    uint32_t n_length = NetworkToHost(n_length_network);
+    std::memcpy(&n_length_network, str_data.data() + n_offset, 4);
+    uint32_t n_payload_length = NetworkToHost(n_length_network);
+    n_offset += 4;
 
-    // 3. Validate that we have enough data for the payload
-    size_t n_expected_size = GetHeaderSize() + n_length;
-    if (str_data.size() < n_expected_size) {
+    // 6. Validate that we have enough data for the payload
+    if (str_data.size() < n_offset + n_payload_length) {
         return false;
     }
 
-    // 4. Extract payload
+    // 7. Extract payload
     m_payload.clear();
-    if (n_length > 0) {
-        const uint8_t* p_payload = reinterpret_cast<const uint8_t*>(str_data.data() + GetHeaderSize());
-        m_payload.assign(p_payload, p_payload + n_length);
+    if (n_payload_length > 0) {
+        const uint8_t* p_payload = reinterpret_cast<const uint8_t*>(str_data.data() + n_offset);
+        m_payload.assign(p_payload, p_payload + n_payload_length);
     }
 
     return true;
@@ -173,38 +214,17 @@ bool CPeerMessage::Deserialize(const std::string& str_data) {
 
 /**
  * @brief Check if message is valid
- * @return true if message has non-UNKNOWN type
+ * @return true if message has valid type string
  */
 bool CPeerMessage::IsValid() const {
-    return m_type != EMessageType::UNKNOWN;
+    return MessageType::IsValid(m_str_type);
 }
 
 // ============= Utility Functions =============
 
 /**
- * @brief Get string representation of message type
- */
-std::string CPeerMessage::TypeToString(EMessageType type) {
-    switch (type) {
-        case EMessageType::PING:       return "PING";
-        case EMessageType::PONG:       return "PONG";
-        case EMessageType::GET_PEERS:  return "GET_PEERS";
-        case EMessageType::PEERS:      return "PEERS";
-        case EMessageType::TX_IDS:     return "TX_IDS";
-        case EMessageType::GET_TX:     return "GET_TX";
-        case EMessageType::TX:         return "TX";
-        case EMessageType::GET_BLOCK:  return "GET_BLOCK";
-        case EMessageType::BLOCK:      return "BLOCK";
-        case EMessageType::GET_CHAIN:  return "GET_CHAIN";
-        case EMessageType::CHAIN_INFO: return "CHAIN_INFO";
-        case EMessageType::UNKNOWN:    return "UNKNOWN";
-        default:                       return "INVALID";
-    }
-}
-
-/**
  * @brief Get string representation of this message's type
  */
 std::string CPeerMessage::GetTypeString() const {
-    return TypeToString(m_type);
+    return m_str_type;
 }

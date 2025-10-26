@@ -159,7 +159,7 @@ TEST(PeerManager_BroadcastMessage_EmptyPayload) {
     CPeerManager manager(8337);
 
     // Create TX_IDS message with empty payload
-    CPeerMessage tx_ids_msg(EMessageType::TX_IDS, "");
+    CPeerMessage tx_ids_msg(MessageType::TX_IDS, "");
 
     // Should not crash with empty payload
     size_t sent_count = manager.BroadcastMessage(tx_ids_msg);
@@ -175,7 +175,7 @@ TEST(PeerManager_BroadcastMessage_TxIdsPayload) {
 
     // Create TX_IDS message with comma-separated transaction IDs
     std::string tx_ids_payload = "tx1_abcdef1234567890,tx2_1234567890abcdef";
-    CPeerMessage tx_ids_msg(EMessageType::TX_IDS, tx_ids_payload);
+    CPeerMessage tx_ids_msg(MessageType::TX_IDS, tx_ids_payload);
 
     // Should not crash with no peers
     size_t sent_count = manager.BroadcastMessage(tx_ids_msg);
@@ -378,7 +378,7 @@ TEST(PeerManager_SendMessageToPeer_NoPeers) {
     CPeerManager manager(8344);
 
     // Create a PING message
-    CPeerMessage ping_msg(EMessageType::PING);
+    CPeerMessage ping_msg(MessageType::PING);
 
     // Try to send to non-existent peer
     bool result = manager.SendMessageToPeer("192.168.1.100", 8333, ping_msg);
@@ -393,7 +393,7 @@ TEST(PeerManager_BroadcastMessage_NoPeers) {
     CPeerManager manager(8345);
 
     // Create a GET_PEERS message
-    CPeerMessage get_peers_msg(EMessageType::GET_PEERS);
+    CPeerMessage get_peers_msg(MessageType::GET_PEERS);
 
     // Broadcast to no peers
     size_t sent_count = manager.BroadcastMessage(get_peers_msg);
@@ -408,10 +408,10 @@ TEST(PeerManager_BroadcastMessage_DifferentTypes) {
     CPeerManager manager(8346);
 
     // Test different message types
-    CPeerMessage ping(EMessageType::PING);
-    CPeerMessage pong(EMessageType::PONG);
-    CPeerMessage get_peers(EMessageType::GET_PEERS);
-    CPeerMessage tx_ids(EMessageType::TX_IDS, "tx1,tx2,tx3");
+    CPeerMessage ping(MessageType::PING);
+    CPeerMessage pong(MessageType::PONG);
+    CPeerMessage get_peers(MessageType::GET_PEERS);
+    CPeerMessage tx_ids(MessageType::TX_IDS, "tx1,tx2,tx3");
 
     // All should return 0 with no peers
     ASSERT_EQUAL(manager.BroadcastMessage(ping), (size_t)0, "PING should send to 0 peers");
