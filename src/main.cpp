@@ -156,9 +156,15 @@ int main(int argc, char* argv[]) {
     CBlockweave weave(str_blocks_dir);
     LOG_INFO("Blockweave instance created with block storage at: " + str_blocks_dir);
 
+    // Create peer manager (before REST API so we can pass it to REST API)
+    int n_max_outbound = config.GetMaxOutboundPeers();
+    int n_max_inbound = config.GetMaxInboundPeers();
+    LOG_INFO("Creating peer manager on port " + std::to_string(n_p2p_port));
+    CPeerManager peer_manager(n_p2p_port, n_max_outbound, n_max_inbound);
+
     // Start REST API server (1 listener thread + N worker threads)
     LOG_INFO("Starting REST API server on port " + std::to_string(n_rest_port));
-    CRestApiServer rest_api(&weave, &config, str_miner_address, n_rest_port);
+    CRestApiServer rest_api(&weave, &peer_manager, &config, str_miner_address, n_rest_port);
     if (!rest_api.Start()) {
         LOG_ERROR("Failed to start REST API server on port " + std::to_string(n_rest_port));
         return 1;
@@ -166,10 +172,7 @@ int main(int argc, char* argv[]) {
     LOG_INFO("REST API server started successfully");
 
     // Start peer manager
-    int n_max_outbound = config.GetMaxOutboundPeers();
-    int n_max_inbound = config.GetMaxInboundPeers();
     LOG_INFO("Starting peer manager on port " + std::to_string(n_p2p_port));
-    CPeerManager peer_manager(n_p2p_port, n_max_outbound, n_max_inbound);
     if (!peer_manager.Start()) {
         LOG_ERROR("Failed to start peer manager on port " + std::to_string(n_p2p_port));
         rest_api.Stop();

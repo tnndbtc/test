@@ -20,8 +20,9 @@
 #include <vector>
 #include <memory>
 
-// Forward declaration
+// Forward declarations
 class CConfig;
+class CPeerManager;
 
 /**
  * @class CRestApiServer
@@ -43,6 +44,8 @@ class CConfig;
  * - GET /data/:txid - Get transaction data by ID
  * - POST /transaction - Submit new transaction
  * - POST /files - Upload file as transaction
+ * - POST /rpc/addpeer - Add outbound peer connection
+ * - POST /rpc/getpeer - Get list of connected peers
  *
  * Thread safety:
  * - Uses atomic flags for state (f_running, f_stop_requested)
@@ -50,7 +53,7 @@ class CConfig;
  * - Blockweave operations are thread-safe (protected by blockweave's mutex)
  *
  * Example usage:
- *   CRestApiServer server(&blockweave, &config, "miner_address", 28443);
+ *   CRestApiServer server(&blockweave, &peer_manager, &config, "miner_address", 28443);
  *   server.Start();
  *   // ... server runs in background threads ...
  *   server.Stop();
@@ -58,6 +61,7 @@ class CConfig;
 class CRestApiServer : public IRestApiServer {
 private:
     CBlockweave* p_blockweave;                  ///< Pointer to blockweave instance
+    CPeerManager* p_peer_manager;               ///< Pointer to peer manager instance
     const CConfig* p_config;                    ///< Configuration object
     std::string str_miner_address;              ///< Mining reward address
     int n_port;                                 ///< HTTP server port
@@ -133,6 +137,19 @@ private:
     std::tuple<int, std::string> HandlePostFiles(const CHttpRequest& request);
 
     /**
+     * @brief Handle POST /rpc/addpeer endpoint
+     * @param str_body Request body containing peer address and port
+     * @return Tuple of (HTTP status code, JSON response with result)
+     */
+    std::tuple<int, std::string> HandleRpcAddPeer(const std::string& str_body);
+
+    /**
+     * @brief Handle POST /rpc/getpeer endpoint
+     * @return Tuple of (HTTP status code, JSON response with peer list)
+     */
+    std::tuple<int, std::string> HandleRpcGetPeer();
+
+    /**
      * @brief Parse raw HTTP request into structured form
      * @param str_raw_request Raw HTTP request string from socket
      * @param n_client_socket Client socket for response
@@ -155,12 +172,13 @@ public:
     /**
      * @brief Construct REST API server
      * @param p_weave Pointer to blockweave instance
+     * @param p_peer_mgr Pointer to peer manager instance
      * @param p_cfg Pointer to configuration object
      * @param str_miner_addr Mining reward address
      * @param n_port_num HTTP server port (default: 28443)
      */
-    CRestApiServer(CBlockweave* p_weave, const CConfig* p_cfg, const std::string& str_miner_addr,
-                   int n_port_num = 28443);
+    CRestApiServer(CBlockweave* p_weave, CPeerManager* p_peer_mgr, const CConfig* p_cfg,
+                   const std::string& str_miner_addr, int n_port_num = 28443);
 
     /**
      * @brief Destructor - stops server and cleans up resources

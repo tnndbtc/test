@@ -2,6 +2,7 @@
 #include "unit_test.h"
 #include "rest/rest_api_server.h"
 #include "blockcore/blockweave.h"
+#include "peer/peer_manager.h"
 #include "utils/config.h"
 #include <thread>
 #include <chrono>
@@ -13,9 +14,10 @@ using namespace UnitTest;
  */
 TEST(RestApiServer_Constructor) {
     CBlockweave blockweave;
+    CPeerManager peer_manager(28333);
     CConfig config;
 
-    CRestApiServer server(&blockweave, &config, "test_miner_address", 28443);
+    CRestApiServer server(&blockweave, &peer_manager, &config, "test_miner_address", 28443);
 
     ASSERT_FALSE(server.IsRunning(), "Server should not be running initially");
 }
@@ -25,9 +27,10 @@ TEST(RestApiServer_Constructor) {
  */
 TEST(RestApiServer_StartStop) {
     CBlockweave blockweave;
+    CPeerManager peer_manager(38333);
     CConfig config;
 
-    CRestApiServer server(&blockweave, &config, "test_miner_address", 38443);
+    CRestApiServer server(&blockweave, &peer_manager, &config, "test_miner_address", 38443);
 
     ASSERT_FALSE(server.IsRunning(), "Server should not be running initially");
 
@@ -47,9 +50,10 @@ TEST(RestApiServer_StartStop) {
  */
 TEST(RestApiServer_MultipleStartStop) {
     CBlockweave blockweave;
+    CPeerManager peer_manager(38334);
     CConfig config;
 
-    CRestApiServer server(&blockweave, &config, "test_miner_address", 38444);
+    CRestApiServer server(&blockweave, &peer_manager, &config, "test_miner_address", 38444);
 
     for (int i = 0; i < 3; i++) {
         bool started = server.Start();
@@ -67,9 +71,10 @@ TEST(RestApiServer_MultipleStartStop) {
  */
 TEST(RestApiServer_StopWithoutStart) {
     CBlockweave blockweave;
+    CPeerManager peer_manager(38335);
     CConfig config;
 
-    CRestApiServer server(&blockweave, &config, "test_miner_address", 38445);
+    CRestApiServer server(&blockweave, &peer_manager, &config, "test_miner_address", 38445);
 
     // Stop without starting should not crash
     server.Stop();
@@ -82,10 +87,11 @@ TEST(RestApiServer_StopWithoutStart) {
  */
 TEST(RestApiServer_DestructorStops) {
     CBlockweave blockweave;
+    CPeerManager peer_manager(38336);
     CConfig config;
 
     {
-        CRestApiServer server(&blockweave, &config, "test_miner_address", 38446);
+        CRestApiServer server(&blockweave, &peer_manager, &config, "test_miner_address", 38446);
         server.Start();
         ASSERT_TRUE(server.IsRunning(), "Server should be running");
 

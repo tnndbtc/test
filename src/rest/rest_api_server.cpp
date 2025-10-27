@@ -14,6 +14,7 @@
  */
 
 #include "rest_api_server.h"
+#include "peer/peer_manager.h"
 #include "utils/config.h"
 #include "utils/threadname.h"
 #include "utils/httpcode.h"
@@ -325,6 +326,7 @@ static bool CreateDirectoryRecursive(const std::string& str_path) {
 /**
  * @brief Construct REST API server
  * @param p_weave Pointer to blockweave instance
+ * @param p_peer_mgr Pointer to peer manager instance
  * @param p_cfg Pointer to configuration object
  * @param str_miner_addr Mining reward address
  * @param n_port_num HTTP server port
@@ -333,10 +335,11 @@ static bool CreateDirectoryRecursive(const std::string& str_path) {
  * threads (REST_WORKER_THREADS from settings.h, default 5).
  * Creates shared request queue for listener/worker coordination.
  */
-CRestApiServer::CRestApiServer(CBlockweave* p_weave, const CConfig* p_cfg,
-                               const std::string& str_miner_addr,
+CRestApiServer::CRestApiServer(CBlockweave* p_weave, CPeerManager* p_peer_mgr,
+                               const CConfig* p_cfg, const std::string& str_miner_addr,
                                int n_port_num)
-    : p_blockweave(p_weave), p_config(p_cfg), str_miner_address(str_miner_addr), n_port(n_port_num),
+    : p_blockweave(p_weave), p_peer_manager(p_peer_mgr), p_config(p_cfg),
+      str_miner_address(str_miner_addr), n_port(n_port_num),
       n_server_socket(-1), f_running(false), f_stop_requested(false),
       p_request_queue(std::make_shared<CRequestQueue>()) {
 
@@ -895,6 +898,93 @@ std::tuple<int, std::string> CRestApiServer::HandlePostFiles(const CHttpRequest&
     }
 }
 
+std::tuple<int, std::string> CRestApiServer::HandleRpcAddPeer(const std::string& str_body) {
+    LOG_INFO("HandleRpcAddPeer: " + str_body);
+    try {
+        // Parse JSON body to extract address and port
+        std::string str_address = ExtractJsonValue(str_body, "address");
+        std::string str_port = ExtractJsonValue(str_body, "port");
+
+        // Validate required fields
+        if (str_address.empty()) {
+            LOG_ERROR("POST /rpc/addpeer: Missing required field 'address'");
+            return {HTTP_BAD_REQUEST, "{\"error\": \"Bad Request\", \"message\": \"Missing required field: address\"}"};
+        }
+
+        // Parse port (optional, default to P2P_PORT)
+        int n_port = P2P_PORT;
+        if (!str_port.empty()) {
+            try {
+                n_port = std::stoi(str_port);
+                if (n_port <= 0 || n_port > 65535) {
+                    LOG_ERROR("POST /rpc/addpeer: Invalid port value: " + str_port);
+                    return {HTTP_BAD_REQUEST, "{\"error\": \"Bad Request\", \"message\": \"Invalid port value (must be 1-65535)\"}"};
+                }
+            } catch (const std::exception& e) {
+                LOG_ERROR("POST /rpc/addpeer: Invalid port value: " + str_port);
+                return {HTTP_BAD_REQUEST, "{\"error\": \"Bad Request\", \"message\": \"Invalid port value\"}"};
+            }
+        }
+
+        // Add peer via peer manager
+        bool f_success = p_peer_manager->AddPeer(str_address, n_port);
+
+        // Build response
+        std::ostringstream oss;
+        oss << "{\n";
+        oss << "  \"status\": \"" << (f_success ? "success" : "failed") << "\",\n";
+        oss << "  \"address\": \"" << str_address << "\",\n";
+        oss << "  \"port\": " << n_port << ",\n";
+        oss << "  \"message\": \"" << (f_success ? "Peer connection initiated" : "Failed to initiate peer connection") << "\"\n";
+        oss << "}";
+
+        LOG_INFO("RPC addpeer: " + str_address + ":" + std::to_string(n_port) + " - " +
+                 (f_success ? "success" : "failed"));
+
+        return {HTTP_OK, oss.str()};
+    } catch (const std::exception& e) {
+        LOG_ERROR("POST /rpc/addpeer exception: " + std::string(e.what()));
+        return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Internal Server Error\", \"message\": \"" + std::string(e.what()) + "\"}"};
+    }
+}
+
+std::tuple<int, std::string> CRestApiServer::HandleRpcGetPeer() {
+    LOG_INFO("HandleRpcGetPeer");
+    try {
+        // Get connected peers from peer manager
+        std::vector<std::string> vec_peers = p_peer_manager->GetConnectedPeers();
+        size_t n_outbound_count = p_peer_manager->GetOutboundPeerCount();
+        size_t n_inbound_count = p_peer_manager->GetInboundPeerCount();
+
+        // Build JSON response with peer list
+        std::ostringstream oss;
+        oss << "{\n";
+        oss << "  \"status\": \"success\",\n";
+        oss << "  \"total_peers\": " << vec_peers.size() << ",\n";
+        oss << "  \"outbound_peers\": " << n_outbound_count << ",\n";
+        oss << "  \"inbound_peers\": " << n_inbound_count << ",\n";
+        oss << "  \"peers\": [\n";
+
+        for (size_t i = 0; i < vec_peers.size(); i++) {
+            oss << "    \"" << vec_peers[i] << "\"";
+            if (i < vec_peers.size() - 1) {
+                oss << ",";
+            }
+            oss << "\n";
+        }
+
+        oss << "  ]\n";
+        oss << "}";
+
+        LOG_INFO("RPC getpeer: " + std::to_string(vec_peers.size()) + " peers connected");
+
+        return {HTTP_OK, oss.str()};
+    } catch (const std::exception& e) {
+        LOG_ERROR("POST /rpc/getpeer exception: " + std::string(e.what()));
+        return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Internal Server Error\", \"message\": \"" + std::string(e.what()) + "\"}"};
+    }
+}
+
 // ============= HTTP Method Handlers (Interface Implementation) =============
 
 std::tuple<int, std::string> CRestApiServer::HandleGET(const std::string& str_endpoint) {
@@ -929,6 +1019,12 @@ std::tuple<int, std::string> CRestApiServer::HandlePOST(const std::string& str_e
     }
     else if (str_endpoint == "/files") {
         return HandlePostFiles(request);
+    }
+    else if (str_endpoint == "/rpc/addpeer") {
+        return HandleRpcAddPeer(request.str_body);
+    }
+    else if (str_endpoint == "/rpc/getpeer") {
+        return HandleRpcGetPeer();
     }
     else {
         LOG_ERROR("POST endpoint not found: " + str_endpoint);
