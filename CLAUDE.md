@@ -90,6 +90,9 @@ miner_address=ea6dc2ca1bd34a376850629cc74510133b7c2a4c318
 # REST API port (default: 28443, can be overridden)
 rest_api_port=28443
 
+# P2P listening port (default: 28333, can be overridden)
+p2p_port=28333
+
 # Log directory (default: ./log, can be overridden)
 log_dir=./log
 
@@ -104,7 +107,7 @@ data_dir=./data
 daemon=false
 ```
 
-**Note:** Default values for `rest_api_port`, `log_dir`, and `log_level` are defined in `src/utils/settings.h`. If not specified in the config file, these defaults will be used.
+**Note:** Default values for `rest_api_port`, `p2p_port`, `log_dir`, and `log_level` are defined in `src/utils/settings.h`. If not specified in the config file, these defaults will be used.
 
 ### 3. Control the Daemon
 
