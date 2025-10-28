@@ -18,6 +18,6 @@ curl -X POST http://localhost:28443/files -F "file=@/tmp/test_upload.txt" 2>&1
 curl -X POST http://localhost:28443/files -H "Content-Type:application/octet-stream" --data-binary "@/tmp/test_upload.txt" 2>&1
 --------------------------
 to test RPC endpoints:
-curl -X POST http://localhost:28443/rpc/getpeer
+curl http://localhost:28443/rpc/getpeer
 curl -X POST http://localhost:28443/rpc/addpeer -H "Content-Type: application/json" -d '{"address": "127.0.0.1", "port": 28334}'
 --------------------------

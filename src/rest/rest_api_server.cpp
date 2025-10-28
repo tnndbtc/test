@@ -1004,6 +1004,9 @@ std::tuple<int, std::string> CRestApiServer::HandleGET(const std::string& str_en
         std::string str_tx_id = str_endpoint.substr(6);
         return HandleGetData(str_tx_id);
     }
+    else if (str_endpoint == "/rpc/getpeer") {
+        return HandleRpcGetPeer();
+    }
     else {
         LOG_ERROR("GET endpoint not found: " + str_endpoint);
         return {HTTP_NOT_FOUND, "{\"error\": \"Not found\"}"};
@@ -1022,9 +1025,6 @@ std::tuple<int, std::string> CRestApiServer::HandlePOST(const std::string& str_e
     }
     else if (str_endpoint == "/rpc/addpeer") {
         return HandleRpcAddPeer(request.str_body);
-    }
-    else if (str_endpoint == "/rpc/getpeer") {
-        return HandleRpcGetPeer();
     }
     else {
         LOG_ERROR("POST endpoint not found: " + str_endpoint);

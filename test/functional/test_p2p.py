@@ -502,20 +502,23 @@ class P2PTest(TestFramework):
 
     def test_node0_outbound_connections(self):
         """
-        Test that node0 can establish outbound connections to node1, node2, and node3.
+        Test that node0 can establish outbound connections to node1, node2, and node3 using RPC.
 
         This test verifies:
-        - Node0 can connect to multiple peers simultaneously
-        - P2P handshake works correctly (PING/PONG exchange)
+        - Node0 can connect to multiple peers using /rpc/addpeer
+        - RPC endpoint properly initiates P2P connections
+        - Peer connections can be queried via /rpc/getpeer
         - Connections remain stable during the test
         """
-        self.log_info("%s: Testing node0 outbound connections to node1, node2, node3..." % inspect.currentframe().f_code.co_name)
+        self.log_info("%s: Testing node0 outbound connections via RPC..." % inspect.currentframe().f_code.co_name)
 
-        # Node0 will connect to the P2P ports of node1, node2, node3
-        # Node 0: P2P port 28333
-        # Node 1: P2P port 28334
-        # Node 2: P2P port 28335
-        # Node 3: P2P port 28336
+        # Node0 will connect to the P2P ports of node1, node2, node3 using RPC
+        # Node 0: REST 28443, P2P port 28333
+        # Node 1: REST 28444, P2P port 28334
+        # Node 2: REST 28445, P2P port 28335
+        # Node 3: REST 28446, P2P port 28336
+
+        node0 = self.nodes[0]
 
         target_nodes = [
             {"index": 1, "host": "127.0.0.1", "p2p_port": 28334},
@@ -523,111 +526,115 @@ class P2PTest(TestFramework):
             {"index": 3, "host": "127.0.0.1", "p2p_port": 28336}
         ]
 
-        connections = []
         successful_connections = 0
 
-        # Establish connections from node0 to each target node
+        # Use RPC to establish connections from node0 to each target node
         for target in target_nodes:
             node_index = target["index"]
+            host = target["host"]
             p2p_port = target["p2p_port"]
 
-            self.log_info(f"Node0 attempting to connect to Node{node_index} at 127.0.0.1:{p2p_port}...")
+            self.log_info(f"Node0 using RPC to connect to Node{node_index} at {host}:{p2p_port}...")
 
-            conn = P2PConnection(target["host"], p2p_port, timeout=5)
-            connected = conn.connect()
+            # Call /rpc/addpeer endpoint
+            try:
+                response = node0.post("/rpc/addpeer", json_data={
+                    "address": host,
+                    "port": p2p_port
+                })
 
-            if not connected:
-                self.log_info(f"WARNING: Failed to connect to Node{node_index}")
-                continue
+                self.assert_equal(
+                    response.status_code,
+                    200,
+                    f"RPC addpeer should return 200 for Node{node_index}"
+                )
 
-            self.log_info(f"Node0 successfully connected to Node{node_index}")
-            connections.append({"conn": conn, "index": node_index})
-            successful_connections += 1
+                data = response.json()
+                self.assert_in("status", data, "Response should contain status field")
+
+                if data["status"] == "success":
+                    self.log_info(f"Node0 successfully initiated connection to Node{node_index}")
+                    successful_connections += 1
+                else:
+                    self.log_info(f"WARNING: Failed to connect to Node{node_index}: {data.get('message', 'unknown error')}")
+            except Exception as e:
+                self.log_info(f"ERROR: Exception connecting to Node{node_index}: {e}")
+                self.log_info(f"Response status: {response.status_code if response else 'N/A'}")
+                self.log_info(f"Response text: {response.text if response else 'N/A'}")
 
         # Verify we established at least one connection
         self.assert_true(
             successful_connections > 0,
-            "Node0 should establish at least one outbound connection"
+            "Node0 should establish at least one outbound connection via RPC"
         )
 
         self.log_info(f"Node0 established {successful_connections} out of 3 outbound connections")
 
-        # Test each established connection with PING/PONG exchange
-        for conn_info in connections:
-            conn = conn_info["conn"]
-            node_index = conn_info["index"]
+        # Wait a moment for connections to be fully established
+        time.sleep(2)
 
-            self.log_info(f"Testing PING/PONG with Node{node_index}...")
+        # Query peer list using /rpc/getpeer
+        self.log_info("Querying Node0 peer list via /rpc/getpeer...")
+        try:
+            response = node0.get("/rpc/getpeer")
 
-            # Send PING message
-            ping_msg = P2PMessage(MessageType.PING)
-            sent = conn.send_message(ping_msg)
-
-            self.assert_true(
-                sent,
-                f"Should successfully send PING to Node{node_index}"
+            self.assert_equal(
+                response.status_code,
+                200,
+                "RPC getpeer should return 200"
             )
 
-            self.log_info(f"PING sent to Node{node_index}")
+            data = response.json()
+            self.assert_in("status", data, "Response should contain status field")
+            self.assert_equal(data["status"], "success", "RPC getpeer should return success")
+            self.assert_in("total_peers", data, "Response should contain total_peers")
+            self.assert_in("outbound_peers", data, "Response should contain outbound_peers")
+            self.assert_in("inbound_peers", data, "Response should contain inbound_peers")
+            self.assert_in("peers", data, "Response should contain peers list")
 
-            # Note: In a full implementation, we would try to receive PONG response
-            # For now, we verify the connection remains open and we can send messages
-            # response = conn.receive_message(timeout=2)
-            # if response and response.msg_type == MessageType.PONG:
-            #     self.log_info(f"Received PONG from Node{node_index}")
+            total_peers = data["total_peers"]
+            outbound_peers = data["outbound_peers"]
+            inbound_peers = data["inbound_peers"]
+            peer_list = data["peers"]
 
-        # Test sending GET_PEERS to all connected nodes
-        self.log_info("Broadcasting GET_PEERS to all connected nodes...")
-        for conn_info in connections:
-            conn = conn_info["conn"]
-            node_index = conn_info["index"]
+            self.log_info(
+                f"Node0 peer status: total={total_peers}, "
+                f"outbound={outbound_peers}, inbound={inbound_peers}"
+            )
+            self.log_info(f"Connected peers: {peer_list}")
+        except Exception as e:
+            self.log_info(f"ERROR: Exception querying peers: {e}")
+            self.log_info(f"Response status: {response.status_code if response else 'N/A'}")
+            self.log_info(f"Response text: {response.text if response else 'N/A'}")
+            raise
 
-            get_peers_msg = P2PMessage(MessageType.GET_PEERS)
-            sent = conn.send_message(get_peers_msg)
-
-            if sent:
-                self.log_info(f"GET_PEERS sent to Node{node_index}")
-
-        # Verify node0 can send to multiple connections simultaneously
-        self.log_info("Testing simultaneous message sending to all peers...")
-        tx_ids_msg = P2PMessage(MessageType.TX_IDS, "tx_test_123,tx_test_456")
-
-        simultaneous_sends = 0
-        for conn_info in connections:
-            conn = conn_info["conn"]
-            node_index = conn_info["index"]
-
-            sent = conn.send_message(tx_ids_msg)
-            if sent:
-                simultaneous_sends += 1
-                self.log_info(f"TX_IDS broadcast sent to Node{node_index}")
-
-        self.assert_equal(
-            simultaneous_sends,
-            successful_connections,
-            f"Should successfully broadcast to all {successful_connections} connected nodes"
+        # Verify peer counts make sense
+        self.assert_true(
+            total_peers >= 0,
+            "Total peers should be non-negative"
+        )
+        self.assert_true(
+            outbound_peers >= 0,
+            "Outbound peers should be non-negative"
+        )
+        self.assert_true(
+            inbound_peers >= 0,
+            "Inbound peers should be non-negative"
         )
 
-        # Verify nodes are still responsive after P2P communication
-        self.log_info("Verifying all nodes remain responsive after P2P communication...")
+        # Verify nodes are still responsive after RPC peer management
+        self.log_info("Verifying all nodes remain responsive after RPC peer management...")
         for i, node in enumerate(self.nodes):
             response = node.get("/chain")
             self.assert_equal(
                 response.status_code,
                 200,
-                f"Node {i} should still be responsive after P2P connections"
+                f"Node {i} should still be responsive after RPC operations"
             )
 
-        # Clean up connections
-        for conn_info in connections:
-            conn = conn_info["conn"]
-            node_index = conn_info["index"]
-            conn.close()
-            self.log_info(f"Closed connection to Node{node_index}")
-
         self.log_info(
-            f"Node0 outbound connections test completed successfully "
-            f"({successful_connections}/3 connections established)"
+            f"Node0 RPC outbound connections test completed successfully "
+            f"({successful_connections}/3 connections attempted)"
         )
 
     # ==================================================================

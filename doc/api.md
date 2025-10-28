@@ -248,13 +248,13 @@ curl -X POST http://localhost:28443/rpc/addpeer \
 
 ---
 
-### POST /rpc/getpeer
+### GET /rpc/getpeer
 
 Get list of all connected peers.
 
 **Request:**
 ```bash
-curl -X POST http://localhost:28443/rpc/getpeer
+curl http://localhost:28443/rpc/getpeer
 ```
 
 **Response:**
@@ -618,7 +618,7 @@ curl -X POST http://localhost:28443/mine/start
 curl http://localhost:28443/chain
 
 # Check connected peers
-curl -X POST http://localhost:28443/rpc/getpeer
+curl http://localhost:28443/rpc/getpeer
 
 # View logs
 tail -f ./log/bweave.log
@@ -767,7 +767,7 @@ curl http://localhost:28443/chain
 
 **Check P2P connectivity:**
 ```bash
-curl -X POST http://localhost:28443/rpc/getpeer
+curl http://localhost:28443/rpc/getpeer
 ```
 
 **Check logs:**
