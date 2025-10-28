@@ -255,7 +255,7 @@ TEST(PeerFilter_ThreadSafeAddTxId) {
     }
 
     // Verify data integrity (no crashes, counts make sense)
-    ASSERT_TRUE(filter.GetTxIdCount() > 0, "Should have tracked TX IDs");
+    ASSERT_TRUE(filter.GetTxIdCount()==20 , "Should have tracked TX IDs");
 }
 
 /**

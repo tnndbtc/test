@@ -121,6 +121,9 @@ private:
     std::thread m_peer_thread;       ///< Main peer management thread
     std::thread m_listener_thread;   ///< Listens for inbound connections
 
+    // PING timer
+    std::chrono::steady_clock::time_point m_last_ping_time;  ///< Last time PING was sent to peers
+
     /**
      * @brief Main peer management thread function
      *

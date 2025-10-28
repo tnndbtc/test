@@ -9,6 +9,7 @@
  */
 
 #include "peer/peer_manager.h"
+#include "peer/peer_message.h"
 #include "utils/threadname.h"
 #include "logger/logger.h"
 #include <iostream>
@@ -139,7 +140,8 @@ CPeerConnection& CPeerConnection::operator=(CPeerConnection&& other) noexcept {
 CPeerManager::CPeerManager(int n_port, int n_max_outbound, int n_max_inbound)
     : n_listen_port(n_port), n_listen_socket(-1),
       n_max_inbound_peers(n_max_inbound), n_max_outbound_peers(n_max_outbound),
-      f_running(false), f_stop_requested(false) {
+      f_running(false), f_stop_requested(false),
+      m_last_ping_time(std::chrono::steady_clock::now()) {
     m_inbound_peers.reserve(n_max_inbound_peers);
     m_outbound_peers.reserve(n_max_outbound_peers);
 }
@@ -439,6 +441,7 @@ bool CPeerManager::SetSocketNonBlocking(int n_socket, bool f_non_blocking) {
  *
  * Runs periodic maintenance tasks:
  * - Cleans up disconnected peers from peer list
+ * - Sends PING messages to all connected peers every 30 seconds
  * - Runs every 5 seconds while peer manager is active
  *
  * Exits when f_stop_requested is set by Stop().
@@ -452,6 +455,21 @@ void CPeerManager::PeerThread() {
     while (!f_stop_requested) {
         // Clean up disconnected peers
         CleanupDisconnectedPeers();
+
+        // Check if it's time to send PING messages (every 30 seconds)
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_last_ping_time);
+
+        if (elapsed.count() >= 30) {
+            // Send PING to all connected peers
+            size_t n_peer_count = GetOutboundPeerCount() + GetInboundPeerCount();
+            if (n_peer_count > 0) {
+                CPeerMessage ping_message("ping");
+                size_t n_sent = BroadcastMessage(ping_message);
+                LOG_INFO("Sent PING to " + std::to_string(n_sent) + " peers");
+            }
+            m_last_ping_time = now;
+        }
 
         // Sleep for a bit before next iteration
         std::this_thread::sleep_for(std::chrono::seconds(5));
@@ -517,6 +535,7 @@ void CPeerManager::ListenerThread() {
             auto p_peer = std::make_unique<CPeerConnection>(std::string(str_ip), n_peer_port);
             p_peer->n_socket = n_client_socket;
             p_peer->f_active = true;
+            p_peer->f_connected = true;
 
             // Start connection thread for this peer
             p_peer->m_thread = std::thread(&CPeerManager::ConnectionThread, this, p_peer.get());
@@ -576,6 +595,7 @@ void CPeerManager::ConnectionThread(CPeerConnection* p_peer) {
         if (n_bytes_received > 0) {
             buffer[n_bytes_received] = '\0';
             str_receive_buffer += std::string(buffer, n_bytes_received);
+            LOG_TRACE("Received p2p message: " + str_receive_buffer);
 
             // Process complete messages (terminated by newline)
             size_t n_newline_pos;
