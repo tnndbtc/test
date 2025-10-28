@@ -203,16 +203,16 @@ target_link_libraries(bwrest
 )
 
 # ============================================================
-# Main Executable: rest_daemon
+# Main Executable: bweave
 # Links with all libraries
 # ============================================================
-add_executable(rest_daemon
+add_executable(bweave
     src/main.cpp
     src/wallet/wallet.cpp
 )
 
-# Link rest_daemon with all libraries
-target_link_libraries(rest_daemon
+# Link bweave with all libraries
+target_link_libraries(bweave
     PRIVATE bwblockcore
     PRIVATE bwrest
     PRIVATE bwpeer
@@ -223,16 +223,16 @@ target_link_libraries(rest_daemon
     PRIVATE OpenSSL::Crypto
 )
 
-# Set rpath so rest_daemon can find the shared libraries
+# Set rpath so bweave can find the shared libraries
 if(APPLE)
-    set_target_properties(rest_daemon PROPERTIES
+    set_target_properties(bweave PROPERTIES
         BUILD_WITH_INSTALL_RPATH FALSE
         BUILD_RPATH "${CMAKE_BINARY_DIR}"
         INSTALL_RPATH "@executable_path/../lib;${CMAKE_INSTALL_PREFIX}/lib"
         INSTALL_RPATH_USE_LINK_PATH TRUE
     )
 elseif(UNIX)
-    set_target_properties(rest_daemon PROPERTIES
+    set_target_properties(bweave PROPERTIES
         BUILD_WITH_INSTALL_RPATH FALSE
         BUILD_RPATH "${CMAKE_BINARY_DIR}"
         INSTALL_RPATH "\$ORIGIN/../lib:${CMAKE_INSTALL_PREFIX}/lib"
@@ -277,23 +277,23 @@ elseif(UNIX)
 endif()
 
 # ============================================================
-# Daemon CLI: daemon_cli
-# Control utility for starting/stopping rest_daemon
+# Daemon CLI: bweave_cli
+# Control utility for starting/stopping bweave
 # Lightweight - standalone executable
 # ============================================================
-add_executable(daemon_cli
-    src/cli/daemon_cli.cpp
+add_executable(bweave_cli
+    src/cli/bweave_cli.cpp
 )
 
-# daemon_cli doesn't need libraries - it only starts/stops rest_daemon
+# bweave_cli doesn't need libraries - it only starts/stops bweave
 # No linking needed - standalone executable
 
 # Platform-specific libraries
 if(WIN32)
     # Windows specific settings
-    target_compile_definitions(rest_daemon PRIVATE _WIN32_WINNT=0x0601)
+    target_compile_definitions(bweave PRIVATE _WIN32_WINNT=0x0601)
     target_compile_definitions(wallet PRIVATE _WIN32_WINNT=0x0601)
-    target_compile_definitions(daemon_cli PRIVATE _WIN32_WINNT=0x0601)
+    target_compile_definitions(bweave_cli PRIVATE _WIN32_WINNT=0x0601)
 else()
     # Linux/macOS: Use POSIX threads for threading support
     find_package(Threads REQUIRED)
@@ -301,9 +301,9 @@ else()
     target_link_libraries(bwblockcore PUBLIC Threads::Threads)
     target_link_libraries(bwrest PUBLIC Threads::Threads)
     target_link_libraries(bwpeer PUBLIC Threads::Threads)
-    target_link_libraries(rest_daemon PRIVATE Threads::Threads)
+    target_link_libraries(bweave PRIVATE Threads::Threads)
     target_link_libraries(wallet PRIVATE Threads::Threads)
-    # daemon_cli doesn't use threads - no linking needed
+    # bweave_cli doesn't use threads - no linking needed
 endif()
 
 # Platform-specific compile options
@@ -315,9 +315,9 @@ if(MSVC)
     target_compile_options(bwpeer PRIVATE /W4)
     target_compile_options(bwblockcore PRIVATE /W4)
     target_compile_options(bwrest PRIVATE /W4)
-    target_compile_options(rest_daemon PRIVATE /W4)
+    target_compile_options(bweave PRIVATE /W4)
     target_compile_options(wallet PRIVATE /W4)
-    target_compile_options(daemon_cli PRIVATE /W4)
+    target_compile_options(bweave_cli PRIVATE /W4)
 else()
     # GCC/Clang
     target_compile_options(bwthreadname PRIVATE -Wall -Wextra -pedantic)
@@ -326,15 +326,15 @@ else()
     target_compile_options(bwpeer PRIVATE -Wall -Wextra -pedantic)
     target_compile_options(bwblockcore PRIVATE -Wall -Wextra -pedantic)
     target_compile_options(bwrest PRIVATE -Wall -Wextra -pedantic)
-    target_compile_options(rest_daemon PRIVATE -Wall -Wextra -pedantic)
+    target_compile_options(bweave PRIVATE -Wall -Wextra -pedantic)
     target_compile_options(wallet PRIVATE -Wall -Wextra -pedantic)
-    target_compile_options(daemon_cli PRIVATE -Wall -Wextra -pedantic)
+    target_compile_options(bweave_cli PRIVATE -Wall -Wextra -pedantic)
 endif()
 
 # ============================================================
 # Copy test directory to build/test after build
 # ============================================================
-add_custom_command(TARGET rest_daemon POST_BUILD
+add_custom_command(TARGET bweave POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_SOURCE_DIR}/test
         ${CMAKE_BINARY_DIR}/test
@@ -344,7 +344,7 @@ add_custom_command(TARGET rest_daemon POST_BUILD
 # ============================================================
 # Copy blockweave.conf to build directory after build
 # ============================================================
-add_custom_command(TARGET rest_daemon POST_BUILD
+add_custom_command(TARGET bweave POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_SOURCE_DIR}/src/conf/blockweave.conf
         ${CMAKE_BINARY_DIR}/blockweave.conf
@@ -357,4 +357,4 @@ install(TARGETS bwthreadname bwlogger bwutils bwpeer bwblockcore bwrest
     ARCHIVE DESTINATION lib
     RUNTIME DESTINATION bin
 )
-install(TARGETS rest_daemon wallet daemon_cli DESTINATION bin)
+install(TARGETS bweave wallet bweave_cli DESTINATION bin)

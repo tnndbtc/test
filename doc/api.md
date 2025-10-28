@@ -287,25 +287,25 @@ curl -X POST http://localhost:28443/rpc/getpeer
 
 ## CLI Utilities
 
-### daemon_cli
+### bweave_cli
 
 Process control utility for the blockweave daemon.
 
-**Location:** `build/daemon_cli`
+**Location:** `build/bweave_cli`
 
 #### Commands
 
 **Start Daemon:**
 ```bash
-./daemon_cli start
-./daemon_cli start -c /path/to/config.conf
+./bweave_cli start
+./bweave_cli start -c /path/to/config.conf
 ```
 
-Starts `rest_daemon` in background with daemon mode enabled.
+Starts `bweave` in background with daemon mode enabled.
 
 **Output (Success):**
 ```
-[CLI] Found rest_daemon at: /path/to/rest_daemon
+[CLI] Found bweave at: /path/to/bweave
 [CLI] Starting REST daemon...
 [CLI] Waiting for daemon to initialize...
 [CLI] Daemon started successfully (PID: 12345)
@@ -324,7 +324,7 @@ Starts `rest_daemon` in background with daemon mode enabled.
 
 **Stop Daemon:**
 ```bash
-./daemon_cli stop
+./bweave_cli stop
 ```
 
 Sends SIGTERM to daemon process for graceful shutdown.
@@ -348,7 +348,7 @@ Sends SIGTERM to daemon process for graceful shutdown.
 
 **Check Status:**
 ```bash
-./daemon_cli status
+./bweave_cli status
 ```
 
 Checks if daemon is running via PID file.
@@ -371,8 +371,8 @@ Checks if daemon is running via PID file.
 
 **Restart Daemon:**
 ```bash
-./daemon_cli restart
-./daemon_cli restart -c /path/to/config.conf
+./bweave_cli restart
+./bweave_cli restart -c /path/to/config.conf
 ```
 
 Stops daemon (if running) and starts it again.
@@ -390,26 +390,26 @@ Stops daemon (if running) and starts it again.
 
 ---
 
-### rest_daemon
+### bweave
 
 Main daemon process (not typically run directly).
 
-**Location:** `build/rest_daemon`
+**Location:** `build/bweave`
 
 #### Usage
 
 **Foreground Mode (for debugging):**
 ```bash
-./rest_daemon
-./rest_daemon -c custom.conf
+./bweave
+./bweave -c custom.conf
 ```
 
 Runs daemon in foreground with output to console.
 
 **Background Mode:**
 ```bash
-./rest_daemon -d
-./rest_daemon -d -c custom.conf
+./bweave -d
+./bweave -d -c custom.conf
 ```
 
 Runs daemon in background (forks to daemon process).
@@ -581,7 +581,7 @@ miner_address=<generated_address>
 
 **3. Start Daemon:**
 ```bash
-./daemon_cli start
+./bweave_cli start
 ```
 
 **4. Check Status:**
@@ -621,12 +621,12 @@ curl http://localhost:28443/chain
 curl -X POST http://localhost:28443/rpc/getpeer
 
 # View logs
-tail -f ./log/rest_daemon.log
+tail -f ./log/bweave.log
 ```
 
 **9. Stop Daemon:**
 ```bash
-./daemon_cli stop
+./bweave_cli stop
 ```
 
 ---
@@ -725,11 +725,11 @@ While not an HTTP API, the P2P protocol is documented here for completeness.
 
 ### Log Files
 
-**Location:** Configured via `log_dir` (default: `./log/rest_daemon.log`)
+**Location:** Configured via `log_dir` (default: `./log/bweave.log`)
 
 **Format:**
 ```
-[2025-10-28 01:05:20.261 UTC] [INFO ] [rest_daemon:peer_manager] Message here
+[2025-10-28 01:05:20.261 UTC] [INFO ] [bweave:peer_manager] Message here
 ```
 
 **Fields:**
@@ -757,7 +757,7 @@ log_level=ERROR  # Show only errors and fatal
 
 **Check if daemon is running:**
 ```bash
-./daemon_cli status
+./bweave_cli status
 ```
 
 **Check REST API:**
@@ -772,8 +772,8 @@ curl -X POST http://localhost:28443/rpc/getpeer
 
 **Check logs:**
 ```bash
-tail -f ./log/rest_daemon.log
-grep ERROR ./log/rest_daemon.log
+tail -f ./log/bweave.log
+grep ERROR ./log/bweave.log
 ```
 
 ### Performance Metrics

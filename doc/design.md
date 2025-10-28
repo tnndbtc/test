@@ -62,7 +62,7 @@ All threads are named for easier debugging:
 ### Core Components
 
 ```
-rest_daemon: main process
+bweave: main process
 
 CBlockweave: orchestrator
 
@@ -224,10 +224,10 @@ Transactions are stored within blocks:
 - Session creation (setsid)
 - Working directory change to root
 - File descriptor closing
-- PID file management (/tmp/rest_daemon.pid)
+- PID file management (/tmp/bweave.pid)
 - Signal handlers (SIGTERM, SIGINT)
 
-**daemon_cli** utility:
+**bweave_cli** utility:
 - Lightweight controller (no library dependencies)
 - Process discovery via PID file
 - Graceful shutdown with timeout
@@ -261,7 +261,7 @@ Transactions are stored within blocks:
 
 **Log Format:**
 ```
-[2025-10-28 01:05:20.261 UTC] [INFO ] [rest_daemon:peer_manager] Message here
+[2025-10-28 01:05:20.261 UTC] [INFO ] [bweave:peer_manager] Message here
 ```
 
 **Design Rationale:**

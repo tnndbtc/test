@@ -1,4 +1,4 @@
-// ============= daemon_cli.cpp =============
+// ============= bweave_cli.cpp =============
 #include <iostream>
 #include <string>
 #include <vector>
@@ -11,8 +11,8 @@
 #include <libgen.h>
 #include <limits.h>
 
-const std::string STR_PID_FILE = "/tmp/rest_daemon.pid";
-const std::string STR_DAEMON_EXECUTABLE = "rest_daemon";
+const std::string STR_PID_FILE = "/tmp/bweave.pid";
+const std::string STR_DAEMON_EXECUTABLE = "bweave";
 
 // Simple PID file removal (no dependencies)
 void RemovePidFile(const std::string& str_pid_file) {
@@ -35,12 +35,12 @@ std::string GetExecutableDirectory() {
     return std::string(dir);
 }
 
-// Find rest_daemon executable
+// Find bweave executable
 std::string FindRestDaemon(const char* argv0) {
     // Try multiple locations
     std::vector<std::string> paths = {
-        "./rest_daemon",                    // Current directory
-        "./build/rest_daemon",              // Build directory
+        "./bweave",                    // Current directory
+        "./build/bweave",              // Build directory
     };
 
     // Try to get executable directory from argv[0]
@@ -48,7 +48,7 @@ std::string FindRestDaemon(const char* argv0) {
         char resolved[PATH_MAX];
         if (realpath(argv0, resolved)) {
             char* dir = dirname(resolved);
-            paths.insert(paths.begin(), std::string(dir) + "/rest_daemon");
+            paths.insert(paths.begin(), std::string(dir) + "/bweave");
         }
     }
 
@@ -58,7 +58,7 @@ std::string FindRestDaemon(const char* argv0) {
     if (n_len > 0) {
         self_path[n_len] = '\0';
         char* dir = dirname(self_path);
-        paths.insert(paths.begin(), std::string(dir) + "/rest_daemon");
+        paths.insert(paths.begin(), std::string(dir) + "/bweave");
     }
 
     // Check which path exists
@@ -79,10 +79,10 @@ std::string FindRestDaemon(const char* argv0) {
 void PrintUsage(const char* program_name) {
     std::cout << "Usage: " << program_name << " <command> [options]\n\n";
     std::cout << "Commands:\n";
-    std::cout << "  start [-c <config>]    Start the REST daemon\n";
-    std::cout << "  stop                   Stop the REST daemon\n";
+    std::cout << "  start [-c <config>]    Start the blockweave daemon\n";
+    std::cout << "  stop                   Stop the blockweave daemon\n";
     std::cout << "  status                 Check daemon status\n";
-    std::cout << "  restart [-c <config>]  Restart the REST daemon\n";
+    std::cout << "  restart [-c <config>]  Restart the blockweave daemon\n";
     std::cout << "\nOptions:\n";
     std::cout << "  -c, --config <file>    Configuration file (default: blockweave.conf)\n";
     std::cout << "\nExamples:\n";
@@ -129,19 +129,19 @@ int StartDaemon(const std::string& str_config_file, const char* argv0) {
         return 1;
     }
 
-    // Find rest_daemon executable
+    // Find bweave executable
     std::string str_daemon_path = FindRestDaemon(argv0);
     if (str_daemon_path.empty()) {
-        std::cerr << "[CLI] Error: Cannot find rest_daemon executable\n";
+        std::cerr << "[CLI] Error: Cannot find bweave executable\n";
         std::cerr << "[CLI] Searched locations:\n";
-        std::cerr << "[CLI]   - Same directory as daemon_cli\n";
-        std::cerr << "[CLI]   - ./rest_daemon\n";
-        std::cerr << "[CLI]   - ./build/rest_daemon\n";
+        std::cerr << "[CLI]   - Same directory as bweave_cli\n";
+        std::cerr << "[CLI]   - ./bweave\n";
+        std::cerr << "[CLI]   - ./build/bweave\n";
         return 1;
     }
 
-    std::cout << "[CLI] Found rest_daemon at: " << str_daemon_path << "\n";
-    std::cout << "[CLI] Starting REST daemon...\n";
+    std::cout << "[CLI] Found bweave at: " << str_daemon_path << "\n";
+    std::cout << "[CLI] Starting blockweave daemon...\n";
 
     // Fork to start daemon
     pid_t pid = fork();
@@ -151,15 +151,15 @@ int StartDaemon(const std::string& str_config_file, const char* argv0) {
     }
 
     if (pid == 0) {
-        // Child process - exec rest_daemon
+        // Child process - exec bweave
         if (str_config_file.empty()) {
-            execl(str_daemon_path.c_str(), "rest_daemon", "-d", nullptr);
+            execl(str_daemon_path.c_str(), "bweave", "-d", nullptr);
         } else {
-            execl(str_daemon_path.c_str(), "rest_daemon", "-d", "-c", str_config_file.c_str(), nullptr);
+            execl(str_daemon_path.c_str(), "bweave", "-d", "-c", str_config_file.c_str(), nullptr);
         }
 
         // If exec fails
-        std::cerr << "[CLI] Failed to execute rest_daemon: " << strerror(errno) << "\n";
+        std::cerr << "[CLI] Failed to execute bweave: " << strerror(errno) << "\n";
         exit(1);
     }
 
@@ -198,7 +198,7 @@ int StartDaemon(const std::string& str_config_file, const char* argv0) {
     }
 
     std::cerr << "[CLI] Failed to start daemon - PID file not created within timeout\n";
-    std::cerr << "[CLI] Check log files for errors (default location: ./logs/rest_daemon_*.log)\n";
+    std::cerr << "[CLI] Check log files for errors (default location: ./log/bweave.log)\n";
 
     return 1;
 }
@@ -215,7 +215,7 @@ int StopDaemon() {
         return 1;
     }
 
-    std::cout << "[CLI] Stopping REST daemon (PID: " << n_pid << ")...\n";
+    std::cout << "[CLI] Stopping blockweave daemon (PID: " << n_pid << ")...\n";
 
     // Send SIGTERM for graceful shutdown
     if (kill(n_pid, SIGTERM) < 0) {

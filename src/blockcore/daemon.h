@@ -7,7 +7,7 @@
 class CDaemon {
 public:
     // Daemonize the process
-    static bool Daemonize(const std::string& str_pid_file = "/tmp/rest_daemon.pid");
+    static bool Daemonize(const std::string& str_pid_file = "/tmp/bweave.pid");
 
     // Write PID to file
     static bool WritePidFile(const std::string& str_pid_file);

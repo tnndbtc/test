@@ -1,6 +1,6 @@
 # Functional Tests
 
-This directory contains functional tests for the Blockweave REST daemon. These tests start a local node and verify the REST API endpoints work correctly.
+This directory contains functional tests for the Blockweave. These tests start a local node and verify the REST API endpoints work correctly.
 
 ## Prerequisites
 
@@ -169,7 +169,7 @@ Each test run creates a temporary directory for test data:
     └── node0/                       # Node 0 directory
         ├── node0.conf               # Custom config for this node
         ├── logs/                    # Node logs directory
-        │   └── rest_daemon_*.log    # REST daemon logs
+        │   └── bweave_*.log    # blockweave logs
         └── data/                    # Node blockchain data
 ```
 
@@ -178,7 +178,7 @@ Each test run creates a directory named `test_run_<timestamp>` where the timesta
 **Node Directory Organization:**
 - Each node gets its own directory: `node0/`, `node1/`, etc.
 - Node-specific configuration file is auto-generated with correct paths
-- REST daemon logs are stored in `node<N>/logs/`
+- Blockweave logs are stored in `node<N>/logs/`
 - Blockchain data is stored in `node<N>/data/`
 
 ### Logging
@@ -192,7 +192,7 @@ Test activity is logged to multiple locations:
 - Test assertions and results
 - Exception tracebacks
 
-**REST daemon logs** (`node<N>/logs/rest_daemon_*.log`):
+**Blockweave logs** (`node<N>/logs/bweave_*.log`):
 - Daemon startup and configuration
 - REST API request/response handling
 - Mining operations
@@ -207,8 +207,8 @@ python3 test/functional/test_runner.py test_chain.py --tmpdir=/tmp/mytest --nocl
 # View Python test framework logs
 cat /tmp/mytest/test_run_*/test_framework.log
 
-# View REST daemon logs
-cat /tmp/mytest/test_run_*/node0/logs/rest_daemon_*.log
+# View bweave logs
+cat /tmp/mytest/test_run_*/node0/logs/bweave_*.log
 ```
 
 ## Test Framework

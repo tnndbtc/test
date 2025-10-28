@@ -19,8 +19,8 @@ cd build && make
 ```
 
 **Executables:**
-- `rest_daemon` - Main daemon
-- `daemon_cli` - Control utility
+- `bweave` - Main daemon
+- `bweave_cli` - Control utility
 - `wallet` - Address generator
 - `test_all` - Unit tests (in src/test/build/)
 
@@ -36,13 +36,13 @@ cd build && make
 miner_address=<generated_address>
 
 # 3. Start daemon
-./daemon_cli start
+./bweave_cli start
 
 # 4. Check status
 curl http://localhost:28443/chain
 
 # 5. Stop daemon
-./daemon_cli stop
+./bweave_cli stop
 ```
 
 ## Project Structure
@@ -211,13 +211,13 @@ Platform-specific defines: `PLATFORM_MACOS`, `PLATFORM_LINUX`, `PLATFORM_WINDOWS
 
 **View Logs:**
 ```bash
-tail -f build/log/rest_daemon.log
-grep ERROR build/log/rest_daemon.log
+tail -f build/log/bweave.log
+grep ERROR build/log/bweave.log
 ```
 
 **Check Daemon Status:**
 ```bash
-./daemon_cli status
+./bweave_cli status
 lsof -i :28443  # REST API port
 lsof -i :28333  # P2P port
 ```

@@ -111,7 +111,7 @@ int main(int argc, char* argv[]) {
         // Note: Using cout here because logger is not yet initialized
         std::cout << "[Main] Starting in daemon mode...\n";
         std::cout << "[Main] Log directory: " << str_log_dir << "\n";
-        if (!CDaemon::Daemonize("/tmp/rest_daemon.pid")) {
+        if (!CDaemon::Daemonize("/tmp/bweave.pid")) {
             std::cerr << "Failed to daemonize process\n";
             return 1;
         }
@@ -219,7 +219,7 @@ int main(int argc, char* argv[]) {
 
     // Cleanup PID file if in daemon mode
     if (config.IsDaemonMode()) {
-        CDaemon::RemovePidFile("/tmp/rest_daemon.pid");
+        CDaemon::RemovePidFile("/tmp/bweave.pid");
         LOG_INFO("PID file removed");
     }
 

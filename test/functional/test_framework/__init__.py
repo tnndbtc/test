@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Functional test framework for Blockweave REST daemon.
+Functional test framework for Blockweave.
 
 This module provides utilities for starting, stopping, and interacting
 with a local blockweave node for functional testing.
@@ -65,11 +65,11 @@ class BlockweaveNode:
         # Config file is copied to build/ during build from src/conf/blockweave.conf
         self.config_file = config_file or (self.project_root / "build" / "blockweave.conf")
 
-        # Locate rest_daemon executable
-        if (Path.cwd() / "rest_daemon").exists():
-            self.rest_daemon = Path.cwd() / "rest_daemon"
+        # Locate bweave executable
+        if (Path.cwd() / "bweave").exists():
+            self.bweave = Path.cwd() / "bweave"
         else:
-            self.rest_daemon = self.project_root / "build" / "rest_daemon"
+            self.bweave = self.project_root / "build" / "bweave"
 
         self.base_url = f"http://localhost:{self.port}"
         self.process = None
@@ -148,9 +148,9 @@ class BlockweaveNode:
         Returns:
             bool: True if node started successfully, False otherwise
         """
-        if not self.rest_daemon.exists():
+        if not self.bweave.exists():
             raise FileNotFoundError(
-                f"rest_daemon not found at {self.rest_daemon}. "
+                f"bweave not found at {self.bweave}. "
                 "Please build the project first: cd build && make"
             )
 
@@ -166,9 +166,9 @@ class BlockweaveNode:
         self.logger.info(f"Starting blockweave node on port {self.port}...")
         self.logger.info(f"Using config: {self.custom_config_file}")
 
-        # Start rest_daemon in foreground mode as a subprocess
+        # Start bweave in foreground mode as a subprocess
         try:
-            cmd = [str(self.rest_daemon), "-c", str(self.custom_config_file)]
+            cmd = [str(self.bweave), "-c", str(self.custom_config_file)]
 
             # Redirect stdout/stderr to log files in node directory
             node_dir = Path(self.datadir) if self.datadir else Path(tempfile.mkdtemp())
@@ -184,7 +184,7 @@ class BlockweaveNode:
                     start_new_session=True  # Detach from terminal
                 )
 
-            self.logger.info(f"Started rest_daemon process (PID: {self.process.pid})")
+            self.logger.info(f"Started bweave process (PID: {self.process.pid})")
             self.logger.info(f"Stdout log: {stdout_log}")
             self.logger.info(f"Stderr log: {stderr_log}")
 
