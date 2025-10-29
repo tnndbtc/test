@@ -15,8 +15,8 @@ TEST(PeerConnection_DefaultConstructor) {
     CPeerConnection peer;
 
     ASSERT_EQUAL(peer.n_socket, -1, "Default socket should be -1");
-    ASSERT_TRUE(peer.str_address.empty(), "Default address should be empty");
-    ASSERT_EQUAL(peer.n_port, 0, "Default port should be 0");
+    ASSERT_TRUE(peer.peer_node.GetAddress().empty(), "Default address should be empty");
+    ASSERT_EQUAL(peer.peer_node.GetPort(), 0, "Default port should be 0");
     ASSERT_FALSE(peer.f_connected, "Default connection status should be false");
     ASSERT_FALSE(peer.f_active, "Default active status should be false");
 }
@@ -27,8 +27,8 @@ TEST(PeerConnection_DefaultConstructor) {
 TEST(PeerConnection_ParameterizedConstructor) {
     CPeerConnection peer("127.0.0.1", 8333);
 
-    ASSERT_EQUAL(peer.str_address, std::string("127.0.0.1"), "Address should be set");
-    ASSERT_EQUAL(peer.n_port, 8333, "Port should be set");
+    ASSERT_EQUAL(peer.peer_node.GetAddress(), std::string("127.0.0.1"), "Address should be set");
+    ASSERT_EQUAL(peer.peer_node.GetPort(), 8333, "Port should be set");
     ASSERT_EQUAL(peer.n_socket, -1, "Socket should initially be -1");
     ASSERT_FALSE(peer.f_connected, "Should not be connected initially");
     ASSERT_FALSE(peer.f_active, "Should not be active initially");
@@ -44,8 +44,8 @@ TEST(PeerConnection_MoveConstructor) {
 
     CPeerConnection peer2(std::move(peer1));
 
-    ASSERT_EQUAL(peer2.str_address, std::string("192.168.1.1"), "Address should be moved");
-    ASSERT_EQUAL(peer2.n_port, 9999, "Port should be moved");
+    ASSERT_EQUAL(peer2.peer_node.GetAddress(), std::string("192.168.1.1"), "Address should be moved");
+    ASSERT_EQUAL(peer2.peer_node.GetPort(), 9999, "Port should be moved");
     ASSERT_TRUE(peer2.f_connected, "Connection status should be moved");
     ASSERT_TRUE(peer2.f_active, "Active status should be moved");
 }

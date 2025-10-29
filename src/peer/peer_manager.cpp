@@ -601,24 +601,53 @@ void CPeerManager::ConnectionThread(CPeerConnection* p_peer) {
         ssize_t n_bytes_received = recv(p_peer->n_socket, buffer, sizeof(buffer) - 1, 0);
 
         if (n_bytes_received > 0) {
-            buffer[n_bytes_received] = '\0';
             str_receive_buffer += std::string(buffer, n_bytes_received);
-            LOG_TRACE("Received p2p message: " + str_receive_buffer);
+            LOG_TRACE("Received " + std::to_string(n_bytes_received) + " bytes from peer " + p_peer->peer_node.GetAddress());
 
-            // Process complete messages (terminated by newline)
-            size_t n_newline_pos;
-            while ((n_newline_pos = str_receive_buffer.find('\n')) != std::string::npos) {
-                std::string str_message = str_receive_buffer.substr(0, n_newline_pos);
-                str_receive_buffer.erase(0, n_newline_pos + 1);
+            // Try to deserialize complete messages from buffer
+            // CPeerMessage format: [1 byte type_length][N bytes type][4 bytes payload_length][M bytes payload]
+            while (str_receive_buffer.size() >= CPeerMessage::GetMinHeaderSize()) {
+                // Try to deserialize a message
+                CPeerMessage received_msg;
+                if (received_msg.Deserialize(str_receive_buffer)) {
+                    // Successfully deserialized a message
+                    std::string msg_type = received_msg.GetType();
+                    LOG_TRACE("Received " + msg_type + " message from peer " + p_peer->peer_node.GetAddress());
 
-                // Handle message
-                if (str_message.rfind("TX_IDS:", 0) == 0) {
-                    // Extract transaction IDs
-                    std::string str_tx_ids = str_message.substr(7);  // Skip "TX_IDS:"
-                    LOG_INFO("Received transaction IDs from peer " + p_peer->peer_node.GetAddress() + ": " + str_tx_ids);
-                    // TODO: Process transaction IDs (e.g., request full transactions if not in mempool)
+                    // Calculate message size and remove from buffer
+                    // Message size = 1 (type_length) + type_length + 4 (payload_length) + payload_length
+                    size_t type_len = static_cast<uint8_t>(str_receive_buffer[0]);
+                    size_t msg_size = 1 + type_len + 4 + received_msg.GetPayloadSize();
+                    str_receive_buffer.erase(0, msg_size);
+
+                    // Handle different message types
+                    if (msg_type == MessageType::PING) {
+                        // Immediately respond with PONG
+                        LOG_INFO("Received PING from peer " + p_peer->peer_node.GetAddress() + ", sending PONG");
+                        CPeerMessage pong_msg(MessageType::PONG);
+
+                        // Send PONG directly through socket (we're already in the connection thread)
+                        std::string str_serialized = pong_msg.Serialize();
+                        ssize_t n_sent = send(p_peer->n_socket, str_serialized.c_str(), str_serialized.length(), 0);
+
+                        if (n_sent > 0) {
+                            LOG_TRACE("Sent PONG response to peer " + p_peer->peer_node.GetAddress());
+                        } else {
+                            LOG_ERROR("Failed to send PONG to peer " + p_peer->peer_node.GetAddress() +
+                                     " (error: " + std::string(strerror(errno)) + ")");
+                        }
+                    } else if (msg_type == MessageType::PONG) {
+                        LOG_TRACE("Received PONG from peer " + p_peer->peer_node.GetAddress());
+                    } else if (msg_type == MessageType::TX_IDS) {
+                        std::string str_tx_ids = received_msg.GetPayloadString();
+                        LOG_INFO("Received transaction IDs from peer " + p_peer->peer_node.GetAddress() + ": " + str_tx_ids);
+                        // TODO: Process transaction IDs (e.g., request full transactions if not in mempool)
+                    } else {
+                        LOG_TRACE("Received unknown message type '" + msg_type + "' from peer " + p_peer->peer_node.GetAddress());
+                    }
                 } else {
-                    LOG_TRACE("Received unknown message from peer " + p_peer->peer_node.GetAddress() + ": " + str_message);
+                    // Not enough data yet for a complete message, wait for more
+                    break;
                 }
             }
         } else if (n_bytes_received == 0) {

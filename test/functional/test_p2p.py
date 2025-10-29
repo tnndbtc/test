@@ -237,13 +237,26 @@ class P2PConnection:
                 old_timeout = self.socket.gettimeout()
                 self.socket.settimeout(timeout)
 
-            # First, receive header (5 bytes)
-            header = self._receive_exactly(P2PMessage.HEADER_SIZE)
-            if not header:
+            # First, receive type_length (1 byte)
+            type_len_bytes = self._receive_exactly(1)
+            if not type_len_bytes:
                 return None
 
-            # Parse header to get payload length
-            msg_type, payload_len = struct.unpack('!BI', header)
+            type_len = struct.unpack('!B', type_len_bytes)[0]
+
+            # Receive type string (type_len bytes)
+            type_bytes = self._receive_exactly(type_len)
+            if not type_bytes:
+                return None
+
+            msg_type = type_bytes.decode('utf-8')
+
+            # Receive payload_length (4 bytes)
+            payload_len_bytes = self._receive_exactly(4)
+            if not payload_len_bytes:
+                return None
+
+            payload_len = struct.unpack('!I', payload_len_bytes)[0]
 
             # Receive payload
             payload = self._receive_exactly(payload_len) if payload_len > 0 else b""
