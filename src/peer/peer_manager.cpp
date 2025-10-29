@@ -896,21 +896,21 @@ size_t CPeerManager::GetInboundPeerCount() const {
  * Filters out disconnected peers (f_connected == false).
  * Returns empty vector if no peers connected.
  */
-std::vector<std::string> CPeerManager::GetConnectedPeers() const {
-    std::vector<std::string> peers;
+std::vector<CPeerNode> CPeerManager::GetConnectedPeers() const {
+    std::vector<CPeerNode> peers;
     std::lock_guard<std::mutex> lock(cs_peers);
 
     // Add inbound peers
     for (const auto& p_peer : m_inbound_peers) {
         if (p_peer && p_peer->f_connected) {
-            peers.push_back(p_peer->peer_node.GetAddress() + ":" + std::to_string(p_peer->peer_node.GetPort()));
+            peers.push_back(p_peer->peer_node);
         }
     }
 
     // Add outbound peers
     for (const auto& p_peer : m_outbound_peers) {
         if (p_peer && p_peer->f_connected) {
-            peers.push_back(p_peer->peer_node.GetAddress() + ":" + std::to_string(p_peer->peer_node.GetPort()));
+            peers.push_back(p_peer->peer_node);
         }
     }
 

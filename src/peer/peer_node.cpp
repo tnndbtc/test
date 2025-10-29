@@ -41,3 +41,12 @@ bool CPeerNode::operator<(const CPeerNode& other) const {
     }
     return n_port < other.n_port;
 }
+
+std::string CPeerNode::GetInfo() const {
+    std::string str_info = "{\n";
+    str_info += "  \"address\": \"" + str_address + "\",\n";
+    str_info += "  \"port\": " + std::to_string(n_port) + ",\n";
+    str_info += "  \"identifier\": \"" + GetIdentifier() + "\"\n";
+    str_info += "}";
+    return str_info;
+}

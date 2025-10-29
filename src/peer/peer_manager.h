@@ -281,12 +281,13 @@ public:
     virtual size_t GetInboundPeerCount() const override;
 
     /**
-     * @brief Get list of connected peer addresses
-     * @return Vector of "address:port" strings for connected peers
+     * @brief Get list of connected peer nodes
+     * @return Vector of CPeerNode objects for connected peers
      *
      * Thread-safe snapshot of currently connected peers (both inbound and outbound).
+     * Each CPeerNode can be queried for address, port, identifier, and info.
      */
-    virtual std::vector<std::string> GetConnectedPeers() const override;
+    virtual std::vector<CPeerNode> GetConnectedPeers() const override;
 
     /**
      * @brief Send a message to a specific peer

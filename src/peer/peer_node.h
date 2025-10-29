@@ -50,6 +50,12 @@ public:
      * @return true if address is not empty and port is valid, false otherwise
      */
     virtual bool IsValid() const = 0;
+
+    /**
+     * @brief Get peer information as JSON string
+     * @return JSON string with peer info (address, port, identifier)
+     */
+    virtual std::string GetInfo() const = 0;
 };
 
 /**
@@ -139,6 +145,24 @@ public:
      * @return true if this peer is "less than" other (by address, then port)
      */
     bool operator<(const CPeerNode& other) const;
+
+    /**
+     * @brief Get peer information as JSON string
+     * @return JSON string with peer info (address, port, identifier)
+     *
+     * Returns a JSON object containing:
+     * - "address": Peer IP address or hostname
+     * - "port": Peer listening port
+     * - "identifier": Combined "address:port" string
+     *
+     * Example output:
+     * {
+     *   "address": "192.168.1.100",
+     *   "port": 1984,
+     *   "identifier": "192.168.1.100:1984"
+     * }
+     */
+    virtual std::string GetInfo() const override;
 };
 
 #endif // PEER_NODE_H
