@@ -15,15 +15,15 @@ from test_framework import TestFramework
 class BlockcoreTest(TestFramework):
     """Test blockcore functionality including transactions and mining."""
 
+    num_nodes = 1
+
     def setup(self):
         """Setup test environment - start a local node."""
-        self.log_info("Starting local blockweave node...")
-        self.node = self.add_node()
-
-        if not self.node.start(timeout=15):
+        # Node is automatically started by framework via num_nodes = 1
+        # Access it via self.nodes[0]
+        self.node = self.nodes[0] if self.nodes else None
+        if not self.node:
             raise RuntimeError("Failed to start blockweave node")
-
-        self.log_info("Node started successfully")
 
     def test_transaction_and_mining(self):
         """Create a transaction and verify a block is mined."""

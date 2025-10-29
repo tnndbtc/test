@@ -25,15 +25,15 @@ class BlockfileTest(TestFramework):
     # blocks were already mined in previous tests
     # This is acceptable as the restart test (which runs last) still validates persistence
 
+    num_nodes = 1
+
     def setup(self):
         """Setup test environment - start a local node."""
-        self.log_info("Starting local blockweave node for blockfile testing...")
-        self.node = self.add_node()
-
-        if not self.node.start(timeout=15):
+        # Node is automatically started by framework via num_nodes = 1
+        # Access it via self.nodes[0]
+        self.node = self.nodes[0] if self.nodes else None
+        if not self.node:
             raise RuntimeError("Failed to start blockweave node")
-
-        self.log_info("Node started successfully")
 
         # Get the data directory from the node's config (datadir is a string)
         self.data_dir = Path(self.node.datadir) / "data"

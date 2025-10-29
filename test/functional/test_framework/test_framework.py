@@ -166,10 +166,8 @@ class TestFramework(unittest.TestCase):
         cls.nocleanup = cls._temp_instance.nocleanup
         cls.logger = cls._temp_instance.logger if hasattr(cls._temp_instance, 'logger') else None
 
-        # Call custom setup
-        cls._temp_instance.setup()
-
         # Setup nodes if num_nodes is set (check both class and instance)
+        # This must happen BEFORE calling custom setup() so nodes are available
         num_nodes = getattr(cls, 'num_nodes', 0) or getattr(cls._temp_instance, 'num_nodes', 0)
         if num_nodes > 0:
             # Ensure instance has num_nodes set
@@ -179,6 +177,9 @@ class TestFramework(unittest.TestCase):
             cls.nodes = cls._temp_instance.nodes
             cls.test_nodes = cls._temp_instance.test_nodes
             cls.node_counter = cls._temp_instance.node_counter
+
+        # Call custom setup AFTER nodes are created
+        cls._temp_instance.setup()
 
     @classmethod
     def tearDownClass(cls):
