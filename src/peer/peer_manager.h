@@ -4,6 +4,7 @@
 
 #include "peer/i_peer_manager.h"
 #include "peer/peer_message.h"
+#include "peer/peer_node.h"
 #include "utils/settings.h"
 #include <string>
 #include <vector>
@@ -28,8 +29,7 @@
  */
 struct CPeerConnection {
     int n_socket;                    ///< Socket file descriptor (-1 if not connected)
-    std::string str_address;         ///< Peer IP address or hostname
-    int n_port;                      ///< Peer listening port
+    CPeerNode peer_node;             ///< Peer node information (address and port)
     bool f_connected;                ///< Current connection status
     std::atomic<bool> f_active;      ///< Whether connection thread is active
     std::thread m_thread;            ///< Thread handling this connection
@@ -45,6 +45,12 @@ struct CPeerConnection {
      * @param n_port_num Peer listening port
      */
     CPeerConnection(const std::string& str_addr, int n_port_num);
+
+    /**
+     * @brief Construct peer with CPeerNode
+     * @param node Peer node information
+     */
+    CPeerConnection(const CPeerNode& node);
 
     /**
      * @brief Destructor - closes connection and joins thread

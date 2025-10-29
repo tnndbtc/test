@@ -142,7 +142,7 @@ class BlockfileTest(TestFramework):
 
         # Note: With shared node state in setUpClass, file size may not always increase
         # if previous tests already caused mining. Check that file exists and has content.
-        self.assert_true(final_size > 0,
+        self.assert_true(final_size > initial_size,
                         f"Block file should exist and have content (size: {final_size} bytes)")
 
         # Log all block files

@@ -33,7 +33,7 @@
  * Initializes all fields to default values (no socket, no connection).
  */
 CPeerConnection::CPeerConnection()
-    : n_socket(-1), str_address(""), n_port(0), f_connected(false), f_active(false) {}
+    : n_socket(-1), peer_node(), f_connected(false), f_active(false) {}
 
 /**
  * @brief Construct peer with address and port
@@ -44,7 +44,17 @@ CPeerConnection::CPeerConnection()
  * Call ConnectToPeer() to actually connect.
  */
 CPeerConnection::CPeerConnection(const std::string& str_addr, int n_port_num)
-    : n_socket(-1), str_address(str_addr), n_port(n_port_num), f_connected(false), f_active(false) {}
+    : n_socket(-1), peer_node(str_addr, n_port_num), f_connected(false), f_active(false) {}
+
+/**
+ * @brief Construct peer with CPeerNode
+ * @param node Peer node information
+ *
+ * Creates peer connection object from existing CPeerNode.
+ * Does not establish connection - call ConnectToPeer() to actually connect.
+ */
+CPeerConnection::CPeerConnection(const CPeerNode& node)
+    : n_socket(-1), peer_node(node), f_connected(false), f_active(false) {}
 
 /**
  * @brief Destructor - closes connection and joins thread
@@ -77,8 +87,7 @@ CPeerConnection::~CPeerConnection() {
  */
 CPeerConnection::CPeerConnection(CPeerConnection&& other) noexcept
     : n_socket(other.n_socket),
-      str_address(std::move(other.str_address)),
-      n_port(other.n_port),
+      peer_node(std::move(other.peer_node)),
       f_connected(other.f_connected),
       f_active(other.f_active.load()),
       m_thread(std::move(other.m_thread)) {
@@ -111,8 +120,7 @@ CPeerConnection& CPeerConnection::operator=(CPeerConnection&& other) noexcept {
 
         // Move from other
         n_socket = other.n_socket;
-        str_address = std::move(other.str_address);
-        n_port = other.n_port;
+        peer_node = std::move(other.peer_node);
         f_connected = other.f_connected;
         f_active = other.f_active.load();
         m_thread = std::move(other.m_thread);
@@ -570,10 +578,10 @@ void CPeerManager::ConnectionThread(CPeerConnection* p_peer) {
     // Set thread name for easier debugging and logging
     // Use format: peer_<address>
     std::ostringstream oss;
-    oss << "peer_" << p_peer->str_address;
+    oss << "peer_" << p_peer->peer_node.GetAddress();
     SetThreadName(oss.str());
 
-    LOG_INFO("Connection thread started for peer " + p_peer->str_address + ":" + std::to_string(p_peer->n_port));
+    LOG_INFO("Connection thread started for peer " + p_peer->peer_node.GetAddress() + ":" + std::to_string(p_peer->peer_node.GetPort()));
 
     // Set socket to non-blocking mode for receiving
     SetSocketNonBlocking(p_peer->n_socket, true);
@@ -585,7 +593,7 @@ void CPeerManager::ConnectionThread(CPeerConnection* p_peer) {
     while (p_peer->f_active && !f_stop_requested) {
         // Check if socket is still connected
         if (p_peer->n_socket < 0) {
-            LOG_WARN("Peer socket closed: " + p_peer->str_address);
+            LOG_WARN("Peer socket closed: " + p_peer->peer_node.GetAddress());
             break;
         }
 
@@ -607,20 +615,20 @@ void CPeerManager::ConnectionThread(CPeerConnection* p_peer) {
                 if (str_message.rfind("TX_IDS:", 0) == 0) {
                     // Extract transaction IDs
                     std::string str_tx_ids = str_message.substr(7);  // Skip "TX_IDS:"
-                    LOG_INFO("Received transaction IDs from peer " + p_peer->str_address + ": " + str_tx_ids);
+                    LOG_INFO("Received transaction IDs from peer " + p_peer->peer_node.GetAddress() + ": " + str_tx_ids);
                     // TODO: Process transaction IDs (e.g., request full transactions if not in mempool)
                 } else {
-                    LOG_TRACE("Received unknown message from peer " + p_peer->str_address + ": " + str_message);
+                    LOG_TRACE("Received unknown message from peer " + p_peer->peer_node.GetAddress() + ": " + str_message);
                 }
             }
         } else if (n_bytes_received == 0) {
             // Connection closed by peer
-            LOG_INFO("Peer closed connection: " + p_peer->str_address);
+            LOG_INFO("Peer closed connection: " + p_peer->peer_node.GetAddress());
             break;
         } else {
             // Check for errors (EAGAIN/EWOULDBLOCK is normal for non-blocking sockets)
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                LOG_ERROR("Error receiving from peer " + p_peer->str_address + ": " + std::string(strerror(errno)));
+                LOG_ERROR("Error receiving from peer " + p_peer->peer_node.GetAddress() + ": " + std::string(strerror(errno)));
                 break;
             }
         }
@@ -629,7 +637,7 @@ void CPeerManager::ConnectionThread(CPeerConnection* p_peer) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    LOG_INFO("Connection thread stopped for peer " + p_peer->str_address);
+    LOG_INFO("Connection thread stopped for peer " + p_peer->peer_node.GetAddress());
 }
 
 /**
@@ -734,7 +742,7 @@ void CPeerManager::DisconnectPeer(CPeerConnection* p_peer) {
         p_peer->n_socket = -1;
     }
 
-    LOG_INFO("Disconnected peer " + p_peer->str_address);
+    LOG_INFO("Disconnected peer " + p_peer->peer_node.GetAddress());
 }
 
 /**
@@ -797,7 +805,7 @@ bool CPeerManager::AddPeer(const std::string& str_address, int n_port) {
 
         // Check if already connected to this peer
         for (const auto& p_peer : m_outbound_peers) {
-            if (p_peer && p_peer->str_address == str_address && p_peer->n_port == n_port) {
+            if (p_peer && p_peer->peer_node.GetAddress() == str_address && p_peer->peer_node.GetPort() == n_port) {
                 LOG_WARN("Already connected to peer " + str_address + ":" + std::to_string(n_port));
                 return false;
             }
@@ -866,14 +874,14 @@ std::vector<std::string> CPeerManager::GetConnectedPeers() const {
     // Add inbound peers
     for (const auto& p_peer : m_inbound_peers) {
         if (p_peer && p_peer->f_connected) {
-            peers.push_back(p_peer->str_address + ":" + std::to_string(p_peer->n_port));
+            peers.push_back(p_peer->peer_node.GetAddress() + ":" + std::to_string(p_peer->peer_node.GetPort()));
         }
     }
 
     // Add outbound peers
     for (const auto& p_peer : m_outbound_peers) {
         if (p_peer && p_peer->f_connected) {
-            peers.push_back(p_peer->str_address + ":" + std::to_string(p_peer->n_port));
+            peers.push_back(p_peer->peer_node.GetAddress() + ":" + std::to_string(p_peer->peer_node.GetPort()));
         }
     }
 
@@ -907,10 +915,10 @@ bool CPeerManager::SendMessageToPeer(const std::string& str_address, int n_port,
 
         // Search in outbound peers
         for (const auto& p_peer : m_outbound_peers) {
-            if (p_peer && p_peer->str_address == str_address && p_peer->n_port == n_port) {
+            if (p_peer && p_peer->peer_node.GetAddress() == str_address && p_peer->peer_node.GetPort() == n_port) {
                 if (p_peer->f_connected && p_peer->n_socket >= 0) {
                     n_target_socket = p_peer->n_socket;
-                    str_peer_id = p_peer->str_address + ":" + std::to_string(p_peer->n_port);
+                    str_peer_id = p_peer->peer_node.GetAddress() + ":" + std::to_string(p_peer->peer_node.GetPort());
                 }
                 break;
             }
@@ -919,10 +927,10 @@ bool CPeerManager::SendMessageToPeer(const std::string& str_address, int n_port,
         // If not found in outbound, search in inbound peers
         if (n_target_socket == -1) {
             for (const auto& p_peer : m_inbound_peers) {
-                if (p_peer && p_peer->str_address == str_address && p_peer->n_port == n_port) {
+                if (p_peer && p_peer->peer_node.GetAddress() == str_address && p_peer->peer_node.GetPort() == n_port) {
                     if (p_peer->f_connected && p_peer->n_socket >= 0) {
                         n_target_socket = p_peer->n_socket;
-                        str_peer_id = p_peer->str_address + ":" + std::to_string(p_peer->n_port);
+                        str_peer_id = p_peer->peer_node.GetAddress() + ":" + std::to_string(p_peer->peer_node.GetPort());
                     }
                     break;
                 }
@@ -986,7 +994,7 @@ size_t CPeerManager::BroadcastMessage(const CPeerMessage& message) {
             if (p_peer && p_peer->f_connected && p_peer->n_socket >= 0) {
                 peer_sockets.push_back({
                     p_peer->n_socket,
-                    p_peer->str_address + ":" + std::to_string(p_peer->n_port)
+                    p_peer->peer_node.GetAddress() + ":" + std::to_string(p_peer->peer_node.GetPort())
                 });
             }
         }
@@ -996,7 +1004,7 @@ size_t CPeerManager::BroadcastMessage(const CPeerMessage& message) {
             if (p_peer && p_peer->f_connected && p_peer->n_socket >= 0) {
                 peer_sockets.push_back({
                     p_peer->n_socket,
-                    p_peer->str_address + ":" + std::to_string(p_peer->n_port)
+                    p_peer->peer_node.GetAddress() + ":" + std::to_string(p_peer->peer_node.GetPort())
                 });
             }
         }

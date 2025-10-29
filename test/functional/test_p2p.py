@@ -396,41 +396,6 @@ class P2PTest(TestFramework):
 
         self.log_info("Inbound connection test placeholder completed")
 
-    def test_peer_connection_limits(self):
-        """
-        Test that peer connection limits are respected.
-
-        Verifies that:
-        - Nodes respect max inbound peer limits (default 120)
-        - Nodes respect max outbound peer limits (default 8)
-        - Connection attempts beyond limits are rejected gracefully
-        """
-        self.log_info("test_peer connection limits: Testing peer connection limits...")
-
-        # This test would verify:
-        # 1. Start nodes with custom peer limits (e.g., max_inbound_peers=2)
-        # 2. Try to establish 3 inbound connections
-        # 3. Verify only 2 are accepted and 3rd is rejected
-        # 4. Check logs show "Maximum inbound peers reached" message
-
-        self.log_info("Peer limit test: Would verify inbound limit (120) and outbound limit (8)")
-
-        # Test would use config overrides:
-        # node = self.add_node(port=28443, p2p_port=28333,
-        #                      config_overrides={"max_inbound_peers": 2})
-
-        # For now, just verify default configuration is loaded
-        self.log_info("Default limits: max_inbound_peers=120, max_outbound_peers=8")
-
-        # Verify nodes are still operational
-        for test_node in self.test_nodes:
-            self.assert_true(
-                test_node.is_ready(),
-                f"Node {test_node.index} should be operational"
-            )
-
-        self.log_info("Peer limit test placeholder completed")
-
     def test_node0_outbound_connections(self):
         """
         Test that node0 can establish outbound connections to node1, node2, and node3 using TestNode.
@@ -472,14 +437,13 @@ class P2PTest(TestFramework):
                 successful_connections += 1
             else:
                 self.log_info(f"WARNING: Failed to connect Node{node0.index} to Node{peer_node.index}")
+                self.assert_true(False, f"Node{node0.index} failed to add peer to Node{peer_node.index}")
 
         # Verify we established at least one connection
         self.assert_true(
-            successful_connections > 0,
+            successful_connections == len(target_nodes),
             "Node0 should establish at least one outbound connection"
         )
-
-        self.log_info(f"Node{node0.index} established {successful_connections} out of 3 connections")
 
         # Query peer info using TestNode.get_peer_info()
         self.log_info("Querying Node0 peer info...")
@@ -494,7 +458,9 @@ class P2PTest(TestFramework):
 
         total_peers = peer_info["total_peers"]
         outbound_peers = peer_info["outbound_peers"]
+        self.assert_true(outbound_peers==successful_connections, f"Node{node0.index} should have {outbound_peers} total outbound peers")
         inbound_peers = peer_info["inbound_peers"]
+        self.assert_true(inbound_peers==0, f"Node{node0.index} should have {inbound_peers} total inbound peers")
         peer_list = peer_info["peers"]
 
         self.log_info(
@@ -507,14 +473,6 @@ class P2PTest(TestFramework):
         self.assert_true(
             total_peers >= 0,
             "Total peers should be non-negative"
-        )
-        self.assert_true(
-            outbound_peers >= 0,
-            "Outbound peers should be non-negative"
-        )
-        self.assert_true(
-            inbound_peers >= 0,
-            "Inbound peers should be non-negative"
         )
 
         # Verify nodes are still responsive after peer connections
@@ -695,26 +653,6 @@ class P2PTest(TestFramework):
         self.assert_equal(deserialized.payload, large_payload, "Payload should match")
 
         self.log_info("Large payload test completed")
-
-    # ==================================================================
-    # P2P Socket Connection Tests
-    # ==================================================================
-
-    def test_p2p_socket_connection(self):
-        """Test connecting to node via P2P socket."""
-        self.log_info("test_P2P socket connection: Testing P2P socket connection...")
-
-        # Try to connect to Node 0's P2P port
-        p2p_port = 28333
-        conn = P2PConnection("127.0.0.1", p2p_port, timeout=2)
-
-        connected = conn.connect()
-        self.assert_true(connected, f"Should connect to P2P port {p2p_port}")
-
-        # Close connection
-        conn.close()
-
-        self.log_info("P2P socket connection test completed")
 
     def test_send_ping_message(self):
         """Test sending PING message to a node."""

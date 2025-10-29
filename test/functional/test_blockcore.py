@@ -190,7 +190,6 @@ class BlockcoreTest(TestFramework):
             f"Error message mentions missing 'from' or 'to' field: {error_message}"
         )
 
-        self.log_info(f"Error message: {error_message}")
         self.log_info("Invalid transaction correctly rejected")
 
     def cleanup(self):
