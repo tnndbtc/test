@@ -90,7 +90,7 @@ class BlockcoreTest(TestFramework):
 
         self.log_info(f"Mempool size after transaction: {mempool_size_after_tx}")
 
-        if mempool_size_after_tx > initial_mempool_size:
+        if mempool_size_after_tx == initial_mempool_size + 1 :
             self.assert_true(
                 True,
                 f"Transaction added to mempool (size: {initial_mempool_size} -> {mempool_size_after_tx})"
@@ -151,7 +151,7 @@ class BlockcoreTest(TestFramework):
             # Log warning but don't fail - mining might just be slow
             self.log_info("Note: Mining may still complete, but test timeout reached")
             self.assert_true(
-                True,
+                False,
                 "Mining test completed (block mining in progress)"
             )
 

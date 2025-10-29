@@ -36,13 +36,24 @@ class TestFramework(unittest.TestCase):
         self.test_nodes = []  # TestNode wrappers (created in setup_nodes)
 
     def init_tmpdir(self):
-        """Initialize tmpdir from environment or create temporary directory."""
+        """Initialize tmpdir from environment or create temporary directory with test file name."""
+        from datetime import datetime
+
+        # Get the test module name (e.g., 'test_blockcore', 'test_rest_api', 'test_p2p')
+        # This comes from the __module__ attribute of the test class
+        test_module = self.__class__.__module__  # e.g., 'test_blockcore'
+
         tmpdir = os.environ.get("TEST_TMPDIR")
         if tmpdir:
-            self.tmpdir = Path(tmpdir)
+            # If TEST_TMPDIR is set, create a subdirectory named after the test module
+            base_tmpdir = Path(tmpdir)
+            base_tmpdir.mkdir(parents=True, exist_ok=True)
+            self.tmpdir = base_tmpdir / test_module
             self.tmpdir.mkdir(parents=True, exist_ok=True)
         else:
-            self.tmpdir = Path(tempfile.mkdtemp(prefix="blockweave_test_"))
+            # Create temp directory with test module name prefix and timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.tmpdir = Path(tempfile.mkdtemp(prefix=f"{test_module}_{timestamp}_"))
 
         self.nocleanup = bool(os.environ.get("TEST_NOCLEANUP"))
 
