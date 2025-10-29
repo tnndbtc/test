@@ -2,193 +2,175 @@
 """
 Functional test runner for Blockweave REST daemon.
 
-Runs individual functional tests or all tests in the test/functional directory.
+Runs individual functional tests or all tests in the test/functional directory using unittest.
 
 Usage:
     python3 test_runner.py                    # Run all tests
-    python3 test_runner.py test_chain.py      # Run specific test
-    python3 test_runner.py path/to/test.py    # Run test by path
+    python3 test_runner.py TestClass          # Run specific test class
+    python3 test_runner.py TestClass.test_method  # Run specific test method
+    python3 test_runner.py -v                 # Run with verbose output
 """
 
 import sys
 import os
-import subprocess
+import unittest
 import argparse
 import tempfile
-import shutil
 import logging
 from pathlib import Path
-from datetime import datetime
 
 
 class TestRunner:
-    """Runs functional tests and aggregates results."""
+    """Runs functional tests using unittest framework."""
 
-    def __init__(self, tmpdir=None, nocleanup=False):
+    def __init__(self, tmpdir=None, nocleanup=False, verbosity=1):
         """Initialize the test runner."""
         self.script_dir = Path(__file__).parent.resolve()
-        self.num_passed = 0
-        self.num_failed = 0
-        self.failed_tests = []
         self.tmpdir = tmpdir
         self.nocleanup = nocleanup
-        self.test_counter = 0
-        self.created_tmpdirs = []
+        self.verbosity = verbosity
 
-    def find_tests(self):
-        """
-        Find all test_*.py files in the functional test directory.
+    def setup_environment(self):
+        """Setup environment variables for tests."""
+        if self.tmpdir:
+            tmpdir_path = Path(self.tmpdir)
+            tmpdir_path.mkdir(parents=True, exist_ok=True)
+            os.environ["TEST_TMPDIR"] = str(tmpdir_path)
+        else:
+            tmpdir_path = Path(tempfile.mkdtemp(prefix="blockweave_test_"))
+            os.environ["TEST_TMPDIR"] = str(tmpdir_path)
 
-        Returns:
-            list: List of Path objects for test files
-        """
-        test_files = []
-        for file_path in self.script_dir.glob("test_*.py"):
-            # Skip test_framework.py and test_runner.py
-            if file_path.name not in ("test_framework.py", "test_runner.py"):
-                test_files.append(file_path)
-        return sorted(test_files)
+        if self.nocleanup:
+            os.environ["TEST_NOCLEANUP"] = "1"
 
-    def run_test(self, test_file):
+        return tmpdir_path
+
+    def discover_tests(self, pattern='test*.py'):
         """
-        Run a single test file.
+        Discover tests using unittest's test discovery.
 
         Args:
-            test_file: Path to the test file
+            pattern: Pattern to match test files (default: 'test*.py')
 
         Returns:
-            bool: True if test passed, False otherwise
+            TestSuite: Discovered test suite
         """
-        test_file = Path(test_file).resolve()
+        loader = unittest.TestLoader()
+        start_dir = str(self.script_dir)
+        suite = loader.discover(start_dir, pattern=pattern, top_level_dir=start_dir)
+        return suite
 
-        if not test_file.exists():
-            print(f"✗ ERROR: Test file not found: {test_file}")
-            return False
+    def run_specific_test(self, test_name):
+        """
+        Run a specific test class or test method.
 
-        if not test_file.name.startswith("test_"):
-            print(f"✗ ERROR: Test file must start with 'test_': {test_file.name}")
-            return False
+        Args:
+            test_name: Test name (e.g., 'TestClass' or 'TestClass.test_method')
 
-        # Create tmpdir for this test with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]  # Format: YYYYMMDD_HHMMSS_mmm
-
-        if self.tmpdir:
-            test_tmpdir = Path(self.tmpdir) / f"test_run_{timestamp}"
-            test_tmpdir.mkdir(parents=True, exist_ok=True)
-        else:
-            test_tmpdir = Path(tempfile.mkdtemp(prefix=f"blockweave_test_run_{timestamp}_"))
-
-        self.created_tmpdirs.append(test_tmpdir)
-        self.test_counter += 1
-
-        print(f"\n{'='*70}")
-        print(f"Running: {test_file.name}")
-        print(f"{'='*70}")
-        print(f"Test tmpdir: {test_tmpdir}")
+        Returns:
+            int: Exit code (0 for success, 1 for failure)
+        """
+        tmpdir_path = self.setup_environment()
 
         try:
-            # Set environment variables for the test
-            env = os.environ.copy()
-            env["TEST_TMPDIR"] = str(test_tmpdir)
+            # Load the specific test
+            loader = unittest.TestLoader()
+            suite = loader.loadTestsFromName(test_name)
+
+            # Run the test
+            runner = unittest.TextTestRunner(verbosity=self.verbosity)
+            result = runner.run(suite)
+
+            return 0 if result.wasSuccessful() else 1
+        finally:
             if self.nocleanup:
-                env["TEST_NOCLEANUP"] = "1"
-
-            # Run the test as a subprocess
-            result = subprocess.run(
-                [sys.executable, str(test_file)],
-                cwd=str(test_file.parent),
-                capture_output=False,
-                text=True,
-                env=env
-            )
-
-            if result.returncode == 0:
-                print(f"\n✓ {test_file.name} PASSED\n")
-                success = True
-            else:
-                print(f"\n✗ {test_file.name} FAILED (exit code: {result.returncode})\n")
-                success = False
-
-            # Clean up tmpdir unless --nocleanup specified
-            if not self.nocleanup and test_tmpdir.exists():
-                try:
-                    shutil.rmtree(test_tmpdir)
-                except Exception as e:
-                    print(f"Warning: Failed to clean up tmpdir {test_tmpdir}: {e}")
-
-            return success
-
-        except Exception as e:
-            print(f"\n✗ {test_file.name} FAILED WITH EXCEPTION: {e}\n")
-            return False
+                print(f"\nTest data preserved in: {tmpdir_path}")
 
     def run_all_tests(self):
         """
-        Run all functional tests.
+        Run all functional tests using unittest.
 
         Returns:
-            int: Number of failed tests
+            int: Exit code (0 for success, 1 for failure)
         """
-        test_files = self.find_tests()
-
-        if not test_files:
-            print("No test files found matching pattern 'test_*.py'")
-            return 0
+        tmpdir_path = self.setup_environment()
 
         print(f"\n{'='*70}")
         print(f"RUNNING ALL FUNCTIONAL TESTS")
         print(f"{'='*70}")
-        print(f"Found {len(test_files)} test(s)\n")
+        if self.tmpdir or tmpdir_path:
+            print(f"Test tmpdir: {tmpdir_path}")
+        print()
 
-        for test_file in test_files:
-            if self.run_test(test_file):
-                self.num_passed += 1
+        try:
+            # Discover all tests
+            suite = self.discover_tests()
+
+            # Count tests
+            test_count = suite.countTestCases()
+            if test_count == 0:
+                print("No tests found matching pattern 'test*.py'")
+                return 0
+
+            print(f"Found {test_count} test(s)\n")
+
+            # Run tests
+            runner = unittest.TextTestRunner(verbosity=self.verbosity)
+            result = runner.run(suite)
+
+            # Print summary
+            print(f"\n{'='*70}")
+            print(f"TEST EXECUTION SUMMARY")
+            print(f"{'='*70}")
+            print(f"Total tests:  {result.testsRun}")
+            print(f"Passed:       {result.testsRun - len(result.failures) - len(result.errors)}")
+            print(f"Failed:       {len(result.failures) + len(result.errors)}")
+
+            if result.wasSuccessful():
+                print(f"\n✓ ALL TESTS PASSED\n")
+                return 0
             else:
-                self.num_failed += 1
-                self.failed_tests.append(test_file.name)
-
-        # Print summary
-        self.print_summary()
-
-        return self.num_failed
-
-    def print_summary(self):
-        """Print test execution summary."""
-        print(f"\n{'='*70}")
-        print(f"TEST EXECUTION SUMMARY")
-        print(f"{'='*70}")
-        print(f"Total tests:  {self.num_passed + self.num_failed}")
-        print(f"Passed:       {self.num_passed}")
-        print(f"Failed:       {self.num_failed}")
-
-        if self.num_failed > 0:
-            print(f"\nFailed tests:")
-            for test_name in self.failed_tests:
-                print(f"  - {test_name}")
-            print(f"\n✗ SOME TESTS FAILED\n")
-        else:
-            print(f"\n✓ ALL TESTS PASSED\n")
+                if result.failures:
+                    print(f"\nFailed tests:")
+                    for test, _ in result.failures:
+                        print(f"  - {test}")
+                if result.errors:
+                    print(f"\nErrors:")
+                    for test, _ in result.errors:
+                        print(f"  - {test}")
+                print(f"\n✗ SOME TESTS FAILED\n")
+                return 1
+        finally:
+            if self.nocleanup:
+                print(f"\nTest data preserved in: {tmpdir_path}")
 
 
 def main():
     """Main entry point for the test runner."""
     parser = argparse.ArgumentParser(
-        description="Run Blockweave functional tests",
+        description="Run Blockweave functional tests using unittest framework",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   %(prog)s                                  # Run all tests
-  %(prog)s test_chain.py                    # Run specific test
-  %(prog)s path/to/test.py                  # Run test by path
+  %(prog)s TestClass                        # Run specific test class
+  %(prog)s TestClass.test_method            # Run specific test method
+  %(prog)s -v                               # Run with verbose output
   %(prog)s --tmpdir=/tmp/test_runs          # Use custom tmpdir
   %(prog)s --nocleanup                      # Keep test data after run
         """
     )
 
     parser.add_argument(
-        "test_file",
+        "test_name",
         nargs="?",
-        help="Path to specific test file to run (runs all tests if not specified)"
+        help="Test class or method to run (e.g., 'BlockcoreTest' or 'BlockcoreTest.test_transaction_and_mining')"
+    )
+
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Verbose output"
     )
 
     parser.add_argument(
@@ -205,7 +187,8 @@ Examples:
 
     args = parser.parse_args()
 
-    runner = TestRunner(tmpdir=args.tmpdir, nocleanup=args.nocleanup)
+    verbosity = 2 if args.verbose else 1
+    runner = TestRunner(tmpdir=args.tmpdir, nocleanup=args.nocleanup, verbosity=verbosity)
 
     # Print tmpdir info
     if args.tmpdir:
@@ -213,33 +196,12 @@ Examples:
     if args.nocleanup:
         print("Cleanup disabled - test data will be preserved")
 
-    try:
-        if args.test_file:
-            # Run single test
-            test_path = Path(args.test_file)
-
-            # Convert to absolute path
-            if not test_path.is_absolute():
-                # If path exists relative to current directory, use it
-                if test_path.exists():
-                    test_path = test_path.resolve()
-                # Otherwise, look in script directory (for just filename)
-                else:
-                    test_path = runner.script_dir / test_path
-
-            if runner.run_test(test_path):
-                return 0
-            else:
-                return 1
-        else:
-            # Run all tests
-            return runner.run_all_tests()
-    finally:
-        # Print tmpdir locations if not cleaning up
-        if args.nocleanup and runner.created_tmpdirs:
-            print(f"\nTest data preserved in:")
-            for tmpdir in runner.created_tmpdirs:
-                print(f"  {tmpdir}")
+    if args.test_name:
+        # Run specific test
+        return runner.run_specific_test(args.test_name)
+    else:
+        # Run all tests
+        return runner.run_all_tests()
 
 
 if __name__ == "__main__":

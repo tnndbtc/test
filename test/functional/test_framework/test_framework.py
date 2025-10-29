@@ -9,33 +9,31 @@ import os
 import logging
 import tempfile
 import shutil
-import traceback
+import unittest
 from pathlib import Path
 
 from .blockweave_node import BlockweaveNode
 from .test_node import TestNode
 
 
-class TestFramework:
+class TestFramework(unittest.TestCase):
     """
     Base class for functional tests.
 
     Provides common test utilities and setup/teardown functionality.
+    Extends unittest.TestCase for standard Python test framework integration.
     """
 
-    def __init__(self):
+    def __init__(self, methodName='runTest'):
         """Initialize the test framework."""
+        super().__init__(methodName)
         self.node = None
-        self.num_success = 0
-        self.num_failed = 0
         self.tmpdir = None
         self.nocleanup = False
         self.nodes = []
         self.node_counter = 0
         self.num_nodes = 0  # Number of nodes to create (set by test case)
         self.test_nodes = []  # TestNode wrappers (created in setup_nodes)
-        self.init_tmpdir()
-        self.setup_logging()
 
     def init_tmpdir(self):
         """Initialize tmpdir from environment or create temporary directory."""
@@ -106,7 +104,7 @@ class TestFramework:
         Nodes are NOT connected to each other - test cases should call
         self.test_nodes[0].connect_to_peer(self.test_nodes[1]) as needed.
 
-        This method is called automatically by setup() if num_nodes > 0.
+        This method is called automatically by setUp() if num_nodes > 0.
         """
         if self.num_nodes <= 0:
             return
@@ -136,166 +134,206 @@ class TestFramework:
 
         self.log_info(f"All {len(self.nodes)} nodes started successfully")
 
-    def setup(self):
+    @classmethod
+    def setUpClass(cls):
         """
-        Setup before running tests.
+        Setup before running all test methods in the class (unittest standard method).
 
-        Override this method in test classes for custom setup.
+        This method is called once before all test methods in the class.
+        Initializes tmpdir, logging, nodes, and calls the custom setup() method.
+
+        If the test class sets use_per_test_setup=True, this method does nothing
+        and setup/teardown happens in setUp/tearDown instead.
         """
-        pass
+        # Check if this test class wants per-test setup instead
+        if getattr(cls, 'use_per_test_setup', False):
+            return
 
-    def run_test(self):
+        # Initialize class-level attributes
+        cls.tmpdir = None
+        cls.nocleanup = False
+        cls.nodes = []
+        cls.node_counter = 0
+        cls.test_nodes = []
+
+        # Create instance to access instance methods
+        cls._temp_instance = cls('setUp')
+        cls._temp_instance.init_tmpdir()
+        cls._temp_instance.setup_logging()
+
+        # Copy to class level
+        cls.tmpdir = cls._temp_instance.tmpdir
+        cls.nocleanup = cls._temp_instance.nocleanup
+        cls.logger = cls._temp_instance.logger if hasattr(cls._temp_instance, 'logger') else None
+
+        # Call custom setup
+        cls._temp_instance.setup()
+
+        # Setup nodes if num_nodes is set (check both class and instance)
+        num_nodes = getattr(cls, 'num_nodes', 0) or getattr(cls._temp_instance, 'num_nodes', 0)
+        if num_nodes > 0:
+            # Ensure instance has num_nodes set
+            cls._temp_instance.num_nodes = num_nodes
+            cls._temp_instance.setup_nodes()
+            # Copy to class level
+            cls.nodes = cls._temp_instance.nodes
+            cls.test_nodes = cls._temp_instance.test_nodes
+            cls.node_counter = cls._temp_instance.node_counter
+
+    @classmethod
+    def tearDownClass(cls):
         """
-        Run the actual test.
+        Cleanup after running all test methods in the class (unittest standard method).
 
-        Override this method in test classes to implement test logic.
+        This method is called once after all test methods in the class.
+
+        If the test class sets use_per_test_setup=True, this method does nothing
+        and setup/teardown happens in setUp/tearDown instead.
         """
-        raise NotImplementedError("Subclasses must implement run_test()")
-
-    def cleanup(self):
-        """
-        Cleanup after running tests.
-
-        Override this method in test classes for custom cleanup.
-        """
-        pass
-
-    def assert_equal(self, actual, expected, message=""):
-        """Assert that two values are equal."""
-        if actual == expected:
-            self.num_success += 1
-            # print(f"✓ PASS: {message or f'{actual} == {expected}'}")
-        else:
-            self.num_failed += 1
-            print(f"\n{'='*70}")
-            print(f"✗ ASSERTION FAILED: {message or 'Values are not equal'}")
-            print(f"{'='*70}")
-            print(f"  Expected: {expected}")
-            print(f"  Actual:   {actual}")
-            print(f"\nCall stack:")
-            print("-" * 70)
-            # Print call stack excluding this function
-            stack = traceback.extract_stack()[:-1]
-            for frame in stack:
-                print(f"  File \"{frame.filename}\", line {frame.lineno}, in {frame.name}")
-                if frame.line:
-                    print(f"    {frame.line}")
-            print("=" * 70 + "\n")
-
-    def assert_true(self, condition, message=""):
-        """Assert that a condition is true."""
-        if condition:
-            self.num_success += 1
-            # print(f"✓ PASS: {message or 'condition is True'}")
-        else:
-            self.num_failed += 1
-            print(f"\n{'='*70}")
-            print(f"✗ ASSERTION FAILED: {message or 'Condition is False'}")
-            print(f"{'='*70}")
-            print(f"  Condition evaluated to: {condition}")
-            print(f"\nCall stack:")
-            print("-" * 70)
-            # Print call stack excluding this function
-            stack = traceback.extract_stack()[:-1]
-            for frame in stack:
-                print(f"  File \"{frame.filename}\", line {frame.lineno}, in {frame.name}")
-                if frame.line:
-                    print(f"    {frame.line}")
-            print("=" * 70 + "\n")
-
-    def assert_in(self, item, container, message=""):
-        """Assert that an item is in a container."""
-        if item in container:
-            self.num_success += 1
-            # print(f"✓ PASS: {message or f'{item} in {container}'}")
-        else:
-            self.num_failed += 1
-            print(f"\n{'='*70}")
-            print(f"✗ ASSERTION FAILED: {message or 'Item not in container'}")
-            print(f"{'='*70}")
-            print(f"  Looking for: {item}")
-            print(f"  In container: {container}")
-            print(f"\nCall stack:")
-            print("-" * 70)
-            # Print call stack excluding this function
-            stack = traceback.extract_stack()[:-1]
-            for frame in stack:
-                print(f"  File \"{frame.filename}\", line {frame.lineno}, in {frame.name}")
-                if frame.line:
-                    print(f"    {frame.line}")
-            print("=" * 70 + "\n")
-
-    def log_info(self, message):
-        """Log an informational message."""
-        if hasattr(self, 'logger'):
-            self.logger.info(message)
-
-    def main(self):
-        """Main test execution flow."""
-        print(f"\n{'='*70}")
-        print(f"Running: {self.__class__.__name__}")
-        print(f"{'='*70}\n")
-
-        if self.tmpdir:
-            print(f"Test tmpdir: {self.tmpdir}")
-            self.log_info(f"Test tmpdir: {self.tmpdir}")
+        # Check if this test class wants per-test setup instead
+        if getattr(cls, 'use_per_test_setup', False):
+            return
 
         try:
-            # Setup
-            self.log_info("Setting up test environment...")
-            self.setup()
-
-            # Setup nodes if num_nodes is set
-            if self.num_nodes > 0:
-                self.setup_nodes()
-
-            # Run test
-            self.log_info("Running test...")
-            self.run_test()
-
-        except Exception as e:
-            print(f"\n✗ TEST FAILED WITH EXCEPTION: {e}")
-            import traceback
-            traceback.print_exc()
-            if hasattr(self, 'logger'):
-                self.logger.error(f"Test failed with exception: {e}", exc_info=True)
-            self.num_failed += 1
-
+            if hasattr(cls, '_temp_instance'):
+                cls._temp_instance.cleanup()
         finally:
-            # Cleanup
-            self.log_info("Cleaning up...")
-            self.cleanup()
-
             # Stop all nodes
-            for node in self.nodes:
+            for node in cls.nodes:
                 try:
                     node.stop()
                 except Exception as e:
                     print(f"Warning: Failed to stop node{node.node_index}: {e}")
 
-            # Print summary
-            print(f"\n{'='*70}")
-            print(f"TEST SUMMARY")
-            print(f"{'='*70}")
-            print(f"Passed: {self.num_success}")
-            print(f"Failed: {self.num_failed}")
-            print(f"Total:  {self.num_success + self.num_failed}")
-
-            if self.num_failed == 0:
-                print(f"\n✓ ALL TESTS PASSED\n")
-                result = 0
-            else:
-                print(f"\n✗ SOME TESTS FAILED\n")
-                result = 1
-
             # Cleanup tmpdir if not preserving
-            if not self.nocleanup and self.tmpdir and self.tmpdir.exists():
+            if not cls.nocleanup and cls.tmpdir and cls.tmpdir.exists():
                 try:
-                    shutil.rmtree(self.tmpdir)
-                    self.log_info(f"Cleaned up tmpdir: {self.tmpdir}")
+                    shutil.rmtree(cls.tmpdir)
+                    if cls.logger:
+                        cls.logger.info(f"Cleaned up tmpdir: {cls.tmpdir}")
                 except Exception as e:
-                    print(f"Warning: Failed to cleanup tmpdir {self.tmpdir}: {e}")
-            elif self.nocleanup:
-                print(f"\nTest data preserved in: {self.tmpdir}")
+                    print(f"Warning: Failed to cleanup tmpdir {cls.tmpdir}: {e}")
+            elif cls.nocleanup:
+                print(f"\nTest data preserved in: {cls.tmpdir}")
 
-            return result
+    def setUp(self):
+        """
+        Setup before each test method (unittest standard method).
+
+        This method is called automatically before each test method.
+        If use_per_test_setup=True, does full setup; otherwise copies from setUpClass.
+        """
+        # If use_per_test_setup is True, do full setup for each test
+        if getattr(self.__class__, 'use_per_test_setup', False):
+            self.tmpdir = None
+            self.nocleanup = False
+            self.nodes = []
+            self.node_counter = 0
+            self.test_nodes = []
+
+            self.init_tmpdir()
+            self.setup_logging()
+            self.setup()
+
+            # Setup nodes if needed
+            num_nodes = getattr(self, 'num_nodes', 0)
+            if num_nodes > 0:
+                self.setup_nodes()
+        else:
+            # Copy class-level attributes to instance for convenience
+            if hasattr(self.__class__, '_temp_instance'):
+                self.tmpdir = self.__class__.tmpdir
+                self.nocleanup = self.__class__.nocleanup
+                self.nodes = self.__class__.nodes
+                self.test_nodes = self.__class__.test_nodes
+                self.node_counter = self.__class__.node_counter
+                self.logger = self.__class__.logger if hasattr(self.__class__, 'logger') else None
+
+                # Copy node reference if single node test
+                if hasattr(self.__class__._temp_instance, 'node'):
+                    self.node = self.__class__._temp_instance.node
+
+                # Copy any other custom attributes from _temp_instance
+                # This allows test classes to set attributes in setup() that are accessible in test methods
+                for attr_name in dir(self.__class__._temp_instance):
+                    if not attr_name.startswith('_') and attr_name not in ['node', 'nodes', 'test_nodes', 'tmpdir', 'nocleanup', 'logger', 'node_counter']:
+                        attr_value = getattr(self.__class__._temp_instance, attr_name, None)
+                        # Only copy non-callable attributes that aren't already set
+                        if not callable(attr_value) and not hasattr(self, attr_name):
+                            setattr(self, attr_name, attr_value)
+
+    def tearDown(self):
+        """
+        Cleanup after each test method (unittest standard method).
+
+        This method is called automatically after each test method.
+        If use_per_test_setup=True, does full cleanup; otherwise does nothing.
+        """
+        # If use_per_test_setup is True, do full cleanup for each test
+        if getattr(self.__class__, 'use_per_test_setup', False):
+            try:
+                self.cleanup()
+            finally:
+                # Stop all nodes
+                for node in self.nodes:
+                    try:
+                        node.stop()
+                    except Exception as e:
+                        print(f"Warning: Failed to stop node{node.node_index}: {e}")
+
+                # Cleanup tmpdir if not preserving
+                if not self.nocleanup and self.tmpdir and self.tmpdir.exists():
+                    try:
+                        shutil.rmtree(self.tmpdir)
+                        self.log_info(f"Cleaned up tmpdir: {self.tmpdir}")
+                    except Exception as e:
+                        print(f"Warning: Failed to cleanup tmpdir {self.tmpdir}: {e}")
+                elif self.nocleanup:
+                    print(f"\nTest data preserved in: {self.tmpdir}")
+
+    def setup(self):
+        """
+        Custom setup before running tests.
+
+        Override this method in test classes for custom setup logic.
+        This is called once before all test methods in the class.
+        """
+        pass
+
+    def cleanup(self):
+        """
+        Custom cleanup after running tests.
+
+        Override this method in test classes for custom cleanup logic.
+        This is called once after all test methods in the class.
+        """
+        pass
+
+    def assert_equal(self, actual, expected, message=""):
+        """
+        Assert that two values are equal.
+
+        Wrapper around unittest.assertEqual() for backward compatibility.
+        """
+        self.assertEqual(actual, expected, message)
+
+    def assert_true(self, condition, message=""):
+        """
+        Assert that a condition is true.
+
+        Wrapper around unittest.assertTrue() for backward compatibility.
+        """
+        self.assertTrue(condition, message)
+
+    def assert_in(self, item, container, message=""):
+        """
+        Assert that an item is in a container.
+
+        Wrapper around unittest.assertIn() for backward compatibility.
+        """
+        self.assertIn(item, container, message)
+
+    def log_info(self, message):
+        """Log an informational message."""
+        if hasattr(self, 'logger'):
+            self.logger.info(message)

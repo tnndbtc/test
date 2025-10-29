@@ -8,6 +8,7 @@ the current state of the blockchain including mempool size and mining status.
 
 import sys
 import json
+import unittest
 from test_framework import TestFramework, BlockweaveNode
 
 
@@ -24,18 +25,19 @@ class RestTest(TestFramework):
 
         self.log_info("Node started successfully")
 
-    def test_status_code(self):
-        """Test that GET /chain returns 200 OK status code."""
+    def test_chain_endpoint_full(self):
+        """Test GET /chain endpoint - comprehensive test."""
+        self.log_info("Testing GET /chain endpoint...")
+
+        # Test 1: Check status code and get response
         response = self.node.get("/chain")
         self.assert_equal(
             response.status_code,
             200,
             "GET /chain returns 200 OK"
         )
-        return response
 
-    def test_content_type(self, response):
-        """Test that response has application/json Content-Type."""
+        # Test 2: Check Content-Type header
         content_type = response.headers.get("Content-Type", "")
         self.assert_in(
             "application/json",
@@ -43,34 +45,27 @@ class RestTest(TestFramework):
             "Response Content-Type is application/json"
         )
 
-    def test_json_parsing(self, response):
-        """Test that response is valid JSON."""
+        # Test 3: Parse JSON response
         try:
             data = response.json()
             self.log_info(f"Response data: {json.dumps(data, indent=2)}")
         except json.JSONDecodeError as e:
-            self.assert_true(False, f"Response is valid JSON (failed: {e})")
-            return None
+            self.fail(f"Response is not valid JSON: {e}")
+            return
 
-        self.assert_true(True, "Response is valid JSON")
-        return data
-
-    def test_required_fields(self, data):
-        """Test that response contains required fields."""
+        # Test 4: Check required fields exist
         self.assert_in(
             "mempool_size",
             data,
             "Response contains 'mempool_size' field"
         )
-
         self.assert_in(
             "mining_enabled",
             data,
             "Response contains 'mining_enabled' field"
         )
 
-    def test_field_types(self, data):
-        """Test that fields have correct types."""
+        # Test 5: Check field types
         mempool_size = data.get("mempool_size")
         self.assert_true(
             isinstance(mempool_size, int),
@@ -83,16 +78,14 @@ class RestTest(TestFramework):
             f"mining_enabled is a boolean (got: {type(mining_enabled).__name__})"
         )
 
-    def test_field_values(self, data):
-        """Test that field values are reasonable."""
-        mempool_size = data.get("mempool_size")
+        # Test 6: Check field values are reasonable
         self.assert_true(
             mempool_size >= 0,
             f"mempool_size is non-negative (got: {mempool_size})"
         )
 
         self.log_info(f"Mempool size: {mempool_size}")
-        self.log_info(f"Mining enabled: {data.get('mining_enabled')}")
+        self.log_info(f"Mining enabled: {mining_enabled}")
 
     def test_endpoint_stability(self):
         """Test that endpoint returns consistent structure on multiple requests."""
@@ -135,7 +128,7 @@ class RestTest(TestFramework):
             data = response.json()
             self.log_info(f"Error response data: {json.dumps(data, indent=2)}")
         except json.JSONDecodeError as e:
-            self.assert_true(False, f"Error response is valid JSON (failed: {e})")
+            self.fail(f"Error response is not valid JSON: {e}")
             return
 
         # Check that response contains error field
@@ -147,36 +140,6 @@ class RestTest(TestFramework):
 
         self.log_info(f"Error message: {data.get('error')}")
 
-    def run_test(self):
-        """Run all chain endpoint tests."""
-        self.log_info("Testing GET /chain endpoint...")
-
-        # Test 1: Check status code and get response
-        response = self.test_status_code()
-
-        # Test 2: Check Content-Type header
-        self.test_content_type(response)
-
-        # Test 3: Parse JSON response
-        data = self.test_json_parsing(response)
-        if data is None:
-            return
-
-        # Test 4: Check required fields exist
-        self.test_required_fields(data)
-
-        # Test 5: Check field types
-        self.test_field_types(data)
-
-        # Test 6: Check field values are reasonable
-        self.test_field_values(data)
-
-        # Test 7: Make second request to ensure consistency
-        self.test_endpoint_stability()
-
-        # Test 8: Test invalid endpoint handling
-        self.test_invalid_endpoint()
-
     def cleanup(self):
         """Cleanup - stop the node."""
         if self.node:
@@ -186,5 +149,4 @@ class RestTest(TestFramework):
 
 
 if __name__ == "__main__":
-    test = RestTest()
-    sys.exit(test.main())
+    unittest.main()

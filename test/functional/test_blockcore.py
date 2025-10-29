@@ -8,7 +8,7 @@ mempool management, and block mining.
 
 import sys
 import time
-import inspect
+import unittest
 from test_framework import TestFramework
 
 
@@ -27,7 +27,7 @@ class BlockcoreTest(TestFramework):
 
     def test_transaction_and_mining(self):
         """Create a transaction and verify a block is mined."""
-        self.log_info("%s: Testing transaction creation and mining..." % inspect.currentframe().f_code.co_name)
+        self.log_info("test_transaction_and_mining: Testing transaction creation and mining...")
 
         # Step 1: Get initial chain state
         self.log_info("Step 1: Getting initial chain state...")
@@ -157,7 +157,7 @@ class BlockcoreTest(TestFramework):
 
     def test_invalid_transaction(self):
         """Test that submitting transaction with only data field returns bad request."""
-        self.log_info("%s: Testing invalid transaction submission..." % inspect.currentframe().f_code.co_name)
+        self.log_info("test_invalid_transaction: Testing invalid transaction submission...")
 
         # Transaction with only 'data' field (missing required 'from' and 'to')
         invalid_transaction_data = {
@@ -193,18 +193,6 @@ class BlockcoreTest(TestFramework):
         self.log_info(f"Error message: {error_message}")
         self.log_info("Invalid transaction correctly rejected")
 
-    def run_test(self):
-        """Run all blockcore tests."""
-        self.log_info("Running blockcore tests...")
-
-        # Test invalid transaction (should fail)
-        self.test_invalid_transaction()
-
-        # Test valid transaction creation and mining
-        self.test_transaction_and_mining()
-
-        self.log_info("Blockcore test completed successfully")
-
     def cleanup(self):
         """Cleanup - stop the node."""
         if self.node:
@@ -214,5 +202,4 @@ class BlockcoreTest(TestFramework):
 
 
 if __name__ == "__main__":
-    test = BlockcoreTest()
-    sys.exit(test.main())
+    unittest.main()

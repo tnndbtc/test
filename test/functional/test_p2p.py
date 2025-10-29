@@ -15,7 +15,7 @@ This test suite covers:
 
 import sys
 import time
-import inspect
+import unittest
 import socket
 import struct
 from test_framework import TestFramework
@@ -300,9 +300,11 @@ class P2PConnection:
 class P2PTest(TestFramework):
     """Test P2P networking with multiple nodes."""
 
+    # Set num_nodes as class attribute so it's available during setUpClass
+    num_nodes = 4
+
     def setup(self):
         """Setup test environment - configure to start 4 local nodes."""
-        # Set num_nodes to 4, framework will automatically create and start them
         # Nodes will be created as:
         # Node 0: REST API port 28443, P2P port 28333
         # Node 1: REST API port 28444, P2P port 28334
@@ -311,41 +313,11 @@ class P2PTest(TestFramework):
         #
         # Nodes are NOT automatically connected - test case will use:
         # self.test_nodes[0].connect_to_peer(self.test_nodes[1])
-        self.num_nodes = 4
-
-    def run_test(self):
-        """Run all P2P network tests."""
-        self.log_info("Running P2P network test...")
-
-        # Basic node functionality tests
-        self.test_nodes_are_running()
-        self.test_port_isolation()
-        self.test_mining_status()
-        self.test_inbound_peer_connections()
-        self.test_peer_connection_limits()
-        self.test_node0_outbound_connections()
-
-        # P2P message protocol tests
-        self.test_message_serialization()
-        self.test_message_deserialization()
-        self.test_message_round_trip()
-        self.test_message_types()
-        self.test_message_with_payload()
-        self.test_message_empty_payload()
-        self.test_message_large_payload()
-
-        # P2P socket connection tests
-        self.test_p2p_socket_connection()
-        self.test_send_ping_message()
-        self.test_send_get_peers_message()
-        self.test_send_tx_ids_message()
-        self.test_message_binary_payload()
-
-        self.log_info("P2P test completed successfully")
+        pass
 
     def test_nodes_are_running(self):
         """Verify all nodes are running."""
-        self.log_info("%s: Verifying all nodes are running..." % inspect.currentframe().f_code.co_name)
+        self.log_info("test_nodes_are_running: Verifying all nodes are running...")
 
         for test_node in self.test_nodes:
             # Check if process is alive
@@ -358,7 +330,7 @@ class P2PTest(TestFramework):
 
     def test_port_isolation(self):
         """Verify nodes are listening on different ports."""
-        self.log_info("%s: Verifying port isolation..." % inspect.currentframe().f_code.co_name)
+        self.log_info("test_port_isolation: Verifying port isolation...")
 
         ports_used = set()
         base_port = 28443
@@ -379,7 +351,7 @@ class P2PTest(TestFramework):
 
     def test_mining_status(self):
         """Verify mining is enabled on all nodes (mining starts automatically)."""
-        self.log_info("%s: Verifying mining status on all nodes..." % inspect.currentframe().f_code.co_name)
+        self.log_info("test_mining_status: Verifying mining status on all nodes...")
 
         for test_node in self.test_nodes:
             chain_info = test_node.get_chain_info()
@@ -399,7 +371,7 @@ class P2PTest(TestFramework):
         We'll test that when Node 1 connects to Node 0, Node 0 shows
         an inbound connection and Node 1 shows an outbound connection.
         """
-        self.log_info("%s: Testing inbound peer connections..." % inspect.currentframe().f_code.co_name)
+        self.log_info("test_inbound peer connections: Testing inbound peer connections...")
 
         # For this test, we would need to:
         # 1. Have Node 1 connect to Node 0 (Node 1 makes outbound, Node 0 receives inbound)
@@ -433,7 +405,7 @@ class P2PTest(TestFramework):
         - Nodes respect max outbound peer limits (default 8)
         - Connection attempts beyond limits are rejected gracefully
         """
-        self.log_info("%s: Testing peer connection limits..." % inspect.currentframe().f_code.co_name)
+        self.log_info("test_peer connection limits: Testing peer connection limits...")
 
         # This test would verify:
         # 1. Start nodes with custom peer limits (e.g., max_inbound_peers=2)
@@ -469,7 +441,7 @@ class P2PTest(TestFramework):
         - Peer info can be queried via get_peer_info()
         - Connections remain stable during the test
         """
-        self.log_info("%s: Testing node0 outbound connections via TestNode..." % inspect.currentframe().f_code.co_name)
+        self.log_info("test_node0 outbound connections via TestNode: Testing node0 outbound connections via TestNode...")
 
         # Node0 will connect to node1, node2, node3 using TestNode.connect_to_peer
         # Node 0: REST 28443, P2P port 28333
@@ -564,7 +536,7 @@ class P2PTest(TestFramework):
 
     def test_message_serialization(self):
         """Test P2P message serialization."""
-        self.log_info("%s: Testing P2P message serialization..." % inspect.currentframe().f_code.co_name)
+        self.log_info("test_P2P message serialization: Testing P2P message serialization...")
 
         # Create a PING message
         ping_msg = P2PMessage(MessageType.PING)
@@ -587,7 +559,7 @@ class P2PTest(TestFramework):
 
     def test_message_deserialization(self):
         """Test P2P message deserialization."""
-        self.log_info("%s: Testing P2P message deserialization..." % inspect.currentframe().f_code.co_name)
+        self.log_info("test_P2P message deserialization: Testing P2P message deserialization...")
 
         # Create a raw PONG message manually
         # Format: [1 byte type_length][4 bytes "pong"][4 bytes payload_length]
@@ -611,7 +583,7 @@ class P2PTest(TestFramework):
 
     def test_message_round_trip(self):
         """Test message serialization followed by deserialization."""
-        self.log_info("%s: Testing message round-trip serialization..." % inspect.currentframe().f_code.co_name)
+        self.log_info("test_message round-trip serialization: Testing message round-trip serialization...")
 
         # Create a GET_PEERS message
         original = P2PMessage(MessageType.GET_PEERS)
@@ -628,7 +600,7 @@ class P2PTest(TestFramework):
 
     def test_message_types(self):
         """Test all message types can be serialized/deserialized."""
-        self.log_info("%s: Testing all message types..." % inspect.currentframe().f_code.co_name)
+        self.log_info("test_all message types: Testing all message types...")
 
         message_types = [
             MessageType.PING,
@@ -666,7 +638,7 @@ class P2PTest(TestFramework):
 
     def test_message_with_payload(self):
         """Test messages with payload data."""
-        self.log_info("%s: Testing messages with payload..." % inspect.currentframe().f_code.co_name)
+        self.log_info("test_messages with payload: Testing messages with payload...")
 
         # Create TX_IDS message with payload
         tx_ids = "tx1_abc123,tx2_def456,tx3_ghi789"
@@ -688,7 +660,7 @@ class P2PTest(TestFramework):
 
     def test_message_empty_payload(self):
         """Test messages with empty payload."""
-        self.log_info("%s: Testing messages with empty payload..." % inspect.currentframe().f_code.co_name)
+        self.log_info("test_messages with empty payload: Testing messages with empty payload...")
 
         # Create message with empty string payload
         msg = P2PMessage(MessageType.GET_CHAIN, "")
@@ -706,7 +678,7 @@ class P2PTest(TestFramework):
 
     def test_message_large_payload(self):
         """Test messages with large payload."""
-        self.log_info("%s: Testing messages with large payload..." % inspect.currentframe().f_code.co_name)
+        self.log_info("test_messages with large payload: Testing messages with large payload...")
 
         # Create message with 1000-byte payload
         large_payload = b"X" * 1000
@@ -730,7 +702,7 @@ class P2PTest(TestFramework):
 
     def test_p2p_socket_connection(self):
         """Test connecting to node via P2P socket."""
-        self.log_info("%s: Testing P2P socket connection..." % inspect.currentframe().f_code.co_name)
+        self.log_info("test_P2P socket connection: Testing P2P socket connection...")
 
         # Try to connect to Node 0's P2P port
         p2p_port = 28333
@@ -746,7 +718,7 @@ class P2PTest(TestFramework):
 
     def test_send_ping_message(self):
         """Test sending PING message to a node."""
-        self.log_info("%s: Testing sending PING message..." % inspect.currentframe().f_code.co_name)
+        self.log_info("test_sending PING message: Testing sending PING message...")
 
         # Connect to Node 0
         p2p_port = 28333
@@ -775,7 +747,7 @@ class P2PTest(TestFramework):
 
     def test_send_get_peers_message(self):
         """Test sending GET_PEERS message to a node."""
-        self.log_info("%s: Testing sending GET_PEERS message..." % inspect.currentframe().f_code.co_name)
+        self.log_info("test_sending GET_PEERS message: Testing sending GET_PEERS message...")
 
         # Connect to Node 1
         p2p_port = 28334
@@ -804,7 +776,7 @@ class P2PTest(TestFramework):
 
     def test_send_tx_ids_message(self):
         """Test sending TX_IDS message with transaction IDs."""
-        self.log_info("%s: Testing sending TX_IDS message..." % inspect.currentframe().f_code.co_name)
+        self.log_info("test_sending TX_IDS message: Testing sending TX_IDS message...")
 
         # Connect to Node 2
         p2p_port = 28335
@@ -835,7 +807,7 @@ class P2PTest(TestFramework):
 
     def test_message_binary_payload(self):
         """Test messages with binary (non-text) payload."""
-        self.log_info("%s: Testing messages with binary payload..." % inspect.currentframe().f_code.co_name)
+        self.log_info("test_messages with binary payload: Testing messages with binary payload...")
 
         # Create binary payload with null bytes
         binary_payload = bytes([0x00, 0x01, 0x02, 0xFF, 0xFE, 0x00, 0xAA, 0xBB])
@@ -861,6 +833,6 @@ class P2PTest(TestFramework):
 
         self.log_info("Binary payload test completed")
 
+
 if __name__ == "__main__":
-    test = P2PTest()
-    sys.exit(test.main())
+    unittest.main()
