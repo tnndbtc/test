@@ -80,8 +80,10 @@ public:
  */
 class CPeerNode : public IPeerNode {
 private:
-    std::string str_address;  ///< Peer IP address or hostname
-    int n_port;               ///< Peer listening port
+    std::string str_address;      ///< Peer IP address or hostname
+    int n_port;                   ///< Peer listening port
+    int64_t n_connection_time;    ///< UNIX UTC timestamp when addpeer request is first sent
+    double d_ping_roundtrip_time; ///< Ping round-trip time in milliseconds
 
 public:
     /**
@@ -154,15 +156,43 @@ public:
      * - "address": Peer IP address or hostname
      * - "port": Peer listening port
      * - "identifier": Combined "address:port" string
+     * - "connection_time": UNIX UTC timestamp when connection was established
+     * - "ping_roundtrip_time": Ping round-trip time in milliseconds
      *
      * Example output:
      * {
      *   "address": "192.168.1.100",
      *   "port": 1984,
-     *   "identifier": "192.168.1.100:1984"
+     *   "identifier": "192.168.1.100:1984",
+     *   "connection_time": 1609459200,
+     *   "ping_roundtrip_time": 12.5
      * }
      */
     virtual std::string GetInfo() const override;
+
+    /**
+     * @brief Get connection time
+     * @return UNIX UTC timestamp when addpeer request was first sent
+     */
+    int64_t GetConnectionTime() const;
+
+    /**
+     * @brief Set connection time
+     * @param n_time UNIX UTC timestamp
+     */
+    void SetConnectionTime(int64_t n_time);
+
+    /**
+     * @brief Get ping round-trip time
+     * @return Round-trip time in milliseconds
+     */
+    double GetPingRoundtripTime() const;
+
+    /**
+     * @brief Set ping round-trip time
+     * @param d_time Round-trip time in milliseconds
+     */
+    void SetPingRoundtripTime(double d_time);
 };
 
 #endif // PEER_NODE_H

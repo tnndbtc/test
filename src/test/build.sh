@@ -9,8 +9,30 @@
 # - If ../../build doesn't exist, runs ./configure to set up the project
 # - If libraries are missing, builds them automatically
 # - Then builds and links the test executable
+#
+# Usage:
+#   ./build.sh           # Build with single process
+#   ./build.sh -j4       # Build with 4 parallel processes
+#   ./build.sh -j8       # Build with 8 parallel processes
 
 set -e  # Exit on error
+
+# Parse command line arguments
+MAKE_JOBS=""
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -j*)
+            MAKE_JOBS="$1"
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [-jN]"
+            echo "  -jN    Use N parallel jobs for building (e.g., -j4)"
+            exit 1
+            ;;
+    esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="${SCRIPT_DIR}/../.."
@@ -102,8 +124,13 @@ if [ "$LIBS_EXIST" = false ]; then
     fi
 
     # Build the required libraries
-    echo "Building libraries (this may take a few minutes)..."
-    make bwthreadname bwlogger bwpeer bwutils bwblockcore bwrest
+    if [ -n "$MAKE_JOBS" ]; then
+        echo "Building libraries with $MAKE_JOBS parallel jobs (this may take a few minutes)..."
+        make $MAKE_JOBS bwthreadname bwlogger bwpeer bwutils bwblockcore bwrest
+    else
+        echo "Building libraries (this may take a few minutes)..."
+        make bwthreadname bwlogger bwpeer bwutils bwblockcore bwrest
+    fi
 
     if [ $? -ne 0 ]; then
         echo ""
@@ -153,8 +180,13 @@ cmake ..
 echo ""
 
 # Build test executable
-echo "Building test executable..."
-make
+if [ -n "$MAKE_JOBS" ]; then
+    echo "Building test executable with $MAKE_JOBS parallel jobs..."
+    make $MAKE_JOBS
+else
+    echo "Building test executable..."
+    make
+fi
 echo ""
 
 # Check if test executable was created

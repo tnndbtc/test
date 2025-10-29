@@ -28,11 +28,13 @@
  * - Automatic resource cleanup in destructor
  */
 struct CPeerConnection {
-    int n_socket;                    ///< Socket file descriptor (-1 if not connected)
-    CPeerNode peer_node;             ///< Peer node information (address and port)
-    bool f_connected;                ///< Current connection status
-    std::atomic<bool> f_active;      ///< Whether connection thread is active
-    std::thread m_thread;            ///< Thread handling this connection
+    int n_socket;                                                ///< Socket file descriptor (-1 if not connected)
+    CPeerNode peer_node;                                         ///< Peer node information (address and port)
+    bool f_connected;                                            ///< Current connection status
+    std::atomic<bool> f_active;                                  ///< Whether connection thread is active
+    std::thread m_thread;                                        ///< Thread handling this connection
+    uint32_t n_last_ping_nonce;                                  ///< Nonce of last sent PING message
+    std::chrono::steady_clock::time_point m_last_ping_send_time; ///< Time when last PING was sent
 
     /**
      * @brief Default constructor - creates disconnected peer

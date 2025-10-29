@@ -33,7 +33,7 @@
  * Initializes all fields to default values (no socket, no connection).
  */
 CPeerConnection::CPeerConnection()
-    : n_socket(-1), peer_node(), f_connected(false), f_active(false) {}
+    : n_socket(-1), peer_node(), f_connected(false), f_active(false), n_last_ping_nonce(0) {}
 
 /**
  * @brief Construct peer with address and port
@@ -44,7 +44,7 @@ CPeerConnection::CPeerConnection()
  * Call ConnectToPeer() to actually connect.
  */
 CPeerConnection::CPeerConnection(const std::string& str_addr, int n_port_num)
-    : n_socket(-1), peer_node(str_addr, n_port_num), f_connected(false), f_active(false) {}
+    : n_socket(-1), peer_node(str_addr, n_port_num), f_connected(false), f_active(false), n_last_ping_nonce(0) {}
 
 /**
  * @brief Construct peer with CPeerNode
@@ -54,7 +54,7 @@ CPeerConnection::CPeerConnection(const std::string& str_addr, int n_port_num)
  * Does not establish connection - call ConnectToPeer() to actually connect.
  */
 CPeerConnection::CPeerConnection(const CPeerNode& node)
-    : n_socket(-1), peer_node(node), f_connected(false), f_active(false) {}
+    : n_socket(-1), peer_node(node), f_connected(false), f_active(false), n_last_ping_nonce(0) {}
 
 /**
  * @brief Destructor - closes connection and joins thread
@@ -90,10 +90,13 @@ CPeerConnection::CPeerConnection(CPeerConnection&& other) noexcept
       peer_node(std::move(other.peer_node)),
       f_connected(other.f_connected),
       f_active(other.f_active.load()),
-      m_thread(std::move(other.m_thread)) {
+      m_thread(std::move(other.m_thread)),
+      n_last_ping_nonce(other.n_last_ping_nonce),
+      m_last_ping_send_time(other.m_last_ping_send_time) {
     other.n_socket = -1;
     other.f_connected = false;
     other.f_active = false;
+    other.n_last_ping_nonce = 0;
 }
 
 /**
@@ -124,11 +127,14 @@ CPeerConnection& CPeerConnection::operator=(CPeerConnection&& other) noexcept {
         f_connected = other.f_connected;
         f_active = other.f_active.load();
         m_thread = std::move(other.m_thread);
+        n_last_ping_nonce = other.n_last_ping_nonce;
+        m_last_ping_send_time = other.m_last_ping_send_time;
 
         // Reset other
         other.n_socket = -1;
         other.f_connected = false;
         other.f_active = false;
+        other.n_last_ping_nonce = 0;
     }
     return *this;
 }
@@ -469,11 +475,73 @@ void CPeerManager::PeerThread() {
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_last_ping_time);
 
         if (elapsed.count() >= 30) {
-            // Send PING to all connected peers
-            size_t n_peer_count = GetOutboundPeerCount() + GetInboundPeerCount();
-            if (n_peer_count > 0) {
-                CPeerMessage ping_message("ping");
-                size_t n_sent = BroadcastMessage(ping_message);
+            // Send PING to all connected peers with unique nonce for each
+            size_t n_sent = 0;
+            auto ping_send_time = std::chrono::steady_clock::now();
+
+            {
+                std::lock_guard<std::mutex> lock(cs_peers);
+
+                // Send PING to outbound peers
+                for (auto& p_peer : m_outbound_peers) {
+                    if (p_peer && p_peer->f_connected && p_peer->n_socket >= 0) {
+                        // Generate random nonce
+                        uint32_t n_nonce = static_cast<uint32_t>(rand());
+
+                        // Create PING message with nonce as payload
+                        std::vector<uint8_t> nonce_bytes(4);
+                        nonce_bytes[0] = (n_nonce >> 24) & 0xFF;
+                        nonce_bytes[1] = (n_nonce >> 16) & 0xFF;
+                        nonce_bytes[2] = (n_nonce >> 8) & 0xFF;
+                        nonce_bytes[3] = n_nonce & 0xFF;
+                        CPeerMessage ping_message(MessageType::PING, nonce_bytes);
+
+                        // Store nonce and send time for verification when PONG arrives
+                        p_peer->n_last_ping_nonce = n_nonce;
+                        p_peer->m_last_ping_send_time = ping_send_time;
+
+                        // Serialize and send
+                        std::string str_serialized = ping_message.Serialize();
+                        ssize_t n_bytes_sent = send(p_peer->n_socket, str_serialized.c_str(), str_serialized.length(), 0);
+                        if (n_bytes_sent > 0) {
+                            n_sent++;
+                            LOG_TRACE("Sent PING with nonce " + std::to_string(n_nonce) + " to peer " +
+                                     p_peer->peer_node.GetIdentifier());
+                        }
+                    }
+                }
+
+                // Send PING to inbound peers
+                for (auto& p_peer : m_inbound_peers) {
+                    if (p_peer && p_peer->f_connected && p_peer->n_socket >= 0) {
+                        // Generate random nonce
+                        uint32_t n_nonce = static_cast<uint32_t>(rand());
+
+                        // Create PING message with nonce as payload
+                        std::vector<uint8_t> nonce_bytes(4);
+                        nonce_bytes[0] = (n_nonce >> 24) & 0xFF;
+                        nonce_bytes[1] = (n_nonce >> 16) & 0xFF;
+                        nonce_bytes[2] = (n_nonce >> 8) & 0xFF;
+                        nonce_bytes[3] = n_nonce & 0xFF;
+                        CPeerMessage ping_message(MessageType::PING, nonce_bytes);
+
+                        // Store nonce and send time for verification when PONG arrives
+                        p_peer->n_last_ping_nonce = n_nonce;
+                        p_peer->m_last_ping_send_time = ping_send_time;
+
+                        // Serialize and send
+                        std::string str_serialized = ping_message.Serialize();
+                        ssize_t n_bytes_sent = send(p_peer->n_socket, str_serialized.c_str(), str_serialized.length(), 0);
+                        if (n_bytes_sent > 0) {
+                            n_sent++;
+                            LOG_TRACE("Sent PING with nonce " + std::to_string(n_nonce) + " to peer " +
+                                     p_peer->peer_node.GetIdentifier());
+                        }
+                    }
+                }
+            }
+
+            if (n_sent > 0) {
                 LOG_INFO("Sent PING to " + std::to_string(n_sent) + " peers");
             }
             m_last_ping_time = now;
@@ -622,22 +690,65 @@ void CPeerManager::ConnectionThread(CPeerConnection* p_peer) {
 
                     // Handle different message types
                     if (msg_type == MessageType::PING) {
-                        // Immediately respond with PONG
-                        LOG_INFO("Received PING from peer " + p_peer->peer_node.GetAddress() + ", sending PONG");
-                        CPeerMessage pong_msg(MessageType::PONG);
+                        // Extract nonce from PING payload
+                        const std::vector<uint8_t>& payload = received_msg.GetPayloadBytes();
+                        uint32_t n_nonce = 0;
+                        if (payload.size() >= 4) {
+                            n_nonce = (static_cast<uint32_t>(payload[0]) << 24) |
+                                     (static_cast<uint32_t>(payload[1]) << 16) |
+                                     (static_cast<uint32_t>(payload[2]) << 8) |
+                                     static_cast<uint32_t>(payload[3]);
+                            LOG_INFO("Received PING with nonce " + std::to_string(n_nonce) +
+                                    " from peer " + p_peer->peer_node.GetAddress() + ", sending PONG");
+                        } else {
+                            LOG_INFO("Received PING from peer " + p_peer->peer_node.GetAddress() + ", sending PONG");
+                        }
+
+                        // Respond with PONG containing the same nonce
+                        CPeerMessage pong_msg(MessageType::PONG, payload);
 
                         // Send PONG directly through socket (we're already in the connection thread)
                         std::string str_serialized = pong_msg.Serialize();
                         ssize_t n_sent = send(p_peer->n_socket, str_serialized.c_str(), str_serialized.length(), 0);
 
                         if (n_sent > 0) {
-                            LOG_TRACE("Sent PONG response to peer " + p_peer->peer_node.GetAddress());
+                            LOG_TRACE("Sent PONG response with nonce " + std::to_string(n_nonce) +
+                                     " to peer " + p_peer->peer_node.GetAddress());
                         } else {
                             LOG_ERROR("Failed to send PONG to peer " + p_peer->peer_node.GetAddress() +
                                      " (error: " + std::string(strerror(errno)) + ")");
                         }
                     } else if (msg_type == MessageType::PONG) {
-                        LOG_TRACE("Received PONG from peer " + p_peer->peer_node.GetAddress());
+                        // Extract nonce from PONG payload
+                        const std::vector<uint8_t>& payload = received_msg.GetPayloadBytes();
+                        if (payload.size() >= 4) {
+                            uint32_t n_nonce = (static_cast<uint32_t>(payload[0]) << 24) |
+                                              (static_cast<uint32_t>(payload[1]) << 16) |
+                                              (static_cast<uint32_t>(payload[2]) << 8) |
+                                              static_cast<uint32_t>(payload[3]);
+
+                            // Verify nonce matches last sent PING
+                            if (n_nonce == p_peer->n_last_ping_nonce) {
+                                // Calculate round-trip time
+                                auto now = std::chrono::steady_clock::now();
+                                auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
+                                    now - p_peer->m_last_ping_send_time);
+                                double d_roundtrip_ms = duration.count() / 1000.0;
+
+                                // Update peer node with ping round-trip time
+                                p_peer->peer_node.SetPingRoundtripTime(d_roundtrip_ms);
+
+                                LOG_INFO("Received PONG from peer " + p_peer->peer_node.GetAddress() +
+                                        " with matching nonce " + std::to_string(n_nonce) +
+                                        ", round-trip time: " + std::to_string(d_roundtrip_ms) + " ms");
+                            } else {
+                                LOG_WARN("Received PONG from peer " + p_peer->peer_node.GetAddress() +
+                                        " with nonce " + std::to_string(n_nonce) +
+                                        " but expected " + std::to_string(p_peer->n_last_ping_nonce));
+                            }
+                        } else {
+                            LOG_TRACE("Received PONG from peer " + p_peer->peer_node.GetAddress() + " (no nonce)");
+                        }
                     } else if (msg_type == MessageType::TX_IDS) {
                         std::string str_tx_ids = received_msg.GetPayloadString();
                         LOG_INFO("Received transaction IDs from peer " + p_peer->peer_node.GetAddress() + ": " + str_tx_ids);
@@ -722,6 +833,10 @@ bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
     p_peer->n_socket = n_socket;
     p_peer->f_connected = true;
     p_peer->f_active = true;
+
+    // Set connection time to current UNIX UTC timestamp
+    p_peer->peer_node.SetConnectionTime(std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count());
 
     // Start connection thread
     p_peer->m_thread = std::thread(&CPeerManager::ConnectionThread, this, p_peer.get());
