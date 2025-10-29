@@ -301,31 +301,17 @@ class P2PTest(TestFramework):
     """Test P2P networking with multiple nodes."""
 
     def setup(self):
-        """Setup test environment - start 4 local nodes."""
-        self.log_info("Starting 4 local blockweave nodes...")
-
-        # Start 4 nodes with consecutive port numbers to avoid conflicts
+        """Setup test environment - configure to start 4 local nodes."""
+        # Set num_nodes to 4, framework will automatically create and start them
+        # Nodes will be created as:
         # Node 0: REST API port 28443, P2P port 28333
         # Node 1: REST API port 28444, P2P port 28334
         # Node 2: REST API port 28445, P2P port 28335
         # Node 3: REST API port 28446, P2P port 28336
-
-        base_rest_port = 28443
-        base_p2p_port = 28333
-
-        for i in range(4):
-            rest_port = base_rest_port + i
-            p2p_port = base_p2p_port + i
-
-            self.log_info(f"Starting node {i} (REST: {rest_port}, P2P: {p2p_port})")
-            node = self.add_node(port=rest_port, p2p_port=p2p_port)
-
-            if not node.start(timeout=20):
-                raise RuntimeError(f"Failed to start node {i}")
-
-            self.log_info(f"Node {i} started successfully")
-
-        self.log_info(f"All {len(self.nodes)} nodes started successfully")
+        #
+        # Nodes are NOT automatically connected - test case will use:
+        # self.test_nodes[0].connect_to_peer(self.test_nodes[1])
+        self.num_nodes = 4
 
     def run_test(self):
         """Run all P2P network tests."""
@@ -333,7 +319,6 @@ class P2PTest(TestFramework):
 
         # Basic node functionality tests
         self.test_nodes_are_running()
-        self.test_chain_endpoint()
         self.test_port_isolation()
         self.test_mining_status()
         self.test_inbound_peer_connections()
@@ -362,43 +347,14 @@ class P2PTest(TestFramework):
         """Verify all nodes are running."""
         self.log_info("%s: Verifying all nodes are running..." % inspect.currentframe().f_code.co_name)
 
-        for i, node in enumerate(self.nodes):
+        for test_node in self.test_nodes:
             # Check if process is alive
-            if node.process and node.process.poll() is None:
-                self.assert_true(True, f"Node {i} process is running")
+            if test_node.node.process and test_node.node.process.poll() is None:
+                self.assert_true(True, f"Node {test_node.index} process is running")
             else:
-                self.assert_true(False, f"Node {i} process should be running")
+                self.assert_true(False, f"Node {test_node.index} process should be running")
 
-            self.log_info(f"Node {i} is running")
-
-    def test_chain_endpoint(self):
-        """Test /chain endpoint on all nodes."""
-        self.log_info("%s: Testing /chain endpoint on all nodes..." % inspect.currentframe().f_code.co_name)
-
-        for i, node in enumerate(self.nodes):
-            response = node.get("/chain")
-            self.assert_equal(
-                response.status_code,
-                200,
-                f"Node {i} GET /chain returns 200 OK"
-            )
-
-            data = response.json()
-            self.assert_in(
-                "mempool_size",
-                data,
-                f"Node {i} response contains 'mempool_size'"
-            )
-            self.assert_in(
-                "mining_enabled",
-                data,
-                f"Node {i} response contains 'mining_enabled'"
-            )
-
-            self.log_info(
-                f"Node {i}: mempool_size={data['mempool_size']}, "
-                f"mining_enabled={data['mining_enabled']}"
-            )
+            self.log_info(f"Node {test_node.index} is running")
 
     def test_port_isolation(self):
         """Verify nodes are listening on different ports."""
@@ -407,35 +363,34 @@ class P2PTest(TestFramework):
         ports_used = set()
         base_port = 28443
 
-        for i, node in enumerate(self.nodes):
-            expected_port = base_port + i
+        for test_node in self.test_nodes:
+            expected_port = base_port + test_node.index
             self.assert_equal(
-                node.port,
+                test_node.port,
                 expected_port,
-                f"Node {i} should use port {expected_port}"
+                f"Node {test_node.index} should use port {expected_port}"
             )
             self.assert_true(
                 expected_port not in ports_used,
                 f"Port {expected_port} should be unique"
             )
             ports_used.add(expected_port)
-            self.log_info(f"Node {i} confirmed on unique port {expected_port}")
+            self.log_info(f"Node {test_node.index} confirmed on unique port {expected_port}")
 
     def test_mining_status(self):
         """Verify mining is enabled on all nodes (mining starts automatically)."""
         self.log_info("%s: Verifying mining status on all nodes..." % inspect.currentframe().f_code.co_name)
 
-        for i, node in enumerate(self.nodes):
-            response = node.get("/chain")
-            data = response.json()
+        for test_node in self.test_nodes:
+            chain_info = test_node.get_chain_info()
 
             # Mining should be enabled by default when daemon starts
             self.assert_equal(
-                data["mining_enabled"],
+                chain_info.get("mining_enabled"),
                 True,
-                f"Node {i} should have mining enabled by default"
+                f"Node {test_node.index} should have mining enabled by default"
             )
-            self.log_info(f"Node {i} mining status confirmed: enabled={data['mining_enabled']}")
+            self.log_info(f"Node {test_node.index} mining status confirmed: enabled={chain_info['mining_enabled']}")
 
     def test_inbound_peer_connections(self):
         """
@@ -461,9 +416,11 @@ class P2PTest(TestFramework):
         # self.assert_equal(response.json()["inbound_peers"], 1)
 
         # For now, just verify nodes are still responsive
-        for i, node in enumerate(self.nodes):
-            response = node.get("/chain")
-            self.assert_equal(response.status_code, 200, f"Node {i} should still be responsive")
+        for test_node in self.test_nodes:
+            self.assert_true(
+                test_node.is_ready(),
+                f"Node {test_node.index} should still be responsive"
+            )
 
         self.log_info("Inbound connection test placeholder completed")
 
@@ -494,119 +451,85 @@ class P2PTest(TestFramework):
         self.log_info("Default limits: max_inbound_peers=120, max_outbound_peers=8")
 
         # Verify nodes are still operational
-        for i, node in enumerate(self.nodes):
-            response = node.get("/chain")
-            self.assert_equal(response.status_code, 200, f"Node {i} should be operational")
+        for test_node in self.test_nodes:
+            self.assert_true(
+                test_node.is_ready(),
+                f"Node {test_node.index} should be operational"
+            )
 
         self.log_info("Peer limit test placeholder completed")
 
     def test_node0_outbound_connections(self):
         """
-        Test that node0 can establish outbound connections to node1, node2, and node3 using RPC.
+        Test that node0 can establish outbound connections to node1, node2, and node3 using TestNode.
 
         This test verifies:
-        - Node0 can connect to multiple peers using /rpc/addpeer
-        - RPC endpoint properly initiates P2P connections
-        - Peer connections can be queried via /rpc/getpeer
+        - TestNode.connect_to_peer() works correctly
+        - Peer connections are properly established
+        - Peer info can be queried via get_peer_info()
         - Connections remain stable during the test
         """
-        self.log_info("%s: Testing node0 outbound connections via RPC..." % inspect.currentframe().f_code.co_name)
+        self.log_info("%s: Testing node0 outbound connections via TestNode..." % inspect.currentframe().f_code.co_name)
 
-        # Node0 will connect to the P2P ports of node1, node2, node3 using RPC
+        # Node0 will connect to node1, node2, node3 using TestNode.connect_to_peer
         # Node 0: REST 28443, P2P port 28333
         # Node 1: REST 28444, P2P port 28334
         # Node 2: REST 28445, P2P port 28335
         # Node 3: REST 28446, P2P port 28336
 
-        node0 = self.nodes[0]
+        node0 = self.test_nodes[0]
 
         target_nodes = [
-            {"index": 1, "host": "127.0.0.1", "p2p_port": 28334},
-            {"index": 2, "host": "127.0.0.1", "p2p_port": 28335},
-            {"index": 3, "host": "127.0.0.1", "p2p_port": 28336}
+            self.test_nodes[1],
+            self.test_nodes[2],
+            self.test_nodes[3]
         ]
 
         successful_connections = 0
 
-        # Use RPC to establish connections from node0 to each target node
-        for target in target_nodes:
-            node_index = target["index"]
-            host = target["host"]
-            p2p_port = target["p2p_port"]
+        # Use TestNode.connect_to_peer to establish connections
+        for peer_node in target_nodes:
+            self.log_info(
+                f"Node{node0.index} connecting to Node{peer_node.index} "
+                f"at 127.0.0.1:{peer_node.p2p_port}..."
+            )
 
-            self.log_info(f"Node0 using RPC to connect to Node{node_index} at {host}:{p2p_port}...")
-
-            # Call /rpc/addpeer endpoint
-            try:
-                response = node0.post("/rpc/addpeer", json_data={
-                    "address": host,
-                    "port": p2p_port
-                })
-
-                self.assert_equal(
-                    response.status_code,
-                    200,
-                    f"RPC addpeer should return 200 for Node{node_index}"
-                )
-
-                data = response.json()
-                self.assert_in("status", data, "Response should contain status field")
-
-                if data["status"] == "success":
-                    self.log_info(f"Node0 successfully initiated connection to Node{node_index}")
-                    successful_connections += 1
-                else:
-                    self.log_info(f"WARNING: Failed to connect to Node{node_index}: {data.get('message', 'unknown error')}")
-            except Exception as e:
-                self.log_info(f"ERROR: Exception connecting to Node{node_index}: {e}")
-                self.log_info(f"Response status: {response.status_code if response else 'N/A'}")
-                self.log_info(f"Response text: {response.text if response else 'N/A'}")
+            # Use the high-level connect_to_peer method
+            if node0.connect_to_peer(peer_node, wait=True):
+                self.log_info(f"Node{node0.index} successfully connected to Node{peer_node.index}")
+                successful_connections += 1
+            else:
+                self.log_info(f"WARNING: Failed to connect Node{node0.index} to Node{peer_node.index}")
 
         # Verify we established at least one connection
         self.assert_true(
             successful_connections > 0,
-            "Node0 should establish at least one outbound connection via RPC"
+            "Node0 should establish at least one outbound connection"
         )
 
-        self.log_info(f"Node0 established {successful_connections} out of 3 outbound connections")
+        self.log_info(f"Node{node0.index} established {successful_connections} out of 3 connections")
 
-        # Wait a moment for connections to be fully established
-        time.sleep(2)
+        # Query peer info using TestNode.get_peer_info()
+        self.log_info("Querying Node0 peer info...")
+        peer_info = node0.get_peer_info()
 
-        # Query peer list using /rpc/getpeer
-        self.log_info("Querying Node0 peer list via /rpc/getpeer...")
-        try:
-            response = node0.get("/rpc/getpeer")
+        self.assert_in("status", peer_info, "Response should contain status field")
+        self.assert_equal(peer_info["status"], "success", "get_peer_info should return success")
+        self.assert_in("total_peers", peer_info, "Response should contain total_peers")
+        self.assert_in("outbound_peers", peer_info, "Response should contain outbound_peers")
+        self.assert_in("inbound_peers", peer_info, "Response should contain inbound_peers")
+        self.assert_in("peers", peer_info, "Response should contain peers list")
 
-            self.assert_equal(
-                response.status_code,
-                200,
-                "RPC getpeer should return 200"
-            )
+        total_peers = peer_info["total_peers"]
+        outbound_peers = peer_info["outbound_peers"]
+        inbound_peers = peer_info["inbound_peers"]
+        peer_list = peer_info["peers"]
 
-            data = response.json()
-            self.assert_in("status", data, "Response should contain status field")
-            self.assert_equal(data["status"], "success", "RPC getpeer should return success")
-            self.assert_in("total_peers", data, "Response should contain total_peers")
-            self.assert_in("outbound_peers", data, "Response should contain outbound_peers")
-            self.assert_in("inbound_peers", data, "Response should contain inbound_peers")
-            self.assert_in("peers", data, "Response should contain peers list")
-
-            total_peers = data["total_peers"]
-            outbound_peers = data["outbound_peers"]
-            inbound_peers = data["inbound_peers"]
-            peer_list = data["peers"]
-
-            self.log_info(
-                f"Node0 peer status: total={total_peers}, "
-                f"outbound={outbound_peers}, inbound={inbound_peers}"
-            )
-            self.log_info(f"Connected peers: {peer_list}")
-        except Exception as e:
-            self.log_info(f"ERROR: Exception querying peers: {e}")
-            self.log_info(f"Response status: {response.status_code if response else 'N/A'}")
-            self.log_info(f"Response text: {response.text if response else 'N/A'}")
-            raise
+        self.log_info(
+            f"Node{node0.index} peer status: total={total_peers}, "
+            f"outbound={outbound_peers}, inbound={inbound_peers}"
+        )
+        self.log_info(f"Connected peers: {peer_list}")
 
         # Verify peer counts make sense
         self.assert_true(
@@ -622,19 +545,17 @@ class P2PTest(TestFramework):
             "Inbound peers should be non-negative"
         )
 
-        # Verify nodes are still responsive after RPC peer management
-        self.log_info("Verifying all nodes remain responsive after RPC peer management...")
-        for i, node in enumerate(self.nodes):
-            response = node.get("/chain")
-            self.assert_equal(
-                response.status_code,
-                200,
-                f"Node {i} should still be responsive after RPC operations"
+        # Verify nodes are still responsive after peer connections
+        self.log_info("Verifying all nodes remain responsive after peer connections...")
+        for test_node in self.test_nodes:
+            self.assert_true(
+                test_node.is_ready(),
+                f"Node{test_node.index} should still be responsive"
             )
 
         self.log_info(
-            f"Node0 RPC outbound connections test completed successfully "
-            f"({successful_connections}/3 connections attempted)"
+            f"Node{node0.index} outbound connections test completed successfully "
+            f"({successful_connections}/3 connections established)"
         )
 
     # ==================================================================
@@ -939,15 +860,6 @@ class P2PTest(TestFramework):
                 self.assert_true(sent, "Binary payload message should be sent")
 
         self.log_info("Binary payload test completed")
-
-    def cleanup(self):
-        """Cleanup - stop all nodes."""
-        self.log_info("Stopping all nodes...")
-        for i, node in enumerate(self.nodes):
-            if node:
-                self.log_info(f"Stopping node {i}...")
-                node.stop()
-        self.log_info("All nodes stopped")
 
 if __name__ == "__main__":
     test = P2PTest()

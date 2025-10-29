@@ -13,6 +13,7 @@ import traceback
 from pathlib import Path
 
 from .blockweave_node import BlockweaveNode
+from .test_node import TestNode
 
 
 class TestFramework:
@@ -31,6 +32,8 @@ class TestFramework:
         self.nocleanup = False
         self.nodes = []
         self.node_counter = 0
+        self.num_nodes = 0  # Number of nodes to create (set by test case)
+        self.test_nodes = []  # TestNode wrappers (created in setup_nodes)
         self.init_tmpdir()
         self.setup_logging()
 
@@ -93,6 +96,45 @@ class TestFramework:
         self.node_counter += 1
 
         return node
+
+    def setup_nodes(self):
+        """
+        Setup test nodes based on self.num_nodes.
+
+        Creates self.num_nodes BlockweaveNode instances, starts them,
+        and wraps them in TestNode instances (stored in self.test_nodes).
+        Nodes are NOT connected to each other - test cases should call
+        self.test_nodes[0].connect_to_peer(self.test_nodes[1]) as needed.
+
+        This method is called automatically by setup() if num_nodes > 0.
+        """
+        if self.num_nodes <= 0:
+            return
+
+        self.log_info(f"Starting {self.num_nodes} local blockweave nodes...")
+
+        # Calculate port numbers
+        base_rest_port = 28443
+        base_p2p_port = 28333
+
+        # Create and start nodes
+        for i in range(self.num_nodes):
+            rest_port = base_rest_port + i
+            p2p_port = base_p2p_port + i
+
+            self.log_info(f"Starting node {i} (REST: {rest_port}, P2P: {p2p_port})")
+            blockweave_node = self.add_node(port=rest_port, p2p_port=p2p_port)
+
+            if not blockweave_node.start(timeout=20):
+                raise RuntimeError(f"Failed to start node {i}")
+
+            # Wrap with TestNode for convenience methods
+            test_node = TestNode(blockweave_node)
+            self.test_nodes.append(test_node)
+
+            self.log_info(f"Node {i} started successfully")
+
+        self.log_info(f"All {len(self.nodes)} nodes started successfully")
 
     def setup(self):
         """
@@ -202,6 +244,10 @@ class TestFramework:
             # Setup
             self.log_info("Setting up test environment...")
             self.setup()
+
+            # Setup nodes if num_nodes is set
+            if self.num_nodes > 0:
+                self.setup_nodes()
 
             # Run test
             self.log_info("Running test...")
