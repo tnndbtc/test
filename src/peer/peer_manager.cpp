@@ -635,6 +635,10 @@ void CPeerManager::MonitorInboundSocketThread() {
     // Set thread name for easier debugging and logging
     SetThreadName("monitor_inbound");
 
+    // Only one thread is enough, the kernel does the heavy lifting
+    // monitor_inbound thread BLOCKS in io_context.run() (uses ~0% CPU)
+    // Kernel notifies when ANY socket has data ready
+    // The read itself is FAST (memcpy from kernel buffer)
     LOG_INFO("Monitor inbound socket thread started");
 
     while (!f_stop_monitor) {
@@ -697,6 +701,8 @@ void CPeerManager::RegisterInboundSocket(int n_socket_fd, const std::string& str
 
         // Start async read operation
         // When data arrives, HandleAsyncRead will be called
+        // async_read_some() is NON-BLOCKING registration, not actual I/O
+        // it registers read handler (non-blocking)
         p_descriptor->async_read_some(
             boost::asio::buffer(*p_buffer),
             [this, n_socket_fd, p_buffer](const boost::system::error_code& ec, size_t n_bytes_transferred) {
@@ -968,13 +974,12 @@ void CPeerManager::HandleAsyncWrite(const boost::system::error_code& ec,
 void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
                                           std::shared_ptr<std::vector<uint8_t>> p_buffer,
                                           size_t n_bytes_received) {
-    // Set thread name for worker thread
+    // Set thread name for worker thread using integer ID (like rest_worker0, rest_worker1, etc.)
+    static std::atomic<int> s_worker_id_counter{0};
+    static thread_local int s_worker_id = s_worker_id_counter.fetch_add(1);
     static thread_local bool thread_name_set = false;
     if (!thread_name_set) {
-        // Get thread ID for naming
-        std::ostringstream oss;
-        oss << "inbound_worker_" << std::this_thread::get_id();
-        SetThreadName(oss.str());
+        SetThreadName("inbound_worker" + std::to_string(s_worker_id));
         thread_name_set = true;
     }
 
@@ -1110,9 +1115,9 @@ void CPeerManager::OutboundConnectionThread(CPeerConnection* p_peer) {
     }
 
     // Set thread name for easier debugging and logging
-    // Use format: peer_<address>
+    // Use format: peer_<address>:<port>
     std::ostringstream oss;
-    oss << "peer_" << p_peer->peer_node.GetAddress();
+    oss << "peer_" << p_peer->peer_node.GetAddress() << ":" << p_peer->peer_node.GetPort();
     SetThreadName(oss.str());
 
     LOG_INFO("Connection thread started for peer " + p_peer->peer_node.GetAddress() + ":" + std::to_string(p_peer->peer_node.GetPort()));
