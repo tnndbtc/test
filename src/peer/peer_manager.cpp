@@ -591,6 +591,13 @@ void CPeerManager::ConnectionThread(CPeerConnection* p_peer) {
     char buffer[4096];
     std::string str_receive_buffer;
 
+    // First time try to connect to outbound peer, or being connected
+    if (p_peer->peer_node.GetConnectionTime() == 0) {
+        int64_t n_now = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        p_peer->peer_node.SetConnectionTime(n_now);
+        LOG_INFO("Set connection_time for peer " + p_peer->peer_node.GetAddress() + " to " + std::to_string(n_now));
+    }
     while (p_peer->f_active && !f_stop_requested) {
         // Check if socket is still connected
         if (p_peer->n_socket < 0) {
@@ -636,15 +643,6 @@ void CPeerManager::ConnectionThread(CPeerConnection* p_peer) {
                         } else {
                             LOG_WARN("Unexpected " + msg_type + " from peer " + p_peer->peer_node.GetAddress() + ", ignore");
                             break;
-                        }
-
-                        // Update connection_time if this is the first PING (connection_time == 0)
-                        if (p_peer->peer_node.GetConnectionTime() == 0) {
-                            int64_t n_now = std::chrono::duration_cast<std::chrono::seconds>(
-                                std::chrono::system_clock::now().time_since_epoch()).count();
-                            p_peer->peer_node.SetConnectionTime(n_now);
-                            LOG_INFO("Set connection_time for peer " + p_peer->peer_node.GetAddress() +
-                                    " to " + std::to_string(n_now));
                         }
 
                         // Respond with PONG containing the same nonce
@@ -709,6 +707,7 @@ void CPeerManager::ConnectionThread(CPeerConnection* p_peer) {
             LOG_INFO("Peer closed connection: " + p_peer->peer_node.GetAddress());
             break;
         } else {
+            // Peer no activity yet
             // Check for errors (EAGAIN/EWOULDBLOCK is normal for non-blocking sockets)
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
                 LOG_ERROR("Error receiving from peer " + p_peer->peer_node.GetAddress() + ": " + std::string(strerror(errno)));
@@ -891,7 +890,7 @@ bool CPeerManager::AddPeer(const std::string& str_address, int n_port) {
         // Check if already connected to this peer
         for (const auto& p_peer : m_outbound_peers) {
             if (p_peer && p_peer->peer_node.GetAddress() == str_address && p_peer->peer_node.GetPort() == n_port) {
-                LOG_WARN("Already connected to peer " + str_address + ":" + std::to_string(n_port));
+                LOG_INFO("Already connected to peer " + str_address + ":" + std::to_string(n_port));
                 return false;
             }
         }
