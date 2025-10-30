@@ -84,7 +84,7 @@ void PrintUsage(const char* program_name) {
     std::cout << "  status                 Check daemon status\n";
     std::cout << "  restart [-c <config>]  Restart the blockweave daemon\n";
     std::cout << "\nOptions:\n";
-    std::cout << "  -c, --config <file>    Configuration file (default: blockweave.conf)\n";
+    std::cout << "  -c, --config <file>    Configuration file (default: bweave.conf)\n";
     std::cout << "\nExamples:\n";
     std::cout << "  " << program_name << " start\n";
     std::cout << "  " << program_name << " start -c custom.conf\n";

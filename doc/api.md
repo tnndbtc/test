@@ -4,7 +4,7 @@ This document describes all APIs for interacting with the blockweave node: REST 
 
 ## REST API
 
-The REST API server runs on port 28443 (configurable via `rest_api_port` in blockweave.conf).
+The REST API server runs on port 28443 (configurable via `rest_api_port` in bweave.conf).
 
 ### Endpoints
 
@@ -386,7 +386,7 @@ Stops daemon (if running) and starts it again.
 #### Options
 
 - `-c <config_file>` - Specify configuration file path
-- Default config: `blockweave.conf` in current directory
+- Default config: `bweave.conf` in current directory
 
 ---
 
@@ -447,11 +447,11 @@ ea6dc2ca1bd34a376850629cc74510133b7c2a4c318f7b9e3d1c...
 **Behavior:**
 - Generates a new unique address on each run
 - No storage or key management (demo utility)
-- Copy address to `blockweave.conf` for mining
+- Copy address to `bweave.conf` for mining
 
 ---
 
-## Configuration File (blockweave.conf)
+## Configuration File (bweave.conf)
 
 While not an API, the configuration file controls all daemon behavior.
 
@@ -575,7 +575,7 @@ daemon=false
 
 **2. Configure Node:**
 ```bash
-# Edit blockweave.conf
+# Edit bweave.conf
 miner_address=<generated_address>
 ```
 

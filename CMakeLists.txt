@@ -343,13 +343,13 @@ add_custom_command(TARGET bweave POST_BUILD
 )
 
 # ============================================================
-# Copy blockweave.conf to build directory after build
+# Copy bweave.conf to build directory after build
 # ============================================================
 add_custom_command(TARGET bweave POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/src/conf/blockweave.conf
-        ${CMAKE_BINARY_DIR}/blockweave.conf
-    COMMENT "Copying blockweave.conf to build directory"
+        ${CMAKE_SOURCE_DIR}/src/conf/bweave.conf
+        ${CMAKE_BINARY_DIR}/bweave.conf
+    COMMENT "Copying bweave.conf to build directory"
 )
 
 # Installation

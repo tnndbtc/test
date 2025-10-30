@@ -196,7 +196,7 @@ Transactions are stored within blocks:
 ```
 1. Compile-time defaults (src/utils/settings.h)
    ?
-2. Configuration file (blockweave.conf)
+2. Configuration file (bweave.conf)
    ?
 3. Command-line overrides (-d for daemon mode)
 ```

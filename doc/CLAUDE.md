@@ -32,7 +32,7 @@ cd build && make
 # 1. Generate wallet
 ./wallet
 
-# 2. Edit blockweave.conf
+# 2. Edit bweave.conf
 miner_address=<generated_address>
 
 # 3. Start daemon
@@ -101,7 +101,7 @@ Strictly follow these conventions from `naming_convention.txt`:
 
 ## Configuration
 
-**blockweave.conf** settings (all optional except miner_address):
+**bweave.conf** settings (all optional except miner_address):
 
 | Setting | Default | Description |
 |---------|---------|-------------|

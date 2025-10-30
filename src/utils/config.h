@@ -10,7 +10,7 @@
  * @class CConfig
  * @brief Configuration file parser and manager
  *
- * Parses key-value configuration files (blockweave.conf) and provides
+ * Parses key-value configuration files (bweave.conf) and provides
  * type-safe accessors for configuration values. Supports default values
  * from settings.h when configuration keys are not specified.
  *
@@ -25,7 +25,7 @@
  * - Runtime value modification via SetValue()
  *
  * Example usage:
- *   CConfig config("blockweave.conf");
+ *   CConfig config("bweave.conf");
  *   int port = config.GetRestApiPort();  // Returns configured or default port
  *   std::string miner = config.GetMinerAddress();
  */
@@ -168,6 +168,12 @@ public:
      * @return Number of old log files to retain (default: LOG_FILE_KEEP from settings.h)
      */
     int GetLogFileKeep() const;
+
+    /**
+     * @brief Get PING interval for peer keep-alive
+     * @return Interval in seconds between PING messages (default: PEERS_PING_TIME from settings.h)
+     */
+    int GetPeersPingTime() const;
 
     /**
      * @brief Check if daemon mode is enabled

@@ -48,6 +48,7 @@ void CConfig::LoadDefaults() {
     m_config_values["log_level"] = LOG_LEVEL;
     m_config_values["log_file_size_in_mb"] = std::to_string(LOG_FILE_SIZE_MB);
     m_config_values["log_file_keep"] = std::to_string(LOG_FILE_KEEP);
+    m_config_values["peers_ping_time"] = std::to_string(PEERS_PING_TIME);
     m_config_values["daemon"] = "false";
 }
 
@@ -228,6 +229,10 @@ int CConfig::GetLogFileSizeMB() const {
 
 int CConfig::GetLogFileKeep() const {
     return GetIntValue("log_file_keep", LOG_FILE_KEEP);
+}
+
+int CConfig::GetPeersPingTime() const {
+    return GetIntValue("peers_ping_time", PEERS_PING_TIME);
 }
 
 bool CConfig::IsDaemonMode() const {

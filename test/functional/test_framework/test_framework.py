@@ -64,16 +64,23 @@ class TestFramework(unittest.TestCase):
 
         log_file = self.tmpdir / "test_framework.log"
 
-        # Configure root logger - only to file, not stdout
-        logging.basicConfig(
-            level=logging.DEBUG,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler(log_file)
-            ]
-        )
+        # Create logger for this test
+        self.logger = logging.getLogger(f"test_framework_{self.__class__.__name__}")
+        self.logger.setLevel(logging.DEBUG)
 
-        self.logger = logging.getLogger("test_framework")
+        # Remove any existing handlers to avoid duplicates
+        self.logger.handlers.clear()
+
+        # Add file handler for this test
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.DEBUG)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(formatter)
+        self.logger.addHandler(file_handler)
+
+        # Prevent propagation to root logger to avoid duplicate logs
+        self.logger.propagate = False
+
         self.logger.info(f"Test framework initialized in {self.tmpdir}")
 
     def add_node(self, port=None, **kwargs):

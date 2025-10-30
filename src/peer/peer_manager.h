@@ -115,6 +115,7 @@ private:
     int n_listen_socket;             ///< Server socket file descriptor
     int n_max_inbound_peers;         ///< Maximum number of inbound peer connections
     int n_max_outbound_peers;        ///< Maximum number of outbound peer connections
+    int n_peers_ping_time;           ///< Interval in seconds between PING messages
 
     // Peer connections (separate inbound and outbound tracking)
     std::vector<std::unique_ptr<CPeerConnection>> m_inbound_peers;   ///< Inbound peer connections (peers connecting to us)
@@ -223,8 +224,9 @@ public:
      * @param n_port Port to listen on (default: P2P_PORT from settings.h)
      * @param n_max_outbound Maximum number of outbound peers (default: MAX_OUTBOUND_PEERS from settings.h)
      * @param n_max_inbound Maximum number of inbound peers (default: MAX_INBOUND_PEERS from settings.h)
+     * @param n_ping_time Interval in seconds between PING messages (default: PEERS_PING_TIME from settings.h)
      */
-    CPeerManager(int n_port = P2P_PORT, int n_max_outbound = MAX_OUTBOUND_PEERS, int n_max_inbound = MAX_INBOUND_PEERS);
+    CPeerManager(int n_port = P2P_PORT, int n_max_outbound = MAX_OUTBOUND_PEERS, int n_max_inbound = MAX_INBOUND_PEERS, int n_ping_time = PEERS_PING_TIME);
 
     /**
      * @brief Destructor - stops networking and cleans up resources

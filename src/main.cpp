@@ -21,10 +21,10 @@
 void PrintUsage(const char* program_name) {
     std::cout << "Usage: " << program_name << " [OPTIONS]\n\n";
     std::cout << "Options:\n";
-    std::cout << "  -c, --config <file>    Configuration file (default: blockweave.conf)\n";
+    std::cout << "  -c, --config <file>    Configuration file (default: bweave.conf)\n";
     std::cout << "  -d, --daemon           Run as daemon process\n";
     std::cout << "  -h, --help             Show this help message\n\n";
-    std::cout << "Configuration file (blockweave.conf) should contain:\n";
+    std::cout << "Configuration file (bweave.conf) should contain:\n";
     std::cout << "  miner_address=<address>\n";
     std::cout << "  rest_api_port=28443\n";
     std::cout << "  daemon=false\n";
@@ -34,7 +34,7 @@ int main(int argc, char* argv[]) {
     // Set main thread name for easier debugging and logging
     SetThreadName("main_thread");
 
-    std::string str_config_file = "blockweave.conf";
+    std::string str_config_file = "bweave.conf";
     bool f_daemon_mode = false;
 
     // Parse command line arguments
@@ -159,8 +159,10 @@ int main(int argc, char* argv[]) {
     // Create peer manager (before REST API so we can pass it to REST API)
     int n_max_outbound = config.GetMaxOutboundPeers();
     int n_max_inbound = config.GetMaxInboundPeers();
+    int n_peers_ping_time = config.GetPeersPingTime();
     LOG_INFO("Creating peer manager on port " + std::to_string(n_p2p_port));
-    CPeerManager peer_manager(n_p2p_port, n_max_outbound, n_max_inbound);
+    LOG_INFO("Peers PING time: " + std::to_string(n_peers_ping_time) + " seconds");
+    CPeerManager peer_manager(n_p2p_port, n_max_outbound, n_max_inbound, n_peers_ping_time);
 
     // Start REST API server (1 listener thread + N worker threads)
     LOG_INFO("Starting REST API server on port " + std::to_string(n_rest_port));

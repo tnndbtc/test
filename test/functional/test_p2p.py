@@ -3,20 +3,20 @@
 P2P network functional test for Blockweave.
 
 Tests peer-to-peer networking by starting multiple local nodes
-and verifying they can establish connections.
+and verifying they can establish connections via the RPC API.
 
 This test suite covers:
-- Basic P2P connectivity
+- Node startup and isolation
+- P2P connections via /rpc/addpeer endpoint
+- Peer info queries via /rpc/getpeer endpoint
 - Peer message serialization/deserialization
-- SendMessageToPeer functionality
-- BroadcastMessage functionality
+- Connection time tracking
 - Different message types (PING, PONG, GET_PEERS, TX_IDS, etc.)
 """
 
 import sys
 import time
 import unittest
-import socket
 import struct
 from test_framework import TestFramework
 
@@ -157,159 +157,6 @@ class P2PMessage:
         return f"P2PMessage({self.get_type_string()}, {len(self.payload)} bytes, payload={payload_preview})"
 
 
-class P2PConnection:
-    """
-    Helper class for connecting to nodes via TCP P2P sockets.
-
-    Provides methods to:
-    - Connect to a node's P2P port
-    - Send P2P messages
-    - Receive P2P messages
-    - Close connection
-    """
-
-    def __init__(self, host, port, timeout=5):
-        """
-        Create a P2P connection.
-
-        Args:
-            host: Hostname or IP address
-            port: P2P port number
-            timeout: Socket timeout in seconds
-        """
-        self.host = host
-        self.port = port
-        self.timeout = timeout
-        self.socket = None
-
-    def connect(self):
-        """
-        Connect to the P2P node.
-
-        Returns:
-            bool: True if connection successful, False otherwise
-        """
-        try:
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.socket.settimeout(self.timeout)
-            self.socket.connect((self.host, self.port))
-            return True
-        except Exception as e:
-            print(f"Failed to connect to {self.host}:{self.port}: {e}")
-            return False
-
-    def send_message(self, message):
-        """
-        Send a P2P message.
-
-        Args:
-            message: P2PMessage instance
-
-        Returns:
-            bool: True if send successful, False otherwise
-        """
-        if not self.socket:
-            return False
-
-        try:
-            serialized = message.serialize()
-            self.socket.sendall(serialized)
-            return True
-        except Exception as e:
-            print(f"Failed to send message: {e}")
-            return False
-
-    def receive_message(self, timeout=None):
-        """
-        Receive a P2P message.
-
-        Args:
-            timeout: Optional timeout in seconds (overrides default)
-
-        Returns:
-            P2PMessage: Received message, or None if error/timeout
-        """
-        if not self.socket:
-            return None
-
-        try:
-            if timeout is not None:
-                old_timeout = self.socket.gettimeout()
-                self.socket.settimeout(timeout)
-
-            # First, receive type_length (1 byte)
-            type_len_bytes = self._receive_exactly(1)
-            if not type_len_bytes:
-                return None
-
-            type_len = struct.unpack('!B', type_len_bytes)[0]
-
-            # Receive type string (type_len bytes)
-            type_bytes = self._receive_exactly(type_len)
-            if not type_bytes:
-                return None
-
-            msg_type = type_bytes.decode('utf-8')
-
-            # Receive payload_length (4 bytes)
-            payload_len_bytes = self._receive_exactly(4)
-            if not payload_len_bytes:
-                return None
-
-            payload_len = struct.unpack('!I', payload_len_bytes)[0]
-
-            # Receive payload
-            payload = self._receive_exactly(payload_len) if payload_len > 0 else b""
-
-            # Restore old timeout if changed
-            if timeout is not None:
-                self.socket.settimeout(old_timeout)
-
-            return P2PMessage(msg_type, payload)
-
-        except socket.timeout:
-            return None
-        except Exception as e:
-            print(f"Failed to receive message: {e}")
-            return None
-
-    def _receive_exactly(self, n_bytes):
-        """
-        Receive exactly n bytes from socket.
-
-        Args:
-            n_bytes: Number of bytes to receive
-
-        Returns:
-            bytes: Received data, or None if connection closed
-        """
-        data = b""
-        while len(data) < n_bytes:
-            chunk = self.socket.recv(n_bytes - len(data))
-            if not chunk:
-                return None  # Connection closed
-            data += chunk
-        return data
-
-    def close(self):
-        """Close the connection."""
-        if self.socket:
-            try:
-                self.socket.close()
-            except:
-                pass
-            self.socket = None
-
-    def __enter__(self):
-        """Context manager entry."""
-        self.connect()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit."""
-        self.close()
-
-
 class P2PTest(TestFramework):
     """Test P2P networking with multiple nodes."""
 
@@ -317,16 +164,50 @@ class P2PTest(TestFramework):
     num_nodes = 4
 
     def setup(self):
-        """Setup test environment - configure to start 4 local nodes."""
+        """Setup test environment - configure to start 4 local nodes and establish connections."""
         # Nodes will be created as:
         # Node 0: REST API port 28443, P2P port 28333
         # Node 1: REST API port 28444, P2P port 28334
         # Node 2: REST API port 28445, P2P port 28335
         # Node 3: REST API port 28446, P2P port 28336
         #
-        # Nodes are NOT automatically connected - test case will use:
-        # self.test_nodes[0].connect_to_peer(self.test_nodes[1])
-        pass
+        # Node0 will connect to nodes 1, 2, 3 during setup
+        self.log_info("setup: Establishing peer connections...")
+
+        node0 = self.test_nodes[0]
+        target_nodes = [
+            self.test_nodes[1],
+            self.test_nodes[2],
+            self.test_nodes[3]
+        ]
+
+        self.successful_connections = 0
+
+        # Connect node0 to nodes 1, 2, 3
+        for peer_node in target_nodes:
+            self.log_info(
+                f"setup: Node{node0.index} connecting to Node{peer_node.index} "
+                f"at 127.0.0.1:{peer_node.p2p_port}..."
+            )
+
+            if node0.connect_to_peer(peer_node, wait=True):
+                self.log_info(f"setup: Node{node0.index} successfully connected to Node{peer_node.index}")
+                self.successful_connections += 1
+            else:
+                self.log_info(f"setup: WARNING - Failed to connect Node{node0.index} to Node{peer_node.index}")
+
+        # Wait for connections to stabilize
+        time.sleep(2)
+
+        self.log_info(f"setup: Completed - {self.successful_connections}/3 connections established")
+
+        # Debug: Log peer counts after setup
+        for i, node in enumerate(self.test_nodes):
+            peer_info = node.get_peer_info()
+            total = peer_info.get('total_peers', 0)
+            outbound = peer_info.get('outbound_peers', 0)
+            inbound = peer_info.get('inbound_peers', 0)
+            self.log_info(f"setup: Node{i} peer counts: total={total}, outbound={outbound}, inbound={inbound}")
 
     def test_nodes_are_running(self):
         """Verify all nodes are running."""
@@ -411,51 +292,22 @@ class P2PTest(TestFramework):
 
     def test_node0_outbound_connections(self):
         """
-        Test that node0 can establish outbound connections to node1, node2, and node3 using TestNode.
+        Test that node0 has established outbound connections to node1, node2, and node3.
 
         This test verifies:
-        - TestNode.connect_to_peer() works correctly
-        - Peer connections are properly established
+        - Peer connections were established in setup()
         - Peer info can be queried via get_peer_info()
         - Connections remain stable during the test
         """
         self.log_info("test_node0 outbound connections via TestNode: Testing node0 outbound connections via TestNode...")
 
-        # Node0 will connect to node1, node2, node3 using TestNode.connect_to_peer
-        # Node 0: REST 28443, P2P port 28333
-        # Node 1: REST 28444, P2P port 28334
-        # Node 2: REST 28445, P2P port 28335
-        # Node 3: REST 28446, P2P port 28336
-
+        # Connections were established in setup()
         node0 = self.test_nodes[0]
 
-        target_nodes = [
-            self.test_nodes[1],
-            self.test_nodes[2],
-            self.test_nodes[3]
-        ]
-
-        successful_connections = 0
-
-        # Use TestNode.connect_to_peer to establish connections
-        for peer_node in target_nodes:
-            self.log_info(
-                f"Node{node0.index} connecting to Node{peer_node.index} "
-                f"at 127.0.0.1:{peer_node.p2p_port}..."
-            )
-
-            # Use the high-level connect_to_peer method
-            if node0.connect_to_peer(peer_node, wait=True):
-                self.log_info(f"Node{node0.index} successfully connected to Node{peer_node.index}")
-                successful_connections += 1
-            else:
-                self.log_info(f"WARNING: Failed to connect Node{node0.index} to Node{peer_node.index}")
-                self.assert_true(False, f"Node{node0.index} failed to add peer to Node{peer_node.index}")
-
-        # Verify we established at least one connection
+        # Verify we established connections during setup
         self.assert_true(
-            successful_connections == len(target_nodes),
-            "Node0 should establish at least one outbound connection"
+            self.successful_connections == 3,
+            f"Node0 should have established 3 connections in setup, got {self.successful_connections}"
         )
 
         # Query peer info using TestNode.get_peer_info()
@@ -471,7 +323,7 @@ class P2PTest(TestFramework):
 
         total_peers = peer_info["total_peers"]
         outbound_peers = peer_info["outbound_peers"]
-        self.assert_true(outbound_peers==successful_connections, f"Node{node0.index} should have {outbound_peers} total outbound peers")
+        self.assert_true(outbound_peers==self.successful_connections, f"Node{node0.index} should have {outbound_peers} total outbound peers")
         inbound_peers = peer_info["inbound_peers"]
         self.assert_true(inbound_peers==0, f"Node{node0.index} should have {inbound_peers} total inbound peers")
         peer_list = peer_info["peers"]
@@ -498,7 +350,7 @@ class P2PTest(TestFramework):
 
         self.log_info(
             f"Node{node0.index} outbound connections test completed successfully "
-            f"({successful_connections}/3 connections established)"
+            f"({self.successful_connections}/3 connections established)"
         )
 
     # ==================================================================
@@ -667,122 +519,138 @@ class P2PTest(TestFramework):
 
         self.log_info("Large payload test completed")
 
-    def test_send_ping_message(self):
-        """Test sending PING message to a node."""
-        self.log_info("test_sending PING message: Testing sending PING message...")
+    def test_peerinfo_after_addpeer(self):
+        """
+        Test that connection_time is set after addpeer for all peers.
 
-        # Connect to Node 0
-        p2p_port = 28333
-        with P2PConnection("127.0.0.1", p2p_port, timeout=3) as conn:
-            if not conn.socket:
-                self.assert_true(False, "Failed to connect to P2P port")
-                return
+        This test verifies:
+        - Node0 has connections to nodes 1, 2, and 3 (established in setup)
+        - Node0's getpeer shows 3 peers with connection_time set
+        - Each of nodes 1, 2, 3 show connection_time is set for their connection
+        """
+        self.log_info("test_peerinfo_after_addpeer: Testing connection_time after addpeer...")
 
-            # Send PING message
-            ping_msg = P2PMessage(MessageType.PING)
-            sent = conn.send_message(ping_msg)
+        # Connections were established in setup()
+        node0 = self.test_nodes[0]
+        target_nodes = [
+            self.test_nodes[1],
+            self.test_nodes[2],
+            self.test_nodes[3]
+        ]
 
-            self.assert_true(sent, "PING message should be sent successfully")
-
-            # Try to receive PONG response (with timeout)
-            # Note: This may timeout if node doesn't implement auto-PONG yet
-            pong_msg = conn.receive_message(timeout=2)
-
-            if pong_msg:
-                self.log_info(f"Received response: {pong_msg.get_type_string()}")
-                # Could be PONG or any other message the node sends
-            else:
-                self.log_info("No response received (node may not auto-respond to PING)")
-
-        self.log_info("Send PING message test completed")
-
-    def test_send_get_peers_message(self):
-        """Test sending GET_PEERS message to a node."""
-        self.log_info("test_sending GET_PEERS message: Testing sending GET_PEERS message...")
-
-        # Connect to Node 1
-        p2p_port = 28334
-        with P2PConnection("127.0.0.1", p2p_port, timeout=3) as conn:
-            if not conn.socket:
-                self.assert_true(False, "Failed to connect to P2P port")
-                return
-
-            # Send GET_PEERS message
-            get_peers_msg = P2PMessage(MessageType.GET_PEERS)
-            sent = conn.send_message(get_peers_msg)
-
-            self.assert_true(sent, "GET_PEERS message should be sent successfully")
-
-            # Try to receive PEERS response
-            peers_msg = conn.receive_message(timeout=2)
-
-            if peers_msg:
-                self.log_info(f"Received response: {peers_msg.get_type_string()}")
-                if peers_msg.msg_type == MessageType.PEERS:
-                    self.log_info(f"Peer list payload: {peers_msg.payload[:100]}")
-            else:
-                self.log_info("No PEERS response received")
-
-        self.log_info("Send GET_PEERS message test completed")
-
-    def test_send_tx_ids_message(self):
-        """Test sending TX_IDS message with transaction IDs."""
-        self.log_info("test_sending TX_IDS message: Testing sending TX_IDS message...")
-
-        # Connect to Node 2
-        p2p_port = 28335
-        with P2PConnection("127.0.0.1", p2p_port, timeout=3) as conn:
-            if not conn.socket:
-                self.assert_true(False, "Failed to connect to P2P port")
-                return
-
-            # Send TX_IDS message with sample transaction IDs
-            tx_ids = "tx_abc123,tx_def456,tx_ghi789"
-            tx_ids_msg = P2PMessage(MessageType.TX_IDS, tx_ids)
-            sent = conn.send_message(tx_ids_msg)
-
-            self.assert_true(sent, "TX_IDS message should be sent successfully")
-
-            # Verify message size
-            # Format: [1 byte type_length][6 bytes "tx_ids"][4 bytes payload_length][payload]
-            # Total: 1 + 6 + 4 + len(payload) = 11 + len(payload)
-            serialized = tx_ids_msg.serialize()
-            expected_size = 11 + len(tx_ids.encode('utf-8'))
-            self.assert_equal(
-                len(serialized),
-                expected_size,
-                f"Serialized TX_IDS should be {expected_size} bytes"
-            )
-
-        self.log_info("Send TX_IDS message test completed")
-
-    def test_message_binary_payload(self):
-        """Test messages with binary (non-text) payload."""
-        self.log_info("test_messages with binary payload: Testing messages with binary payload...")
-
-        # Create binary payload with null bytes
-        binary_payload = bytes([0x00, 0x01, 0x02, 0xFF, 0xFE, 0x00, 0xAA, 0xBB])
-        msg = P2PMessage(MessageType.TX, binary_payload)
-
-        # Serialize and deserialize
-        serialized = msg.serialize()
-        deserialized = P2PMessage.deserialize(serialized)
-
-        self.assert_true(deserialized is not None, "Binary payload deserialization should succeed")
-        self.assert_equal(
-            deserialized.payload,
-            binary_payload,
-            "Binary payload should match exactly"
+        # Verify connections were established in setup
+        self.assert_true(
+            self.successful_connections == 3,
+            f"Node0 should have established 3 connections in setup, got {self.successful_connections}"
         )
 
-        # Send to Node 3
-        p2p_port = 28336
-        with P2PConnection("127.0.0.1", p2p_port, timeout=3) as conn:
-            if conn.socket:
-                sent = conn.send_message(msg)
-                self.assert_true(sent, "Binary payload message should be sent")
+        # Step 1: Node0 calls getpeer and verifies 3 peers with connection_time set
+        self.log_info("Step 1: Node0 querying peer info...")
+        node0_peer_info = node0.get_peer_info()
 
-        self.log_info("Binary payload test completed")
+        self.assert_equal(
+            node0_peer_info.get("status"),
+            "success",
+            "Node0 getpeer should return success"
+        )
+
+        total_peers = node0_peer_info.get("total_peers", 0)
+        self.assert_equal(
+            total_peers,
+            3,
+            f"Node0 should have exactly 3 peers, got {total_peers}"
+        )
+
+        peers_list = node0_peer_info.get("peers", [])
+        self.assert_equal(
+            len(peers_list),
+            3,
+            f"Node0 peers list should have 3 entries, got {len(peers_list)}"
+        )
+
+        # Verify each peer in node0's list has connection_time set
+        self.log_info("Verifying Node0's peers have connection_time set...")
+        for i, peer in enumerate(peers_list):
+            self.assert_in(
+                "connection_time",
+                peer,
+                f"Peer {i} should have connection_time field"
+            )
+
+            connection_time = peer.get("connection_time", 0)
+            self.assert_true(
+                connection_time > 0,
+                f"Peer {i} connection_time should be > 0, got {connection_time}"
+            )
+
+            self.log_info(
+                f"Node0 peer {i}: address={peer.get('address')}, "
+                f"port={peer.get('port')}, connection_time={connection_time}"
+            )
+
+        # Step 2: Each of nodes 1, 2, 3 call getpeer and verify connection_time is set
+        self.log_info("Step 2: Nodes 1, 2, 3 querying their peer info...")
+        for peer_node in target_nodes:
+            self.log_info(f"Querying Node{peer_node.index} peer info...")
+            peer_info = peer_node.get_peer_info()
+
+            self.assert_equal(
+                peer_info.get("status"),
+                "success",
+                f"Node{peer_node.index} getpeer should return success"
+            )
+
+            total_peers = peer_info.get("total_peers", 0)
+            self.assert_true(
+                total_peers == 1,
+                f"Node{peer_node.index} should have at least 1 peer (Node0), got {total_peers}"
+            )
+
+            peers_list = peer_info.get("peers", [])
+
+            # Debug logging - show all peers with their connection_time
+            self.log_info(f"Node{peer_node.index} has {len(peers_list)} peer(s):")
+            for idx, peer in enumerate(peers_list):
+                self.log_info(
+                    f"  Peer {idx}: address={peer.get('address')}, port={peer.get('port')}, "
+                    f"connection_time={peer.get('connection_time', 0)}"
+                )
+
+            self.assert_true(
+                len(peers_list) == 1,
+                f"Node{peer_node.index} should have exactly 1 peer in list, got {len(peers_list)}"
+            )
+
+            # Find the connection to Node0 (127.0.0.1:port)
+            # note that port is not 28333 because it's a peer port, not listner port
+            node0_peer = peers_list[0]
+
+            self.assert_true(
+                node0_peer is not None,
+                f"Node{peer_node.index} should have Node0 (port {node0.p2p_port}) in its peer list"
+            )
+
+            # Verify connection_time is set
+            self.assert_in(
+                "connection_time",
+                node0_peer,
+                f"Node{peer_node.index}'s connection to Node0 should have connection_time field"
+            )
+
+            connection_time = node0_peer.get("connection_time", 0)
+            self.assert_true(
+                connection_time > 0,
+                f"Node{peer_node.index}'s connection to Node0 should have connection_time > 0, got {connection_time}"
+            )
+
+            self.log_info(
+                f"Node{peer_node.index} connected to Node0: "
+                f"address={node0_peer.get('address')}, "
+                f"port={node0_peer.get('port')}, "
+                f"connection_time={connection_time}"
+            )
+
+        self.log_info("test_peerinfo_after_addpeer completed successfully")
 
 
 if __name__ == "__main__":

@@ -29,7 +29,7 @@ class BlockweaveNode:
             project_root: Path to project root directory (auto-detected if None)
             port: REST API port (default: 28443)
             p2p_port: P2P network port (default: None, uses default from config)
-            config_file: Path to config file (default: blockweave.conf in project root)
+            config_file: Path to config file (default: bweave.conf in project root)
             datadir: Data directory for this node (default: auto-generated temp directory)
             node_index: Node index for logging (default: 0, creates node0 folder)
         """
@@ -57,8 +57,8 @@ class BlockweaveNode:
 
         self.port = port
         self.p2p_port = p2p_port
-        # Config file is copied to build/ during build from src/conf/blockweave.conf
-        self.config_file = config_file or (self.project_root / "build" / "blockweave.conf")
+        # Config file is copied to build/ during build from src/conf/bweave.conf
+        self.config_file = config_file or (self.project_root / "build" / "bweave.conf")
 
         # Locate bweave executable
         if (Path.cwd() / "bweave").exists():
@@ -83,7 +83,7 @@ class BlockweaveNode:
         if not self.config_file.exists():
             raise FileNotFoundError(
                 f"Base config file not found at {self.config_file}. "
-                "Please build the project first (it copies src/conf/blockweave.conf to build/)."
+                "Please build the project first (it copies src/conf/bweave.conf to build/)."
             )
 
         # Read the base config
@@ -152,7 +152,7 @@ class BlockweaveNode:
         if not self.config_file.exists():
             raise FileNotFoundError(
                 f"Config file not found at {self.config_file}. "
-                "Please build the project first (it copies src/conf/blockweave.conf to build/)."
+                "Please build the project first (it copies src/conf/bweave.conf to build/)."
             )
 
         # Create custom config with node-specific settings

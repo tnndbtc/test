@@ -17,8 +17,8 @@ This directory contains functional tests for the Blockweave. These tests start a
    pip3 install requests
    ```
 
-3. **Valid blockweave.conf:**
-   Make sure `blockweave.conf` exists in the project root with a valid `miner_address`.
+3. **Valid bweave.conf:**
+   Make sure `bweave.conf` exists in the project root with a valid `miner_address`.
 
 ## Running Tests
 
@@ -300,7 +300,7 @@ To create a new functional test:
 
 **Test fails to start node:**
 - Ensure the project is built (`cd build && make`)
-- Check that `blockweave.conf` exists with valid `miner_address`
+- Check that `bweave.conf` exists with valid `miner_address`
 - Verify no other instance is running on port 28443
 
 **Port already in use:**

@@ -146,14 +146,16 @@ CPeerConnection& CPeerConnection::operator=(CPeerConnection&& other) noexcept {
  * @param n_port Port to listen on for inbound connections
  * @param n_max_outbound Maximum number of outbound peer connections
  * @param n_max_inbound Maximum number of inbound peer connections
+ * @param n_ping_time Interval in seconds between PING messages
  *
  * Initializes peer manager in stopped state. Reserves space for
  * peer connections to avoid vector reallocations during operation.
  * Call Start() to begin accepting connections.
  */
-CPeerManager::CPeerManager(int n_port, int n_max_outbound, int n_max_inbound)
+CPeerManager::CPeerManager(int n_port, int n_max_outbound, int n_max_inbound, int n_ping_time)
     : n_listen_port(n_port), n_listen_socket(-1),
       n_max_inbound_peers(n_max_inbound), n_max_outbound_peers(n_max_outbound),
+      n_peers_ping_time(n_ping_time),
       f_running(false), f_stop_requested(false),
       m_last_ping_time(std::chrono::steady_clock::now()) {
     m_inbound_peers.reserve(n_max_inbound_peers);
@@ -470,11 +472,11 @@ void CPeerManager::PeerThread() {
         // Clean up disconnected peers
         CleanupDisconnectedPeers();
 
-        // Check if it's time to send PING messages (every PEERS_PING_TIME seconds)
+        // Check if it's time to send PING messages (every n_peers_ping_time seconds)
         auto now = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_last_ping_time);
 
-        if (elapsed.count() >= PEERS_PING_TIME) {
+        if (elapsed.count() >= n_peers_ping_time) {
             // Send PING to all connected peers (periodic keep-alive)
             SendPingToAllPeers();
             m_last_ping_time = now;
