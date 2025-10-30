@@ -150,6 +150,12 @@ private:
     std::tuple<int, std::string> HandleRpcGetPeer();
 
     /**
+     * @brief Handle POST /rpc/ping endpoint - send PING to all connected peers immediately
+     * @return Tuple of (HTTP status code, JSON response with result)
+     */
+    std::tuple<int, std::string> HandleRpcPing();
+
+    /**
      * @brief Parse raw HTTP request into structured form
      * @param str_raw_request Raw HTTP request string from socket
      * @param n_client_socket Client socket for response

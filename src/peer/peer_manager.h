@@ -319,6 +319,17 @@ public:
      * Failed sends are logged but don't affect the return count.
      */
     virtual size_t BroadcastMessage(const CPeerMessage& message) override;
+
+    /**
+     * @brief Send PING message to all connected peers immediately
+     * @return Number of peers the PING was successfully sent to
+     *
+     * Sends PING messages with unique nonce to each connected peer.
+     * This is used for immediate PING testing via RPC endpoint.
+     *
+     * Thread-safe operation with mutex protection.
+     */
+    virtual size_t SendPingToAllPeers() override;
 };
 
 #endif // PEER_MANAGER_H

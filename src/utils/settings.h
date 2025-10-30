@@ -23,6 +23,9 @@ constexpr int MAX_INBOUND_PEERS = 120;
 // Maximum number of outbound peer connections (we connect to them)
 constexpr int MAX_OUTBOUND_PEERS = 8;
 
+// Interval in seconds between sending PING messages to peers for keep-alive
+constexpr int PEERS_PING_TIME = 180;
+
 // Log directory for daemon logs
 const std::string LOG_DIR = "./log";
 

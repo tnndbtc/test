@@ -949,6 +949,29 @@ std::tuple<int, std::string> CRestApiServer::HandleRpcAddPeer(const std::string&
     }
 }
 
+std::tuple<int, std::string> CRestApiServer::HandleRpcPing() {
+    LOG_INFO("HandleRpcPing");
+    try {
+        // Send PING to all connected peers immediately via peer manager
+        size_t n_peers_sent = p_peer_manager->SendPingToAllPeers();
+
+        // Build JSON response
+        std::ostringstream oss;
+        oss << "{\n";
+        oss << "  \"status\": \"success\",\n";
+        oss << "  \"message\": \"PING sent to all connected peers\",\n";
+        oss << "  \"peers_count\": " << n_peers_sent << "\n";
+        oss << "}";
+
+        LOG_INFO("RPC ping: Sent PING to " + std::to_string(n_peers_sent) + " peers");
+
+        return {HTTP_OK, oss.str()};
+    } catch (const std::exception& e) {
+        LOG_ERROR("POST /rpc/ping exception: " + std::string(e.what()));
+        return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Internal Server Error\", \"message\": \"" + std::string(e.what()) + "\"}"};
+    }
+}
+
 std::tuple<int, std::string> CRestApiServer::HandleRpcGetPeer() {
     LOG_INFO("HandleRpcGetPeer");
     try {
@@ -1034,6 +1057,9 @@ std::tuple<int, std::string> CRestApiServer::HandlePOST(const std::string& str_e
     }
     else if (str_endpoint == "/rpc/addpeer") {
         return HandleRpcAddPeer(request.str_body);
+    }
+    else if (str_endpoint == "/rpc/ping") {
+        return HandleRpcPing();
     }
     else {
         LOG_ERROR("POST endpoint not found: " + str_endpoint);
