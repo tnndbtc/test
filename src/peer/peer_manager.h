@@ -12,6 +12,10 @@
 #include <mutex>
 #include <atomic>
 #include <memory>
+#include <map>
+#include <boost/asio.hpp>
+#include <boost/asio/thread_pool.hpp>
+#include <boost/asio/posix/stream_descriptor.hpp>
 
 /**
  * @struct CPeerConnection
@@ -125,38 +129,133 @@ private:
     // Control flags
     std::atomic<bool> f_running;         ///< Whether peer manager is running
     std::atomic<bool> f_stop_requested;  ///< Signal to stop all threads
+    std::atomic<bool> f_stop_monitor;    ///< Signal to stop monitor thread
+
+    // Boost.Asio I/O infrastructure for inbound connections
+    boost::asio::io_context m_io_context;                              ///< I/O context for async socket monitoring
+    std::unique_ptr<boost::asio::executor_work_guard<boost::asio::io_context::executor_type>> m_io_work;  ///< Work guard to keep io_context running
+    std::unique_ptr<boost::asio::thread_pool> m_thread_pool;           ///< Thread pool (MAX_INBOUND_PEERS workers) for recv/send operations
+    std::map<int, std::shared_ptr<boost::asio::posix::stream_descriptor>> map_inbound_descriptors;  ///< Map of socket FD to stream descriptors for async I/O
+    mutable std::mutex cs_inbound_descriptors;                         ///< Mutex protecting inbound descriptors map
 
     // Threads
-    std::thread m_peer_thread;       ///< Main peer management thread
-    std::thread m_listener_thread;   ///< Listens for inbound connections
+    std::thread m_peer_thread;           ///< Main peer management thread
+    std::thread m_listener_thread;       ///< Listens for inbound connections
+    std::thread m_monitor_inbound_thread;///< Monitors inbound sockets via I/O multiplexing
 
     // PING timer
     std::chrono::steady_clock::time_point m_last_ping_time;  ///< Last time PING was sent to peers
 
     /**
-     * @brief Main peer management thread function
+     * @brief Main peer management thread function (renamed from PeerThread)
      *
      * Periodically cleans up disconnected peers and performs
      * maintenance tasks while manager is running.
      */
-    void PeerThread();
+    void PeerManagerThread();
 
     /**
      * @brief Listener thread function for accepting connections
      *
-     * Accepts incoming TCP connections and spawns connection
-     * threads to handle them.
+     * Accepts incoming TCP connections and registers them with
+     * I/O context for async monitoring.
      */
     void ListenerThread();
 
     /**
-     * @brief Connection thread function for individual peer
+     * @brief Monitor thread for inbound socket I/O multiplexing
+     *
+     * Runs Boost.Asio io_context event loop to monitor all inbound
+     * sockets using select/epoll/poll. Dispatches recv/send work
+     * to thread pool workers.
+     */
+    void MonitorInboundSocketThread();
+
+    /**
+     * @brief Outbound connection thread function for individual peer (renamed from ConnectionThread)
      * @param p_peer Pointer to peer connection to handle
      *
-     * Handles communication with a single peer in dedicated thread.
+     * Handles communication with a single OUTBOUND peer in dedicated thread.
      * Runs until connection is closed or stop requested.
+     * Used ONLY for outbound connections; inbound uses async I/O.
      */
-    void ConnectionThread(CPeerConnection* p_peer);
+    void OutboundConnectionThread(CPeerConnection* p_peer);
+
+    /**
+     * @brief Worker thread function for processing inbound socket I/O
+     * @param n_worker_id Worker thread identifier (0 to MAX_INBOUND_PEERS-1)
+     *
+     * Worker thread from thread pool that processes recv/send operations
+     * for inbound connections dispatched by MonitorInboundSocketThread.
+     */
+    void InboundWorkerThread(int n_worker_id);
+
+    /**
+     * @brief Register inbound socket with async I/O context
+     * @param n_socket_fd Socket file descriptor
+     * @param str_address Peer IP address
+     * @param n_port Peer port
+     *
+     * Wraps socket in Boost.Asio stream_descriptor and registers
+     * async_read_some handler for non-blocking I/O monitoring.
+     * Called by ListenerThread after accepting a connection.
+     */
+    void RegisterInboundSocket(int n_socket_fd, const std::string& str_address, int n_port);
+
+    /**
+     * @brief Async read completion handler for inbound sockets
+     * @param ec Boost error code from async operation
+     * @param n_bytes_transferred Number of bytes read
+     * @param n_socket_fd Socket file descriptor
+     * @param p_buffer Shared pointer to read buffer
+     *
+     * Called by io_context when async_read_some completes.
+     * On success: Posts work to thread pool for message processing
+     * On error: Handles disconnection and cleanup
+     * Re-registers async_read_some for next message if still connected.
+     */
+    void HandleAsyncRead(const boost::system::error_code& ec,
+                         size_t n_bytes_transferred,
+                         int n_socket_fd,
+                         std::shared_ptr<std::vector<uint8_t>> p_buffer);
+
+    /**
+     * @brief Process received message from inbound peer
+     * @param n_socket_fd Socket file descriptor
+     * @param p_buffer Shared pointer to buffer containing received data
+     * @param n_bytes_received Number of bytes in buffer
+     *
+     * Processes messages from inbound async connections.
+     * Handles PING, PONG, and other message types.
+     * Posted to thread pool for parallel processing.
+     */
+    void ProcessReceivedMessage(int n_socket_fd,
+                                std::shared_ptr<std::vector<uint8_t>> p_buffer,
+                                size_t n_bytes_received);
+
+    /**
+     * @brief Send message asynchronously to inbound peer
+     * @param n_socket_fd Socket file descriptor
+     * @param message CPeerMessage to send
+     *
+     * Serializes and sends message to inbound peer using async_write.
+     * Thread-safe operation. Handles errors and disconnection.
+     * Used only for inbound peers (outbound peers use synchronous send in ConnectionThread).
+     */
+    void SendMessageAsync(int n_socket_fd, const CPeerMessage& message);
+
+    /**
+     * @brief Async write completion handler for inbound sockets
+     * @param ec Boost error code from async operation
+     * @param n_bytes_transferred Number of bytes written
+     * @param n_socket_fd Socket file descriptor
+     *
+     * Called when async_write completes.
+     * Handles write errors and logs completion.
+     */
+    void HandleAsyncWrite(const boost::system::error_code& ec,
+                          size_t n_bytes_transferred,
+                          int n_socket_fd);
 
     /**
      * @brief Initiate outbound connection to peer

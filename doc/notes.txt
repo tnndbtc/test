@@ -1,3 +1,7 @@
+--------------------------
+install boost:
+	mac: brew install boost
+--------------------------
 ./configure --generator="Unix Makefiles"
 cd build
 make

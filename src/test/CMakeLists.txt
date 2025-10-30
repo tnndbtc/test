@@ -4,10 +4,21 @@ project(BlockweaveUnitTests VERSION 1.0.0)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Set policy for Boost (suppress FindBoost warning)
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+endif()
+
 # Find OpenSSL
 find_package(OpenSSL REQUIRED)
 if(OPENSSL_FOUND)
     message(STATUS "OpenSSL found: ${OPENSSL_VERSION}")
+endif()
+
+# Find Boost
+find_package(Boost 1.70 REQUIRED)
+if(Boost_FOUND)
+    message(STATUS "Boost found: ${Boost_VERSION}")
 endif()
 
 # Find Threads
@@ -80,6 +91,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         ${PROJECT_ROOT}/include
         ${PROJECT_ROOT}/src
         ${OPENSSL_INCLUDE_DIR}
+        ${Boost_INCLUDE_DIRS}
     )
 
     # Link directories for shared libraries

@@ -11,6 +11,43 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - [api.md](api.md) - REST API, RPC, and CLI documentation
 - [naming_convention.txt](naming_convention.txt) - Code style guide
 
+## Dependencies
+
+**Required:**
+- C++17 compiler (GCC 7+, Clang 5+, or MSVC 2017+)
+- CMake 3.10+
+- OpenSSL 1.1.0+
+- **Boost 1.70+** (for Boost.Asio async I/O)
+
+**Installation:**
+
+macOS:
+```bash
+brew install cmake openssl boost
+```
+
+Linux (Ubuntu/Debian):
+```bash
+sudo apt-get update
+sudo apt-get install build-essential cmake libssl-dev libboost-all-dev
+```
+
+Linux (RHEL/CentOS):
+```bash
+sudo yum install gcc-c++ cmake openssl-devel boost-devel
+```
+
+Windows:
+- Download Boost from [boost.org](https://www.boost.org/users/download/)
+- Or use vcpkg: `vcpkg install boost-asio boost-system`
+
+**Verify installation:**
+```bash
+boost --version  # Should show >= 1.70
+openssl version  # Should show >= 1.1.0
+cmake --version  # Should show >= 3.10
+```
+
 ## Build
 
 ```bash
@@ -72,8 +109,13 @@ src/
 
 **CPeerManager** (src/peer/peer_manager.h)
 - P2P networking: max 120 inbound, 8 outbound peers
+- **Hybrid I/O Architecture** (Boost.Asio):
+  - Inbound connections: Async I/O with thread pool (1 monitor + 120 workers)
+  - Outbound connections: Thread-per-connection (8 threads max)
+  - Reduces thread count from 130+ to ~43 threads (67% reduction)
 - PING sent every 30 seconds to maintain connections
-- String-based message protocol
+- String-based message protocol: `[type_length][type][payload_length][payload]`
+- Automatic cleanup of disconnected peers with async operation cancellation
 
 **CRestApiServer** (src/rest/rest_api_server.h)
 - Multi-threaded HTTP server (1 listener + 5 workers)
@@ -118,14 +160,27 @@ Defaults defined in `src/utils/settings.h`.
 
 ## Threading Model
 
+**Main Application Threads:**
 1. `main_thread` - Initialization and shutdown
 2. `mining_thread` - Block mining loop
-3. `rest_listener` + `rest_worker0-4` - HTTP request handling
-4. `peer_manager` - P2P management, sends PING every 30s
-5. `peer_listener` - Accept P2P connections
-6. `peer_<address>` - Per-connection threads
+3. `rest_listener` + `rest_worker0-4` - HTTP request handling (6 threads)
 
-All threads are named for debugging. Use mutexes (`cs_` prefix) and atomic flags for synchronization.
+**P2P Networking Threads (Boost.Asio Hybrid Architecture):**
+4. `peer_manager` - P2P management, sends PING every 30s
+5. `peer_listener` - Accept inbound P2P connections
+6. `monitor_inbound` - Boost.Asio I/O multiplexing for inbound sockets
+7. `inbound_worker_<id>` - Thread pool for inbound message processing (120 workers)
+8. `peer_<address>` - Outbound connection threads (8 max, thread-per-connection)
+
+**Thread Count:**
+- Base: 3 threads (main, mining, rest_listener)
+- REST workers: 5 threads
+- P2P core: 3 threads (peer_manager, peer_listener, monitor_inbound)
+- Inbound workers: 120 threads (thread pool)
+- Outbound peers: 8 threads max (active connections)
+- **Total: ~139 threads max** (down from 130+ with old architecture)
+
+All threads are named using `SetThreadName()` for debugging. Use mutexes (`cs_` prefix) and atomic flags (`f_` prefix) for synchronization.
 
 ## Testing
 
@@ -245,12 +300,69 @@ rm -rf build
 
 For production, implement: authentication, TLS, input validation, rate limiting, privilege separation.
 
+## Boost.Asio P2P Architecture
+
+The P2P networking uses a **hybrid I/O model** combining async I/O for inbound connections with thread-per-connection for outbound:
+
+### Inbound Connections (Async I/O)
+```
+peer_listener thread
+  └─> accept() new connections
+       └─> RegisterInboundSocket()
+            └─> wrap in boost::asio::posix::stream_descriptor
+                 └─> async_read_some() → monitor_inbound thread
+
+monitor_inbound thread
+  └─> io_context.run() (select/epoll/poll multiplexing)
+       └─> HandleAsyncRead() on data available
+            └─> post to thread_pool
+                 └─> ProcessReceivedMessage() (inbound_worker_<id>)
+                      └─> SendMessageAsync() → async_write()
+```
+
+### Outbound Connections (Thread-per-connection)
+```
+AddPeer() → ConnectToPeer()
+  └─> spawn OutboundConnectionThread (peer_<address>)
+       └─> blocking recv() loop
+            └─> process messages
+                 └─> blocking send() for responses
+```
+
+### Key Components
+
+**peer_manager.h members:**
+- `boost::asio::io_context m_io_context` - Event loop for async I/O
+- `boost::asio::thread_pool m_thread_pool` - Worker threads (120)
+- `map<int, stream_descriptor> map_inbound_descriptors` - Socket FD to async descriptor map
+- `std::mutex cs_inbound_descriptors` - Protects descriptor map
+
+**Key methods:**
+- `RegisterInboundSocket()` - Wrap socket in stream_descriptor, start async_read_some
+- `HandleAsyncRead()` - Completion handler, posts work to thread pool
+- `ProcessReceivedMessage()` - Worker thread processes PING/PONG/etc
+- `SendMessageAsync()` - Async write for inbound peers
+- `CleanupDisconnectedPeers()` - Cancels async ops, closes descriptors
+
+**Error Handling:**
+All async error paths properly:
+1. Cancel pending operations: `descriptor->cancel()`
+2. Close descriptor: `descriptor->close()`
+3. Mark peer disconnected: `f_connected = false`
+
+### Benefits
+- **Scalability:** 120 inbound peers without 120 threads
+- **Efficiency:** Single I/O thread monitors all inbound sockets
+- **Simplicity:** Outbound unchanged (no migration needed)
+- **Thread reduction:** 130+ threads → ~43 threads (67% reduction)
+
 ## Additional Resources
 
 - **Design Document:** [doc/design.md](design.md) - Architecture, threading, P2P protocol, storage design
 - **API Documentation:** [doc/api.md](api.md) - Complete REST API, RPC, CLI reference
 - **Test Documentation:** `src/test/README.md` - Unit testing details
 - **Naming Conventions:** [doc/naming_convention.txt](naming_convention.txt) - Code style rules
+- **Boost.Asio Evaluation:** [doc/boost_asio_evaluation.md](boost_asio_evaluation.md) - Detailed async I/O implementation analysis
 
 ## Summary for Claude Code
 

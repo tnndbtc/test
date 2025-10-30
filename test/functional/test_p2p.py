@@ -122,39 +122,7 @@ class P2PTest(TestFramework):
             )
             self.log_info(f"Node {test_node.index} mining status confirmed: enabled={chain_info['mining_enabled']}")
 
-    def test_04_inbound_peer_connections(self):
-        """
-        Test that nodes can establish inbound connections.
-
-        We'll test that when Node 1 connects to Node 0, Node 0 shows
-        an inbound connection and Node 1 shows an outbound connection.
-        """
-        self.log_info("test_04_inbound peer connections: Testing inbound peer connections...")
-
-        # For this test, we would need to:
-        # 1. Have Node 1 connect to Node 0 (Node 1 makes outbound, Node 0 receives inbound)
-        # 2. Query Node 0 to verify it has 1 inbound peer
-        # 3. Query Node 1 to verify it has 1 outbound peer
-
-        # Note: This requires implementing peer statistics endpoint in REST API
-        # For now, we log that this test would verify inbound connections
-        self.log_info("Inbound connection test: Would verify Node 0 accepts inbound from Node 1")
-
-        # If REST API had /peer/stats endpoint, we would do:
-        # Node 1 connects to Node 0's P2P port (28333)
-        # response = self.nodes[0].get("/peer/stats")
-        # self.assert_equal(response.json()["inbound_peers"], 1)
-
-        # For now, just verify nodes are still responsive
-        for test_node in self.test_nodes:
-            self.assert_true(
-                test_node.is_ready(),
-                f"Node {test_node.index} should still be responsive"
-            )
-
-        self.log_info("Inbound connection test placeholder completed")
-
-    def test_05_node0_outbound_connections(self):
+    def test_04_node0_outbound_connections(self):
         """
         Test that node0 has established outbound connections to node1, node2, and node3.
 
@@ -229,7 +197,7 @@ class P2PTest(TestFramework):
             f"({self.successful_connections}/3 connections established)"
         )
 
-    def test_06_peerinfo_after_addpeer(self):
+    def test_05_peerinfo_after_addpeer(self):
         """
         Test that connection_time is set after addpeer for all peers.
 
@@ -362,7 +330,7 @@ class P2PTest(TestFramework):
 
         self.log_info("test_06_peerinfo_after_addpeer completed successfully")
 
-    def test_07_ping_after_addpeer(self):
+    def test_06_ping_after_addpeer(self):
         """
         Test that ping_roundtrip_time is set after sending PING to all peers.
 

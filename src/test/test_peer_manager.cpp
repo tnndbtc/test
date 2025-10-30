@@ -420,3 +420,27 @@ TEST(PeerManager_BroadcastMessage_DifferentTypes) {
     ASSERT_EQUAL(manager.BroadcastMessage(tx_ids), (size_t)0, "TX_IDS should send to 0 peers");
 }
 
+/**
+ * @brief Test Boost.Asio initialization in PeerManager
+ */
+
+TEST(PeerManager_BoostAsioInitialization) {
+    // Test that PeerManager initializes with Boost.Asio infrastructure
+    // This test verifies the constructor doesn't throw and manager can start/stop
+    CPeerManager manager(8347, 8, 120, 180);
+
+    ASSERT_FALSE(manager.IsRunning(), "Manager should not be running after construction");
+    ASSERT_EQUAL(manager.GetInboundPeerCount(), (size_t)0, "Should have 0 inbound peers initially");
+    ASSERT_EQUAL(manager.GetOutboundPeerCount(), (size_t)0, "Should have 0 outbound peers initially");
+
+    // Start manager (initializes Boost.Asio threads)
+    ASSERT_TRUE(manager.Start(), "Manager should start successfully");
+    ASSERT_TRUE(manager.IsRunning(), "Manager should be running after Start()");
+
+    // Give threads time to initialize
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    // Stop manager (cleans up Boost.Asio resources)
+    manager.Stop();
+    ASSERT_FALSE(manager.IsRunning(), "Manager should not be running after Stop()");
+}

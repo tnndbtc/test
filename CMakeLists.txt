@@ -4,6 +4,11 @@ project(RestDaemon VERSION 1.0.0)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Set policy for Boost (suppress FindBoost warning)
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+endif()
+
 # Find OpenSSL
 find_package(OpenSSL REQUIRED)
 if(OPENSSL_FOUND)
@@ -11,6 +16,17 @@ if(OPENSSL_FOUND)
     message(STATUS "OpenSSL include: ${OPENSSL_INCLUDE_DIR}")
     message(STATUS "OpenSSL libraries: ${OPENSSL_LIBRARIES}")
 endif()
+
+# Find Boost (minimum version 1.70)
+# Note: Boost.Asio can be used header-only (no linking required)
+find_package(Boost 1.70 REQUIRED)
+if(Boost_FOUND)
+    message(STATUS "Boost found: ${Boost_VERSION}")
+    message(STATUS "Boost include: ${Boost_INCLUDE_DIRS}")
+endif()
+
+# Disable deprecated Boost.Asio features
+add_definitions(-DBOOST_ASIO_NO_DEPRECATED)
 
 # Platform detection
 if(WIN32)
@@ -24,7 +40,7 @@ elseif(UNIX)
     add_definitions(-DPLATFORM_LINUX)
 endif()
 
-include_directories(include src ${OPENSSL_INCLUDE_DIR})
+include_directories(include src ${OPENSSL_INCLUDE_DIR} ${Boost_INCLUDE_DIRS})
 
 # ============================================================
 # Thread Naming Library (libbwthreadname.so / .dylib / .dll)
@@ -132,6 +148,7 @@ if(APPLE)
 endif()
 
 # Link logger and threadname to peer
+# Note: Boost.Asio is header-only, no linking required
 target_link_libraries(bwpeer
     PUBLIC bwlogger
     PUBLIC bwthreadname
