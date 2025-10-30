@@ -18,7 +18,7 @@ constexpr int REST_API_PORT = 28443;
 constexpr int P2P_PORT = 28333;
 
 // Maximum number of inbound peer connections (peers connecting to us)
-constexpr int MAX_INBOUND_PEERS = 120;
+constexpr int MAX_INBOUND_PEERS = 32;
 
 // Maximum number of outbound peer connections (we connect to them)
 constexpr int MAX_OUTBOUND_PEERS = 8;

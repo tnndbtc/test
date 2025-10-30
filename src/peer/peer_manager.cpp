@@ -979,6 +979,8 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
     static thread_local int s_worker_id = s_worker_id_counter.fetch_add(1);
     static thread_local bool thread_name_set = false;
     if (!thread_name_set) {
+        // at process level, the thread name can only be changed when boost 
+        // calls this function, because this thread is maintained by boost
         SetThreadName("inbound_worker" + std::to_string(s_worker_id));
         thread_name_set = true;
     }
@@ -1117,7 +1119,9 @@ void CPeerManager::OutboundConnectionThread(CPeerConnection* p_peer) {
     // Set thread name for easier debugging and logging
     // Use format: peer_<address>:<port>
     std::ostringstream oss;
-    oss << "peer_" << p_peer->peer_node.GetAddress() << ":" << p_peer->peer_node.GetPort();
+    // oss << "peer_" << p_peer->peer_node.GetAddress() << ":" << p_peer->peer_node.GetPort();
+    // because set thread function has concern that Linux can only accept up to 15 chars as thread name
+    oss << "peer_" << p_peer->peer_node.GetAddress();
     SetThreadName(oss.str());
 
     LOG_INFO("Connection thread started for peer " + p_peer->peer_node.GetAddress() + ":" + std::to_string(p_peer->peer_node.GetPort()));
