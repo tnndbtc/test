@@ -7,154 +7,18 @@ and verifying they can establish connections via the RPC API.
 
 This test suite covers:
 - Node startup and isolation
+- Port allocation and uniqueness
+- Mining status verification
 - P2P connections via /rpc/addpeer endpoint
 - Peer info queries via /rpc/getpeer endpoint
-- Peer message serialization/deserialization
 - Connection time tracking
-- Different message types (PING, PONG, GET_PEERS, TX_IDS, etc.)
+- Inbound and outbound peer connections
 """
 
 import sys
 import time
 import unittest
-import struct
 from test_framework import TestFramework
-
-
-class MessageType:
-    """
-    P2P message types - must match MessageType namespace in peer_message.h.
-
-    Message format:
-    - 1 byte: Type string length
-    - N bytes: Type string (e.g., "ping", "get_peers")
-    - 4 bytes: Payload length (network byte order / big-endian)
-    - M bytes: Payload data
-    """
-    PING = "ping"
-    PONG = "pong"
-    GET_PEERS = "get_peers"
-    PEERS = "peers"
-    TX_IDS = "tx_ids"
-    GET_TX = "get_tx"
-    TX = "tx"
-    GET_BLOCK = "get_block"
-    BLOCK = "block"
-    GET_CHAIN = "get_chain"
-    CHAIN_INFO = "chain_info"
-    UNKNOWN = "unknown"
-
-    @staticmethod
-    def is_valid(msg_type):
-        """Check if a message type string is valid."""
-        valid_types = {
-            MessageType.PING, MessageType.PONG, MessageType.GET_PEERS,
-            MessageType.PEERS, MessageType.TX_IDS, MessageType.GET_TX,
-            MessageType.TX, MessageType.GET_BLOCK, MessageType.BLOCK,
-            MessageType.GET_CHAIN, MessageType.CHAIN_INFO
-        }
-        return msg_type in valid_types
-
-
-class P2PMessage:
-    """
-    Helper class for P2P message serialization/deserialization.
-
-    Matches CPeerMessage format from peer_message.h:
-    - 1 byte: Type string length (uint8_t)
-    - N bytes: Type string (e.g., "ping", "get_peers")
-    - 4 bytes: Payload length (uint32_t, network byte order)
-    - M bytes: Payload data
-    """
-
-    MIN_HEADER_SIZE = 5  # 1 byte type_length + 0 bytes type + 4 bytes payload_length
-
-    def __init__(self, msg_type=MessageType.UNKNOWN, payload=b""):
-        """
-        Create a P2P message.
-
-        Args:
-            msg_type: Message type string (from MessageType class)
-            payload: Message payload (bytes or string)
-        """
-        self.msg_type = msg_type
-        if isinstance(payload, str):
-            self.payload = payload.encode('utf-8')
-        else:
-            self.payload = payload
-
-    def serialize(self):
-        """
-        Serialize message to bytes for network transmission.
-
-        Returns:
-            bytes: Serialized message [type_length][type_string][payload_length][payload]
-        """
-        # Convert type to bytes
-        type_bytes = self.msg_type.encode('utf-8')
-        type_len = len(type_bytes)
-
-        # Pack as: 1 byte type_length + N bytes type + 4 bytes payload_length + M bytes payload
-        result = struct.pack('B', type_len)  # Type length (1 byte)
-        result += type_bytes                  # Type string (N bytes)
-        result += struct.pack('!I', len(self.payload))  # Payload length (4 bytes, big-endian)
-        result += self.payload                # Payload data (M bytes)
-
-        return result
-
-    @staticmethod
-    def deserialize(data):
-        """
-        Deserialize message from bytes.
-
-        Args:
-            data: Raw bytes from network
-
-        Returns:
-            P2PMessage: Deserialized message, or None if invalid
-        """
-        if len(data) < 1:
-            return None
-
-        offset = 0
-
-        # 1. Parse type length (1 byte)
-        type_len = struct.unpack('B', data[offset:offset+1])[0]
-        offset += 1
-
-        # 2. Check if we have enough data for type string
-        if len(data) < offset + type_len:
-            return None
-
-        # 3. Parse type string (N bytes)
-        msg_type = data[offset:offset+type_len].decode('utf-8')
-        offset += type_len
-
-        # 4. Check if we have enough data for payload length
-        if len(data) < offset + 4:
-            return None
-
-        # 5. Parse payload length (4 bytes, big-endian)
-        payload_len = struct.unpack('!I', data[offset:offset+4])[0]
-        offset += 4
-
-        # 6. Check if we have enough data for payload
-        if len(data) < offset + payload_len:
-            return None
-
-        # 7. Extract payload
-        payload = data[offset:offset+payload_len]
-
-        return P2PMessage(msg_type, payload)
-
-    def get_type_string(self):
-        """Get string representation of message type."""
-        return self.msg_type.upper()
-
-    def __str__(self):
-        """String representation of message."""
-        payload_preview = self.payload[:20] + b"..." if len(self.payload) > 20 else self.payload
-        return f"P2PMessage({self.get_type_string()}, {len(self.payload)} bytes, payload={payload_preview})"
 
 
 class P2PTest(TestFramework):
@@ -209,9 +73,9 @@ class P2PTest(TestFramework):
             inbound = peer_info.get('inbound_peers', 0)
             self.log_info(f"setup: Node{i} peer counts: total={total}, outbound={outbound}, inbound={inbound}")
 
-    def test_nodes_are_running(self):
+    def test_01_nodes_are_running(self):
         """Verify all nodes are running."""
-        self.log_info("test_nodes_are_running: Verifying all nodes are running...")
+        self.log_info("test_01_nodes_are_running: Verifying all nodes are running...")
 
         for test_node in self.test_nodes:
             # Check if process is alive
@@ -222,9 +86,9 @@ class P2PTest(TestFramework):
 
             self.log_info(f"Node {test_node.index} is running")
 
-    def test_port_isolation(self):
+    def test_02_port_isolation(self):
         """Verify nodes are listening on different ports."""
-        self.log_info("test_port_isolation: Verifying port isolation...")
+        self.log_info("test_02_port_isolation: Verifying port isolation...")
 
         ports_used = set()
         base_port = 28443
@@ -243,9 +107,9 @@ class P2PTest(TestFramework):
             ports_used.add(expected_port)
             self.log_info(f"Node {test_node.index} confirmed on unique port {expected_port}")
 
-    def test_mining_status(self):
+    def test_03_mining_status(self):
         """Verify mining is enabled on all nodes (mining starts automatically)."""
-        self.log_info("test_mining_status: Verifying mining status on all nodes...")
+        self.log_info("test_03_mining_status: Verifying mining status on all nodes...")
 
         for test_node in self.test_nodes:
             chain_info = test_node.get_chain_info()
@@ -258,14 +122,14 @@ class P2PTest(TestFramework):
             )
             self.log_info(f"Node {test_node.index} mining status confirmed: enabled={chain_info['mining_enabled']}")
 
-    def test_inbound_peer_connections(self):
+    def test_04_inbound_peer_connections(self):
         """
         Test that nodes can establish inbound connections.
 
         We'll test that when Node 1 connects to Node 0, Node 0 shows
         an inbound connection and Node 1 shows an outbound connection.
         """
-        self.log_info("test_inbound peer connections: Testing inbound peer connections...")
+        self.log_info("test_04_inbound peer connections: Testing inbound peer connections...")
 
         # For this test, we would need to:
         # 1. Have Node 1 connect to Node 0 (Node 1 makes outbound, Node 0 receives inbound)
@@ -290,7 +154,7 @@ class P2PTest(TestFramework):
 
         self.log_info("Inbound connection test placeholder completed")
 
-    def test_node0_outbound_connections(self):
+    def test_05_node0_outbound_connections(self):
         """
         Test that node0 has established outbound connections to node1, node2, and node3.
 
@@ -298,8 +162,9 @@ class P2PTest(TestFramework):
         - Peer connections were established in setup()
         - Peer info can be queried via get_peer_info()
         - Connections remain stable during the test
+        - ping_roundtrip_time is 0 for all peers (no PING sent yet)
         """
-        self.log_info("test_node0 outbound connections via TestNode: Testing node0 outbound connections via TestNode...")
+        self.log_info("test_05_node0 outbound connections via TestNode: Testing node0 outbound connections via TestNode...")
 
         # Connections were established in setup()
         node0 = self.test_nodes[0]
@@ -340,6 +205,17 @@ class P2PTest(TestFramework):
             "Total peers should be non-negative"
         )
 
+        # Verify ping_roundtrip_time is 0 for all peers (no PING sent yet)
+        self.log_info("Verifying ping_roundtrip_time is 0 for all peers (no PING sent yet)...")
+        for i, peer in enumerate(peer_list):
+            ping_roundtrip_time = peer.get("ping_roundtrip_time", -1)
+            self.assert_equal(
+                ping_roundtrip_time,
+                0,
+                f"Peer {i} should have ping_roundtrip_time=0 (no PING sent yet), got {ping_roundtrip_time}"
+            )
+            self.log_info(f"Peer {i}: ping_roundtrip_time={ping_roundtrip_time} (correct)")
+
         # Verify nodes are still responsive after peer connections
         self.log_info("Verifying all nodes remain responsive after peer connections...")
         for test_node in self.test_nodes:
@@ -353,173 +229,7 @@ class P2PTest(TestFramework):
             f"({self.successful_connections}/3 connections established)"
         )
 
-    # ==================================================================
-    # P2P Message Protocol Tests
-    # ==================================================================
-
-    def test_message_serialization(self):
-        """Test P2P message serialization."""
-        self.log_info("test_P2P message serialization: Testing P2P message serialization...")
-
-        # Create a PING message
-        ping_msg = P2PMessage(MessageType.PING)
-        serialized = ping_msg.serialize()
-
-        # Format: [1 byte type_length][4 bytes "ping"][4 bytes payload_length]
-        # Total: 1 + 4 + 4 = 9 bytes
-        self.assert_equal(len(serialized), 9, "PING message should be 9 bytes")
-        self.assert_equal(serialized[0], 4, "First byte should be type length (4)")
-
-        # Verify type string is "ping"
-        type_str = serialized[1:5].decode('utf-8')
-        self.assert_equal(type_str, "ping", "Type string should be 'ping'")
-
-        # Verify payload length is 0 (bytes 5-8, big-endian)
-        payload_len = struct.unpack('!I', serialized[5:9])[0]
-        self.assert_equal(payload_len, 0, "PING message should have 0 payload length")
-
-        self.log_info("Message serialization test completed")
-
-    def test_message_deserialization(self):
-        """Test P2P message deserialization."""
-        self.log_info("test_P2P message deserialization: Testing P2P message deserialization...")
-
-        # Create a raw PONG message manually
-        # Format: [1 byte type_length][4 bytes "pong"][4 bytes payload_length]
-        msg_type = MessageType.PONG
-        type_bytes = msg_type.encode('utf-8')
-        payload = b""
-
-        raw_msg = struct.pack('B', len(type_bytes))  # Type length
-        raw_msg += type_bytes                         # Type string
-        raw_msg += struct.pack('!I', len(payload))   # Payload length
-        raw_msg += payload                            # Payload data
-
-        # Deserialize
-        pong_msg = P2PMessage.deserialize(raw_msg)
-
-        self.assert_true(pong_msg is not None, "Deserialization should succeed")
-        self.assert_equal(pong_msg.msg_type, MessageType.PONG, "Message type should be PONG")
-        self.assert_equal(len(pong_msg.payload), 0, "Payload should be empty")
-
-        self.log_info("Message deserialization test completed")
-
-    def test_message_round_trip(self):
-        """Test message serialization followed by deserialization."""
-        self.log_info("test_message round-trip serialization: Testing message round-trip serialization...")
-
-        # Create a GET_PEERS message
-        original = P2PMessage(MessageType.GET_PEERS)
-
-        # Serialize and deserialize
-        serialized = original.serialize()
-        deserialized = P2PMessage.deserialize(serialized)
-
-        self.assert_true(deserialized is not None, "Round-trip should succeed")
-        self.assert_equal(deserialized.msg_type, original.msg_type, "Message type should match")
-        self.assert_equal(deserialized.payload, original.payload, "Payload should match")
-
-        self.log_info("Message round-trip test completed")
-
-    def test_message_types(self):
-        """Test all message types can be serialized/deserialized."""
-        self.log_info("test_all message types: Testing all message types...")
-
-        message_types = [
-            MessageType.PING,
-            MessageType.PONG,
-            MessageType.GET_PEERS,
-            MessageType.PEERS,
-            MessageType.TX_IDS,
-            MessageType.GET_TX,
-            MessageType.TX,
-            MessageType.GET_BLOCK,
-            MessageType.BLOCK,
-            MessageType.GET_CHAIN,
-            MessageType.CHAIN_INFO
-        ]
-
-        for msg_type in message_types:
-            # Create message
-            msg = P2PMessage(msg_type)
-
-            # Serialize and deserialize
-            serialized = msg.serialize()
-            deserialized = P2PMessage.deserialize(serialized)
-
-            self.assert_true(
-                deserialized is not None,
-                f"{msg_type.upper()} should serialize/deserialize"
-            )
-            self.assert_equal(
-                deserialized.msg_type,
-                msg_type,
-                f"{msg_type.upper()} type should match"
-            )
-
-        self.log_info("All message types test completed")
-
-    def test_message_with_payload(self):
-        """Test messages with payload data."""
-        self.log_info("test_messages with payload: Testing messages with payload...")
-
-        # Create TX_IDS message with payload
-        tx_ids = "tx1_abc123,tx2_def456,tx3_ghi789"
-        msg = P2PMessage(MessageType.TX_IDS, tx_ids)
-
-        # Serialize and deserialize
-        serialized = msg.serialize()
-        deserialized = P2PMessage.deserialize(serialized)
-
-        self.assert_true(deserialized is not None, "Deserialization should succeed")
-        self.assert_equal(deserialized.msg_type, MessageType.TX_IDS, "Type should be TX_IDS")
-        self.assert_equal(
-            deserialized.payload.decode('utf-8'),
-            tx_ids,
-            "Payload should match original"
-        )
-
-        self.log_info("Message with payload test completed")
-
-    def test_message_empty_payload(self):
-        """Test messages with empty payload."""
-        self.log_info("test_messages with empty payload: Testing messages with empty payload...")
-
-        # Create message with empty string payload
-        msg = P2PMessage(MessageType.GET_CHAIN, "")
-
-        # Format: [1 byte type_length][9 bytes "get_chain"][4 bytes payload_length][0 bytes payload]
-        # Total: 1 + 9 + 4 = 14 bytes
-        serialized = msg.serialize()
-        self.assert_equal(len(serialized), 14, "Empty payload message should be 14 bytes")
-
-        deserialized = P2PMessage.deserialize(serialized)
-        self.assert_true(deserialized is not None, "Deserialization should succeed")
-        self.assert_equal(len(deserialized.payload), 0, "Payload should be empty")
-
-        self.log_info("Empty payload test completed")
-
-    def test_message_large_payload(self):
-        """Test messages with large payload."""
-        self.log_info("test_messages with large payload: Testing messages with large payload...")
-
-        # Create message with 1000-byte payload
-        large_payload = b"X" * 1000
-        msg = P2PMessage(MessageType.BLOCK, large_payload)
-
-        # Format: [1 byte type_length][5 bytes "block"][4 bytes payload_length][1000 bytes payload]
-        # Total: 1 + 5 + 4 + 1000 = 1010 bytes
-        serialized = msg.serialize()
-        self.assert_equal(len(serialized), 1010, "Serialized size should be 1010 bytes")
-
-        deserialized = P2PMessage.deserialize(serialized)
-        self.assert_true(deserialized is not None, "Deserialization should succeed")
-        self.assert_equal(len(deserialized.payload), 1000, "Payload size should be 1000")
-        self.assert_equal(deserialized.payload, large_payload, "Payload should match")
-
-        self.log_info("Large payload test completed")
-
-    def test_peerinfo_after_addpeer(self):
+    def test_06_peerinfo_after_addpeer(self):
         """
         Test that connection_time is set after addpeer for all peers.
 
@@ -528,7 +238,7 @@ class P2PTest(TestFramework):
         - Node0's getpeer shows 3 peers with connection_time set
         - Each of nodes 1, 2, 3 show connection_time is set for their connection
         """
-        self.log_info("test_peerinfo_after_addpeer: Testing connection_time after addpeer...")
+        self.log_info("test_06_peerinfo_after_addpeer: Testing connection_time after addpeer...")
 
         # Connections were established in setup()
         node0 = self.test_nodes[0]
@@ -650,7 +360,88 @@ class P2PTest(TestFramework):
                 f"connection_time={connection_time}"
             )
 
-        self.log_info("test_peerinfo_after_addpeer completed successfully")
+        self.log_info("test_06_peerinfo_after_addpeer completed successfully")
+
+    def test_07_ping_after_addpeer(self):
+        """
+        Test that ping_roundtrip_time is set after sending PING to all peers.
+
+        This test verifies:
+        - Send /rpc/ping to Node0 to trigger PING messages to all peers
+        - Wait 1 second for PONG responses
+        - Query Node0's peer info
+        - Verify ping_roundtrip_time is NOT 0 for all 3 peers
+        """
+        self.log_info("test_07_ping_after_addpeer: Testing ping_roundtrip_time after PING...")
+
+        node0 = self.test_nodes[0]
+
+        # Verify connections exist
+        self.assert_true(
+            self.successful_connections == 3,
+            f"Node0 should have 3 connections established, got {self.successful_connections}"
+        )
+
+        # Send PING to all peers via /rpc/ping endpoint
+        self.log_info("Sending /rpc/ping to Node0...")
+        response = node0.post("/rpc/ping")
+
+        self.assert_equal(
+            response.status_code,
+            200,
+            f"/rpc/ping should return 200, got {response.status_code}"
+        )
+
+        ping_result = response.json()
+        self.assert_equal(
+            ping_result.get("status"),
+            "success",
+            "/rpc/ping should return success status"
+        )
+
+        peers_count = ping_result.get("peers_count", 0)
+        self.log_info(f"PING sent to {peers_count} peer(s)")
+        self.assert_equal(
+            peers_count,
+            3,
+            f"PING should be sent to 3 peers, got {peers_count}"
+        )
+
+        # Wait for PONG responses
+        self.log_info("Waiting 1 second for PONG responses...")
+        time.sleep(1)
+
+        # Query peer info again
+        self.log_info("Querying Node0 peer info after PING...")
+        peer_info = node0.get_peer_info()
+
+        self.assert_equal(
+            peer_info.get("status"),
+            "success",
+            "get_peer_info should return success"
+        )
+
+        peers_list = peer_info.get("peers", [])
+        self.assert_equal(
+            len(peers_list),
+            3,
+            f"Node0 should have 3 peers, got {len(peers_list)}"
+        )
+
+        # Verify ping_roundtrip_time is NOT 0 for all peers
+        self.log_info("Verifying ping_roundtrip_time is NOT 0 for all peers...")
+        for i, peer in enumerate(peers_list):
+            ping_roundtrip_time = peer.get("ping_roundtrip_time", 0)
+            self.assert_true(
+                ping_roundtrip_time > 0,
+                f"Peer {i} should have ping_roundtrip_time > 0 after PING, got {ping_roundtrip_time}"
+            )
+            self.log_info(
+                f"Peer {i}: address={peer.get('address')}, port={peer.get('port')}, "
+                f"ping_roundtrip_time={ping_roundtrip_time} ms"
+            )
+
+        self.log_info("test_07_ping_after_addpeer completed successfully")
 
 
 if __name__ == "__main__":
