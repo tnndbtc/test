@@ -4,11 +4,11 @@
 // CPeerNode implementation
 
 CPeerNode::CPeerNode()
-    : str_address(""), n_port(0), n_connection_time(0), d_ping_roundtrip_time(0.0) {
+    : str_address(""), n_port(0), n_connection_time(0), d_ping_roundtrip_time(0.0), f_inbound(false) {
 }
 
 CPeerNode::CPeerNode(const std::string& str_addr, int n_port_num)
-    : str_address(str_addr), n_port(n_port_num), n_connection_time(0), d_ping_roundtrip_time(0.0) {
+    : str_address(str_addr), n_port(n_port_num), n_connection_time(0), d_ping_roundtrip_time(0.0), f_inbound(false) {
 }
 
 std::string CPeerNode::GetAddress() const {
@@ -48,7 +48,8 @@ std::string CPeerNode::GetInfo() const {
     str_info += "  \"port\": " + std::to_string(n_port) + ",\n";
     str_info += "  \"identifier\": \"" + GetIdentifier() + "\",\n";
     str_info += "  \"connection_time\": " + std::to_string(n_connection_time) + ",\n";
-    str_info += "  \"ping_roundtrip_time\": " + std::to_string(d_ping_roundtrip_time) + "\n";
+    str_info += "  \"ping_roundtrip_time\": " + std::to_string(d_ping_roundtrip_time) + ",\n";
+    str_info += "  \"inbound\": " + std::string(f_inbound ? "true" : "false") + "\n";
     str_info += "}";
     return str_info;
 }
@@ -67,4 +68,12 @@ double CPeerNode::GetPingRoundtripTime() const {
 
 void CPeerNode::SetPingRoundtripTime(double d_time) {
     d_ping_roundtrip_time = d_time;
+}
+
+bool CPeerNode::IsInbound() const {
+    return f_inbound;
+}
+
+void CPeerNode::SetInbound(bool f_is_inbound) {
+    f_inbound = f_is_inbound;
 }

@@ -661,6 +661,7 @@ void CPeerManager::ListenerThread() {
             int64_t n_now = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
             p_peer->peer_node.SetConnectionTime(n_now);
+            p_peer->peer_node.SetInbound(true);  // Mark as inbound connection
             LOG_INFO("Set connection_time for inbound peer " + std::string(str_ip) + " to " + std::to_string(n_now));
 
             // Add to inbound peers list BEFORE registering socket
@@ -1400,6 +1401,7 @@ bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
     int64_t n_now = std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
     p_peer->peer_node.SetConnectionTime(n_now);
+    p_peer->peer_node.SetInbound(false);  // Mark as outbound connection
     LOG_INFO("Set connection_time for outbound peer " + str_address + " to " + std::to_string(n_now));
 
     // Register outbound socket with async I/O context (same infrastructure as inbound)
@@ -1926,7 +1928,7 @@ void CPeerManager::RotateOutboundConnections() {
     auto now = std::chrono::steady_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_last_rotation_time).count();
 
-    if (elapsed < n_rotation_interval) {
+    if (elapsed < PEER_ROTATION_INTERVAL) {
         return;  // Not time to rotate yet
     }
 
@@ -1985,26 +1987,23 @@ void CPeerManager::EnforceSubnetDiversity() {
         }
     }
 
-    // Disconnect excess connections from same subnet (keep max 3 per /24 subnet)
-    // Exception: Allow unlimited connections from localhost (127.0.0/8) for testing
-    const int n_max_per_subnet = 3;
+    // Disconnect one oldest connection from each subnet that has multiple connections
+    // Since there is one addpeer request, just remove one oldest peer from the same subnet
     int n_disconnected = 0;
 
     for (auto& pair : subnet_connections) {
-        if (pair.second.size() > static_cast<size_t>(n_max_per_subnet)) {
-            // Sort by connection time and disconnect newest connections
+        if (pair.second.size() > 1) {
+            // Sort by connection time (oldest first)
             std::sort(pair.second.begin(), pair.second.end(),
                      [](CPeerConnection* a, CPeerConnection* b) {
                          return a->peer_node.GetConnectionTime() < b->peer_node.GetConnectionTime();
                      });
 
-            // Disconnect excess connections (keep oldest n_max_per_subnet)
-            for (size_t i = n_max_per_subnet; i < pair.second.size(); i++) {
-                LOG_INFO("Enforcing subnet diversity: disconnecting peer from subnet " +
-                         pair.first + ": " + pair.second[i]->peer_node.GetAddress());
-                DisconnectPeer(pair.second[i]);
-                n_disconnected++;
-            }
+            // Disconnect only the oldest connection from this subnet
+            LOG_INFO("Enforcing subnet diversity: disconnecting oldest peer from subnet " +
+                     pair.first + ": " + pair.second[0]->peer_node.GetAddress());
+            DisconnectPeer(pair.second[0]);
+            n_disconnected++;
         }
     }
 
@@ -2025,11 +2024,11 @@ void CPeerManager::IncreaseMisbehaviorScore(const std::string& str_peer_address,
              std::to_string(n_score_increase) + " to " + std::to_string(n_total_score));
 
     // Ban peer if score exceeds threshold
-    if (n_total_score >= n_ban_threshold) {
-        auto ban_expiry = std::chrono::steady_clock::now() + std::chrono::seconds(n_ban_duration);
+    if (n_total_score >= PEER_BAN_THRESHOLD) {
+        auto ban_expiry = std::chrono::steady_clock::now() + std::chrono::seconds(PEER_BAN_DURATION);
         map_banned_peers[str_peer_address] = ban_expiry;
 
-        LOG_ERROR("Peer " + str_peer_address + " banned for " + std::to_string(n_ban_duration) +
+        LOG_ERROR("Peer " + str_peer_address + " banned for " + std::to_string(PEER_BAN_DURATION) +
                  " seconds (score: " + std::to_string(n_total_score) + ")");
 
         // Disconnect peer

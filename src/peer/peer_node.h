@@ -84,6 +84,7 @@ private:
     int n_port;                   ///< Peer listening port
     int64_t n_connection_time;    ///< UNIX UTC timestamp when addpeer request is first sent
     double d_ping_roundtrip_time; ///< Ping round-trip time in milliseconds
+    bool f_inbound;               ///< true if this is an inbound connection, false if outbound
 
 public:
     /**
@@ -193,6 +194,18 @@ public:
      * @param d_time Round-trip time in milliseconds
      */
     void SetPingRoundtripTime(double d_time);
+
+    /**
+     * @brief Check if this is an inbound peer
+     * @return true if peer connected to us (inbound), false if we connected to peer (outbound)
+     */
+    bool IsInbound() const;
+
+    /**
+     * @brief Set whether this is an inbound peer
+     * @param f_is_inbound true for inbound, false for outbound
+     */
+    void SetInbound(bool f_is_inbound);
 };
 
 #endif // PEER_NODE_H

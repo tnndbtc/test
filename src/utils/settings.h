@@ -29,6 +29,15 @@ constexpr int MAX_OUTBOUND_PEERS = 8;
 // Interval in seconds between sending PING messages to peers for keep-alive
 constexpr int PEERS_PING_TIME = 180;
 
+// Peer rotation interval in seconds (30 minutes)
+constexpr int PEER_ROTATION_INTERVAL = 1800;
+
+// Misbehavior score threshold for banning peers
+constexpr int PEER_BAN_THRESHOLD = 100;
+
+// Ban duration in seconds (24 hours)
+constexpr int PEER_BAN_DURATION = 86400;
+
 // Log directory for daemon logs
 const std::string LOG_DIR = "./log";
 

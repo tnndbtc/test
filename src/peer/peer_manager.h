@@ -154,14 +154,11 @@ private:
 
     // Connection rotation
     std::chrono::steady_clock::time_point m_last_rotation_time;  ///< Last time outbound connections were rotated
-    const int n_rotation_interval = 1800;  ///< Rotation interval in seconds (30 minutes)
 
     // Peer banning
     std::map<std::string, int> map_peer_misbehavior;           ///< Map of peer address -> misbehavior score
     std::map<std::string, std::chrono::steady_clock::time_point> map_banned_peers;  ///< Map of banned peer address -> ban expiry time
     mutable std::mutex cs_bans;                                 ///< Mutex protecting ban tracking
-    const int n_ban_threshold = 100;                            ///< Misbehavior score threshold for banning
-    const int n_ban_duration = 86400;                           ///< Ban duration in seconds (24 hours)
 
     /**
      * @brief Main peer management thread function (renamed from PeerThread)
