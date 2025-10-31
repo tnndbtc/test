@@ -3,7 +3,7 @@
 #define BLOCKWEAVE_H
 
 #include "blockcore/block.h"
-#include "blockcore/blockfile.h"
+#include "blockcore/block_file.h"
 #include "blockcore/transaction.h"
 #include "utils/hash.h"
 #include "peer/i_peer_manager.h"

@@ -13,7 +13,7 @@
 
 #include "i_rest_api.h"
 #include "request_queue.h"
-#include "blockcore/blockweave.h"
+#include "blockcore/block_weave.h"
 #include "utils/settings.h"
 #include <string>
 #include <thread>

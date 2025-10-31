@@ -8,7 +8,7 @@
  */
 
 #include "unit_test.h"
-#include "blockcore/blockfile.h"
+#include "blockcore/block_file.h"
 #include "blockcore/block.h"
 #include "blockcore/transaction.h"
 #include "logger/logger.h"

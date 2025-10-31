@@ -1,5 +1,5 @@
-// ============= blockweave.cpp =============
-#include "blockweave.h"
+// ============= block_weave.cpp =============
+#include "block_weave.h"
 #include "logger/logger.h"
 #include "peer/peer_message.h"
 #include <iostream>

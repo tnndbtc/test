@@ -10,7 +10,7 @@
 #ifndef MINING_H
 #define MINING_H
 
-#include "blockweave.h"
+#include "block_weave.h"
 #include <string>
 #include <thread>
 #include <atomic>

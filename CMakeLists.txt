@@ -156,15 +156,15 @@ target_link_libraries(bwpeer
 
 # ============================================================
 # Blockcore Library (libbwblockcore.so / .dylib / .dll)
-# Core blockchain implementation: block, blockweave, transaction, daemon, mining, blockfile
+# Core blockchain implementation: block, block_weave, transaction, daemon, mining, block_file
 # ============================================================
 add_library(bwblockcore SHARED
     src/blockcore/block.cpp
-    src/blockcore/blockweave.cpp
+    src/blockcore/block_weave.cpp
     src/blockcore/transaction.cpp
     src/blockcore/daemon.cpp
     src/blockcore/mining.cpp
-    src/blockcore/blockfile.cpp
+    src/blockcore/block_file.cpp
 )
 
 set_target_properties(bwblockcore PROPERTIES

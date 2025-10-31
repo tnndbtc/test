@@ -1,5 +1,5 @@
 // ============= main.cpp =============
-#include "blockcore/blockweave.h"
+#include "blockcore/block_weave.h"
 #include "blockcore/daemon.h"
 #include "blockcore/mining.h"
 #include "wallet/wallet.h"

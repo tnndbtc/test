@@ -1,7 +1,7 @@
 // ============= test_api_server.cpp =============
 #include "unit_test.h"
 #include "rest/rest_api_server.h"
-#include "blockcore/blockweave.h"
+#include "blockcore/block_weave.h"
 #include "peer/peer_manager.h"
 #include "utils/config.h"
 #include <thread>

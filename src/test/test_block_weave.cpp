@@ -1,6 +1,6 @@
 // ============= test_blockweave.cpp =============
 #include "unit_test.h"
-#include "blockcore/blockweave.h"
+#include "blockcore/block_weave.h"
 #include "blockcore/transaction.h"
 #include <thread>
 #include <chrono>
