@@ -152,7 +152,7 @@ CPeerConnection& CPeerConnection::operator=(CPeerConnection&& other) noexcept {
  * peer connections to avoid vector reallocations during operation.
  * Call Start() to begin accepting connections.
  */
-CPeerManager::CPeerManager(int n_port, int n_max_outbound, int n_max_inbound, int n_ping_time)
+CPeerManager::CPeerManager(int n_port, int n_max_outbound, int n_max_inbound, int n_max_workers, int n_ping_time)
     : n_listen_port(n_port), n_listen_socket(-1),
       n_max_inbound_peers(n_max_inbound), n_max_outbound_peers(n_max_outbound),
       n_peers_ping_time(n_ping_time),
@@ -164,9 +164,9 @@ CPeerManager::CPeerManager(int n_port, int n_max_outbound, int n_max_inbound, in
     // Initialize Boost.Asio I/O infrastructure for inbound connections
     m_io_work = std::make_unique<boost::asio::executor_work_guard<boost::asio::io_context::executor_type>>(
         boost::asio::make_work_guard(m_io_context));
-    m_thread_pool = std::make_unique<boost::asio::thread_pool>(n_max_inbound_peers);
+    m_thread_pool = std::make_unique<boost::asio::thread_pool>(n_max_workers);
 
-    LOG_INFO("Initialized Boost.Asio with " + std::to_string(n_max_inbound_peers) + " worker threads for inbound connections");
+    LOG_INFO("Initialized Boost.Asio with " + std::to_string(n_max_workers) + " worker threads for " + std::to_string(n_max_inbound_peers) + " max inbound connections");
 }
 
 /**
@@ -229,12 +229,14 @@ bool CPeerManager::Start() {
  *
  * Shutdown sequence (thread-safe and idempotent):
  * 1. Check if running (safe to call when stopped)
- * 2. Set stop flags and close listening socket
- * 3. Signal all peer connections to stop (f_active = false)
- * 4. Shutdown and close all peer sockets
- * 5. Join listener and peer management threads
- * 6. Join all peer connection threads
- * 7. Clear peer list
+ * 2. Set stop flags and stop Boost.Asio I/O infrastructure
+ * 3. Close listening socket
+ * 4. Cancel all async operations and close stream descriptors
+ * 5. Signal all peer connections to stop (f_active = false)
+ * 6. Shutdown and close all peer sockets
+ * 7. Join listener, monitor, and peer management threads
+ * 8. Join thread pool workers
+ * 9. Clear peer lists (no per-connection threads to join since Boost.Asio migration)
  *
  * Blocks until all threads have terminated. Uses mutex to safely
  * access peer list during shutdown.
@@ -297,13 +299,13 @@ void CPeerManager::Stop() {
             }
         }
 
-        // Stop outbound peers (thread-per-connection - has m_thread)
-        // Threads will exit when f_active becomes false
+        // Stop outbound peers (async I/O - descriptors already closed above)
         for (auto& p_peer : m_outbound_peers) {
             if (p_peer) {
                 p_peer->f_active = false;
                 p_peer->f_connected = false;
                 if (p_peer->n_socket >= 0) {
+                    // Socket may already be closed by descriptor, but ensure it's done
                     shutdown(p_peer->n_socket, SHUT_RDWR);
                     close(p_peer->n_socket);
                     p_peer->n_socket = -1;
@@ -330,20 +332,13 @@ void CPeerManager::Stop() {
         m_thread_pool->join();
     }
 
-    // Wait for all peer connection threads to finish
+    // Clear peer lists (all peers now use async I/O, no threads to join)
     {
         std::lock_guard<std::mutex> lock(cs_peers);
 
-        // Inbound peers: No threads to join (using async I/O)
-        // Just clear the list - stream_descriptors already closed
+        // Both inbound and outbound peers use async I/O - no threads to join
+        // Stream descriptors already closed above
         m_inbound_peers.clear();
-
-        // Outbound peers: Join threads (thread-per-connection model)
-        for (auto& p_peer : m_outbound_peers) {
-            if (p_peer && p_peer->m_thread.joinable()) {
-                p_peer->m_thread.join();
-            }
-        }
         m_outbound_peers.clear();
     }
 
@@ -721,6 +716,58 @@ void CPeerManager::RegisterInboundSocket(int n_socket_fd, const std::string& str
 }
 
 /**
+ * @brief Register outbound socket with async I/O context
+ * @param n_socket_fd Socket file descriptor
+ * @param str_address Peer IP address
+ * @param n_port Peer port
+ *
+ * Wraps the socket file descriptor in a Boost.Asio stream_descriptor
+ * and registers an async_read_some handler for non-blocking I/O.
+ * The stream_descriptor takes ownership of the socket FD.
+ *
+ * This function is called by ConnectToPeer after establishing an
+ * outbound connection. The async I/O allows monitoring both inbound
+ * and outbound sockets with the same monitor thread.
+ */
+void CPeerManager::RegisterOutboundSocket(int n_socket_fd, const std::string& str_address, int n_port) {
+    try {
+        // Create stream_descriptor to wrap the socket
+        // This transfers ownership of the socket FD to Boost.Asio
+        auto p_descriptor = std::make_shared<boost::asio::posix::stream_descriptor>(m_io_context, n_socket_fd);
+
+        // Store descriptor in map for later access
+        {
+            std::lock_guard<std::mutex> lock(cs_inbound_descriptors);
+            map_inbound_descriptors[n_socket_fd] = p_descriptor;
+        }
+
+        LOG_INFO("Registered outbound socket " + std::to_string(n_socket_fd) +
+                 " for async I/O (" + str_address + ":" + std::to_string(n_port) + ")");
+
+        // Allocate read buffer (8KB for P2P messages)
+        auto p_buffer = std::make_shared<std::vector<uint8_t>>(8192);
+
+        // Start async read operation
+        // When data arrives, HandleAsyncRead will be called
+        // async_read_some() is NON-BLOCKING registration, not actual I/O
+        p_descriptor->async_read_some(
+            boost::asio::buffer(*p_buffer),
+            [this, n_socket_fd, p_buffer](const boost::system::error_code& ec, size_t n_bytes_transferred) {
+                HandleAsyncRead(ec, n_bytes_transferred, n_socket_fd, p_buffer);
+            }
+        );
+
+        LOG_TRACE("Started async_read_some on outbound socket " + std::to_string(n_socket_fd));
+    }
+    catch (const std::exception& e) {
+        LOG_ERROR("Failed to register outbound socket " + std::to_string(n_socket_fd) + ": " + std::string(e.what()));
+
+        // Clean up socket if registration failed
+        close(n_socket_fd);
+    }
+}
+
+/**
  * @brief Async read completion handler for inbound sockets
  * @param ec Boost error code from async operation
  * @param n_bytes_transferred Number of bytes read
@@ -981,20 +1028,32 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
     if (!thread_name_set) {
         // at process level, the thread name can only be changed when boost 
         // calls this function, because this thread is maintained by boost
-        SetThreadName("inbound_worker" + std::to_string(s_worker_id));
+        SetThreadName("p2p_worker" + std::to_string(s_worker_id));
         thread_name_set = true;
     }
 
     LOG_TRACE("Processing " + std::to_string(n_bytes_received) + " bytes from socket " + std::to_string(n_socket_fd));
 
-    // Find the peer connection for this socket
+    // Find the peer connection for this socket (search both inbound and outbound lists)
     CPeerConnection* p_peer = nullptr;
     {
         std::lock_guard<std::mutex> lock(cs_peers);
+
+        // Search inbound peers first
         for (auto& peer : m_inbound_peers) {
             if (peer && peer->n_socket == n_socket_fd) {
                 p_peer = peer.get();
                 break;
+            }
+        }
+
+        // If not found in inbound, search outbound peers
+        if (!p_peer) {
+            for (auto& peer : m_outbound_peers) {
+                if (peer && peer->n_socket == n_socket_fd) {
+                    p_peer = peer.get();
+                    break;
+                }
             }
         }
     }
@@ -1016,7 +1075,7 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
         if (received_msg.Deserialize(str_data)) {
             // Successfully deserialized a message
             std::string msg_type = received_msg.GetType();
-            LOG_TRACE("Received " + msg_type + " message from inbound peer " + p_peer->peer_node.GetAddress());
+            LOG_TRACE("Received " + msg_type + " message from peer " + p_peer->peer_node.GetAddress());
 
             // Calculate message size and remove from buffer
             // Message size = 1 (type_length) + type_length + 4 (payload_length) + payload_length
@@ -1035,9 +1094,9 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
                              (static_cast<uint32_t>(payload[2]) << 8) |
                              static_cast<uint32_t>(payload[3]);
                     LOG_INFO("Received " + msg_type + " with nonce " + std::to_string(n_nonce) +
-                            " from inbound peer " + p_peer->peer_node.GetAddress() + ", sending PONG");
+                            " from peer " + p_peer->peer_node.GetAddress() + ", sending PONG");
                 } else {
-                    LOG_WARN("Unexpected " + msg_type + " from inbound peer " + p_peer->peer_node.GetAddress() + ", ignore");
+                    LOG_WARN("Unexpected " + msg_type + " from peer " + p_peer->peer_node.GetAddress() + ", ignore");
                     break;
                 }
 
@@ -1048,7 +1107,7 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
                 SendMessageAsync(n_socket_fd, pong_msg);
 
                 LOG_TRACE("Queued PONG response with nonce " + std::to_string(n_nonce) +
-                         " to inbound peer " + p_peer->peer_node.GetAddress());
+                         " to peer " + p_peer->peer_node.GetAddress());
 
             } else if (msg_type == MessageType::PONG) {
                 // Extract nonce from PONG payload
@@ -1070,23 +1129,23 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
                         // Update peer node with ping round-trip time
                         p_peer->peer_node.SetPingRoundtripTime(d_roundtrip_ms);
 
-                        LOG_INFO("Received PONG from inbound peer " + p_peer->peer_node.GetAddress() +
+                        LOG_INFO("Received PONG from peer " + p_peer->peer_node.GetAddress() +
                                 " with matching nonce " + std::to_string(n_nonce) +
                                 ", round-trip time: " + std::to_string(d_roundtrip_ms) + " ms");
                     } else {
-                        LOG_WARN("Received PONG from inbound peer " + p_peer->peer_node.GetAddress() +
+                        LOG_WARN("Received PONG from peer " + p_peer->peer_node.GetAddress() +
                                 " with nonce " + std::to_string(n_nonce) +
                                 " but expected " + std::to_string(p_peer->n_last_ping_nonce));
                     }
                 } else {
-                    LOG_TRACE("Received PONG from inbound peer " + p_peer->peer_node.GetAddress() + " (no nonce)");
+                    LOG_TRACE("Received PONG from peer " + p_peer->peer_node.GetAddress() + " (no nonce)");
                 }
             } else if (msg_type == MessageType::TX_IDS) {
                 std::string str_tx_ids = received_msg.GetPayloadString();
-                LOG_INFO("Received transaction IDs from inbound peer " + p_peer->peer_node.GetAddress() + ": " + str_tx_ids);
+                LOG_INFO("Received transaction IDs from peer " + p_peer->peer_node.GetAddress() + ": " + str_tx_ids);
                 // TODO: Process transaction IDs (e.g., request full transactions if not in mempool)
             } else {
-                LOG_TRACE("Received unknown message type '" + msg_type + "' from inbound peer " + p_peer->peer_node.GetAddress());
+                LOG_TRACE("Received unknown message type '" + msg_type + "' from peer " + p_peer->peer_node.GetAddress());
             }
         } else {
             // Not enough data yet for a complete message, wait for more
@@ -1095,173 +1154,6 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
             break;
         }
     }
-}
-
-/**
- * @brief Connection thread function for individual peer
- * @param p_peer Pointer to peer connection to handle
- *
- * Manages communication with a single peer in dedicated thread.
- * Runs keep-alive loop that:
- * 1. Checks if socket is still valid
- * 2. Handles messages (TODO: not yet implemented)
- * 3. Sleeps 1 second between iterations
- *
- * Exits when peer becomes inactive (f_active = false) or
- * peer manager requests shutdown (f_stop_requested).
- * NULL peer pointer causes immediate return.
- */
-void CPeerManager::OutboundConnectionThread(CPeerConnection* p_peer) {
-    if (!p_peer) {
-        return;
-    }
-
-    // Set thread name for easier debugging and logging
-    // Use format: peer_<address>:<port>
-    std::ostringstream oss;
-    // oss << "peer_" << p_peer->peer_node.GetAddress() << ":" << p_peer->peer_node.GetPort();
-    // because set thread function has concern that Linux can only accept up to 15 chars as thread name
-    oss << "peer_" << p_peer->peer_node.GetAddress();
-    SetThreadName(oss.str());
-
-    LOG_INFO("Connection thread started for peer " + p_peer->peer_node.GetAddress() + ":" + std::to_string(p_peer->peer_node.GetPort()));
-
-    // Set socket to non-blocking mode for receiving
-    SetSocketNonBlocking(p_peer->n_socket, true);
-
-    // Connection keep-alive loop with message handling
-    char buffer[4096];
-    std::string str_receive_buffer;
-
-    // First time try to connect to outbound peer, or being connected
-    if (p_peer->peer_node.GetConnectionTime() == 0) {
-        int64_t n_now = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
-        p_peer->peer_node.SetConnectionTime(n_now);
-        LOG_INFO("Set connection_time for peer " + p_peer->peer_node.GetAddress() + " to " + std::to_string(n_now));
-    }
-    while (p_peer->f_active && !f_stop_requested) {
-        // Check if socket is still connected
-        if (p_peer->n_socket < 0) {
-            LOG_WARN("Peer socket closed: " + p_peer->peer_node.GetAddress());
-            break;
-        }
-
-        // Try to receive data (non-blocking)
-        ssize_t n_bytes_received = recv(p_peer->n_socket, buffer, sizeof(buffer) - 1, 0);
-
-        if (n_bytes_received > 0) {
-            str_receive_buffer += std::string(buffer, n_bytes_received);
-            LOG_TRACE("Received " + std::to_string(n_bytes_received) + " bytes from peer " + p_peer->peer_node.GetAddress());
-
-            // Try to deserialize complete messages from buffer
-            // CPeerMessage format: [1 byte type_length][N bytes type][4 bytes payload_length][M bytes payload]
-            while (str_receive_buffer.size() >= CPeerMessage::GetMinHeaderSize()) {
-                // Try to deserialize a message
-                CPeerMessage received_msg;
-                if (received_msg.Deserialize(str_receive_buffer)) {
-                    // Successfully deserialized a message
-                    std::string msg_type = received_msg.GetType();
-                    LOG_TRACE("Received " + msg_type + " message from peer " + p_peer->peer_node.GetAddress());
-
-                    // Calculate message size and remove from buffer
-                    // Message size = 1 (type_length) + type_length + 4 (payload_length) + payload_length
-                    size_t type_len = static_cast<uint8_t>(str_receive_buffer[0]);
-                    size_t msg_size = 1 + type_len + 4 + received_msg.GetPayloadSize();
-                    str_receive_buffer.erase(0, msg_size);
-
-                    // Handle different message types
-                    if (msg_type == MessageType::PING) {
-                        // Extract nonce from PING payload
-                        const std::vector<uint8_t>& payload = received_msg.GetPayloadBytes();
-                        uint32_t n_nonce = 0;
-                        if (payload.size() >= 4) {
-                            n_nonce = (static_cast<uint32_t>(payload[0]) << 24) |
-                                     (static_cast<uint32_t>(payload[1]) << 16) |
-                                     (static_cast<uint32_t>(payload[2]) << 8) |
-                                     static_cast<uint32_t>(payload[3]);
-                            LOG_INFO("Received " + msg_type + " with nonce " + std::to_string(n_nonce) +
-                                    " from peer " + p_peer->peer_node.GetAddress() + ", sending PONG");
-                        } else {
-                            LOG_WARN("Unexpected " + msg_type + " from peer " + p_peer->peer_node.GetAddress() + ", ignore");
-                            break;
-                        }
-
-                        // Respond with PONG containing the same nonce
-                        CPeerMessage pong_msg(MessageType::PONG, payload);
-
-                        // Send PONG directly through socket (we're already in the connection thread)
-                        std::string str_serialized = pong_msg.Serialize();
-                        ssize_t n_sent = send(p_peer->n_socket, str_serialized.c_str(), str_serialized.length(), 0);
-
-                        if (n_sent > 0) {
-                            LOG_TRACE("Sent PONG response with nonce " + std::to_string(n_nonce) +
-                                     " to peer " + p_peer->peer_node.GetAddress());
-                        } else {
-                            LOG_ERROR("Failed to send PONG to peer " + p_peer->peer_node.GetAddress() +
-                                     " (error: " + std::string(strerror(errno)) + ")");
-                        }
-                    } else if (msg_type == MessageType::PONG) {
-                        // Extract nonce from PONG payload
-                        const std::vector<uint8_t>& payload = received_msg.GetPayloadBytes();
-                        if (payload.size() >= 4) {
-                            uint32_t n_nonce = (static_cast<uint32_t>(payload[0]) << 24) |
-                                              (static_cast<uint32_t>(payload[1]) << 16) |
-                                              (static_cast<uint32_t>(payload[2]) << 8) |
-                                              static_cast<uint32_t>(payload[3]);
-
-                            // Verify nonce matches last sent PING
-                            if (n_nonce == p_peer->n_last_ping_nonce) {
-                                // Calculate round-trip time
-                                auto now = std::chrono::steady_clock::now();
-                                auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-                                    now - p_peer->m_last_ping_send_time);
-                                double d_roundtrip_ms = duration.count() / 1000.0;
-
-                                // Update peer node with ping round-trip time
-                                p_peer->peer_node.SetPingRoundtripTime(d_roundtrip_ms);
-
-                                LOG_INFO("Received PONG from peer " + p_peer->peer_node.GetAddress() +
-                                        " with matching nonce " + std::to_string(n_nonce) +
-                                        ", round-trip time: " + std::to_string(d_roundtrip_ms) + " ms");
-                            } else {
-                                LOG_WARN("Received PONG from peer " + p_peer->peer_node.GetAddress() +
-                                        " with nonce " + std::to_string(n_nonce) +
-                                        " but expected " + std::to_string(p_peer->n_last_ping_nonce));
-                            }
-                        } else {
-                            LOG_TRACE("Received PONG from peer " + p_peer->peer_node.GetAddress() + " (no nonce)");
-                        }
-                    } else if (msg_type == MessageType::TX_IDS) {
-                        std::string str_tx_ids = received_msg.GetPayloadString();
-                        LOG_INFO("Received transaction IDs from peer " + p_peer->peer_node.GetAddress() + ": " + str_tx_ids);
-                        // TODO: Process transaction IDs (e.g., request full transactions if not in mempool)
-                    } else {
-                        LOG_TRACE("Received unknown message type '" + msg_type + "' from peer " + p_peer->peer_node.GetAddress());
-                    }
-                } else {
-                    // Not enough data yet for a complete message, wait for more
-                    break;
-                }
-            }
-        } else if (n_bytes_received == 0) {
-            // Connection closed by peer
-            LOG_INFO("Peer closed connection: " + p_peer->peer_node.GetAddress());
-            break;
-        } else {
-            // Peer no activity yet
-            // Check for errors (EAGAIN/EWOULDBLOCK is normal for non-blocking sockets)
-            if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                LOG_ERROR("Error receiving from peer " + p_peer->peer_node.GetAddress() + ": " + std::string(strerror(errno)));
-                break;
-            }
-        }
-
-        // Sleep briefly to avoid busy-waiting
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-
-    LOG_INFO("Connection thread stopped for peer " + p_peer->peer_node.GetAddress());
 }
 
 /**
@@ -1275,12 +1167,16 @@ void CPeerManager::OutboundConnectionThread(CPeerConnection* p_peer) {
  * 2. Enable TCP keep-alive
  * 3. Convert address string to binary form (inet_pton)
  * 4. Attempt connection (blocking)
- * 5. Create CPeerConnection object with socket
- * 6. Start connection thread for message handling
- * 7. Add to outbound peers list (mutex-protected)
+ * 5. Set socket to non-blocking mode (required for async I/O)
+ * 6. Create CPeerConnection object with socket
+ * 7. Register socket with async I/O context (same as inbound)
+ * 8. Add to outbound peers list (mutex-protected)
  *
  * On any error, closes socket and returns false.
  * This is a private method called by AddPeer() after validation.
+ *
+ * Note: Since Boost.Asio migration, outbound peers use the same async I/O
+ * infrastructure as inbound peers (no dedicated thread per connection).
  */
 bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
     // Create socket
@@ -1312,16 +1208,27 @@ bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
         return false;
     }
 
+    // Set socket to non-blocking mode (required for Boost.Asio async I/O)
+    if (!SetSocketNonBlocking(n_socket, true)) {
+        LOG_ERROR("Failed to set non-blocking mode for peer " + str_address);
+        close(n_socket);
+        return false;
+    }
+
     // Create peer connection object
     auto p_peer = std::make_unique<CPeerConnection>(str_address, n_port);
     p_peer->n_socket = n_socket;
     p_peer->f_connected = true;
     p_peer->f_active = true;
 
-    // Note: connection_time will be set when first PING is received
+    // Set connection_time to current timestamp
+    int64_t n_now = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    p_peer->peer_node.SetConnectionTime(n_now);
+    LOG_INFO("Set connection_time for outbound peer " + str_address + " to " + std::to_string(n_now));
 
-    // Start outbound connection thread (separate from inbound async I/O)
-    p_peer->m_thread = std::thread(&CPeerManager::OutboundConnectionThread, this, p_peer.get());
+    // Register outbound socket with async I/O context (same infrastructure as inbound)
+    RegisterOutboundSocket(n_socket, str_address, n_port);
 
     // Replace the placeholder (nullptr) in the outbound peers list with the actual peer
     // The placeholder was added by AddPeer() to reserve the slot

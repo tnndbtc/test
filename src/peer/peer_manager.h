@@ -171,15 +171,6 @@ private:
      */
     void MonitorInboundSocketThread();
 
-    /**
-     * @brief Outbound connection thread function for individual peer (renamed from ConnectionThread)
-     * @param p_peer Pointer to peer connection to handle
-     *
-     * Handles communication with a single OUTBOUND peer in dedicated thread.
-     * Runs until connection is closed or stop requested.
-     * Used ONLY for outbound connections; inbound uses async I/O.
-     */
-    void OutboundConnectionThread(CPeerConnection* p_peer);
 
     /**
      * @brief Worker thread function for processing inbound socket I/O
@@ -201,6 +192,19 @@ private:
      * Called by ListenerThread after accepting a connection.
      */
     void RegisterInboundSocket(int n_socket_fd, const std::string& str_address, int n_port);
+
+    /**
+     * @brief Register outbound socket with async I/O context
+     * @param n_socket_fd Socket file descriptor
+     * @param str_address Peer IP address
+     * @param n_port Peer port
+     *
+     * Wraps socket in Boost.Asio stream_descriptor and registers
+     * async_read_some handler for non-blocking I/O monitoring.
+     * Called by ConnectToPeer after establishing outbound connection.
+     * Uses same async I/O mechanism as inbound connections.
+     */
+    void RegisterOutboundSocket(int n_socket_fd, const std::string& str_address, int n_port);
 
     /**
      * @brief Async read completion handler for inbound sockets
@@ -323,9 +327,10 @@ public:
      * @param n_port Port to listen on (default: P2P_PORT from settings.h)
      * @param n_max_outbound Maximum number of outbound peers (default: MAX_OUTBOUND_PEERS from settings.h)
      * @param n_max_inbound Maximum number of inbound peers (default: MAX_INBOUND_PEERS from settings.h)
+     * @param n_max_workers Maximum number of inbound worker threads (default: MAX_INBOUND_WORKER_THREADS from settings.h)
      * @param n_ping_time Interval in seconds between PING messages (default: PEERS_PING_TIME from settings.h)
      */
-    CPeerManager(int n_port = P2P_PORT, int n_max_outbound = MAX_OUTBOUND_PEERS, int n_max_inbound = MAX_INBOUND_PEERS, int n_ping_time = PEERS_PING_TIME);
+    CPeerManager(int n_port = P2P_PORT, int n_max_outbound = MAX_OUTBOUND_PEERS, int n_max_inbound = MAX_INBOUND_PEERS, int n_max_workers = MAX_INBOUND_WORKER_THREADS, int n_ping_time = PEERS_PING_TIME);
 
     /**
      * @brief Destructor - stops networking and cleans up resources
