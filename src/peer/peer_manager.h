@@ -13,6 +13,8 @@
 #include <atomic>
 #include <memory>
 #include <map>
+#include <set>
+#include <algorithm>
 #include <boost/asio.hpp>
 #include <boost/asio/thread_pool.hpp>
 #include <boost/asio/posix/stream_descriptor.hpp>
@@ -145,6 +147,21 @@ private:
 
     // PING timer
     std::chrono::steady_clock::time_point m_last_ping_time;  ///< Last time PING was sent to peers
+
+    // Inventory broadcasting and relay
+    std::map<std::string, std::set<std::string>> map_inventory_known;  ///< Map of peer address -> set of known inventory hashes
+    mutable std::mutex cs_inventory;                                   ///< Mutex protecting inventory tracking
+
+    // Connection rotation
+    std::chrono::steady_clock::time_point m_last_rotation_time;  ///< Last time outbound connections were rotated
+    const int n_rotation_interval = 1800;  ///< Rotation interval in seconds (30 minutes)
+
+    // Peer banning
+    std::map<std::string, int> map_peer_misbehavior;           ///< Map of peer address -> misbehavior score
+    std::map<std::string, std::chrono::steady_clock::time_point> map_banned_peers;  ///< Map of banned peer address -> ban expiry time
+    mutable std::mutex cs_bans;                                 ///< Mutex protecting ban tracking
+    const int n_ban_threshold = 100;                            ///< Misbehavior score threshold for banning
+    const int n_ban_duration = 86400;                           ///< Ban duration in seconds (24 hours)
 
     /**
      * @brief Main peer management thread function (renamed from PeerThread)
@@ -320,6 +337,76 @@ private:
      * @return true if mode set successfully
      */
     bool SetSocketNonBlocking(int n_socket, bool f_non_blocking);
+
+    // Helper methods
+
+    /**
+     * @brief Mark inventory as known by a peer
+     * @param str_peer_address Peer address
+     * @param str_inventory_hash Inventory hash
+     */
+    void MarkInventoryKnown(const std::string& str_peer_address, const std::string& str_inventory_hash);
+
+    /**
+     * @brief Check if peer knows about inventory
+     * @param str_peer_address Peer address
+     * @param str_inventory_hash Inventory hash
+     * @return true if peer knows about this inventory
+     */
+    bool PeerKnowsInventory(const std::string& str_peer_address, const std::string& str_inventory_hash);
+
+    /**
+     * @brief Broadcast inventory to peers who don't have it
+     * @param str_inventory_hash Inventory hash
+     * @param inv_type Inventory type ('T' for transaction, 'B' for block)
+     */
+    void BroadcastInventory(const std::string& str_inventory_hash, char inv_type);
+
+    /**
+     * @brief Rotate outbound peer connections
+     *
+     * Disconnects 1-2 oldest outbound connections and attempts
+     * to establish new connections to increase network diversity.
+     */
+    void RotateOutboundConnections();
+
+    /**
+     * @brief Check and enforce subnet diversity for inbound connections
+     *
+     * Limits connections per /24 subnet (IPv4) to increase global
+     * network connectivity. Rotates out excess connections from same subnet.
+     */
+    void EnforceSubnetDiversity();
+
+    /**
+     * @brief Increase misbehavior score for peer
+     * @param str_peer_address Peer address
+     * @param n_score_increase Amount to increase score by
+     *
+     * Tracks peer misbehavior. Bans peer if score exceeds threshold.
+     */
+    void IncreaseMisbehaviorScore(const std::string& str_peer_address, int n_score_increase);
+
+    /**
+     * @brief Check if peer is banned
+     * @param str_peer_address Peer address
+     * @return true if peer is currently banned
+     */
+    bool IsPeerBanned(const std::string& str_peer_address);
+
+    /**
+     * @brief Clean up expired bans
+     *
+     * Removes peers from ban list whose ban duration has expired.
+     */
+    void CleanupExpiredBans();
+
+    /**
+     * @brief Extract subnet from IP address
+     * @param str_address IP address
+     * @return Subnet string (e.g., "192.168.1" for /24)
+     */
+    std::string GetSubnet(const std::string& str_address);
 
 public:
     /**

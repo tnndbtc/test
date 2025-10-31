@@ -24,6 +24,7 @@
 #include <errno.h>
 #include <algorithm>
 #include <sstream>
+#include <ctime>
 
 // ============= CPeerConnection Implementation =============
 
@@ -157,7 +158,8 @@ CPeerManager::CPeerManager(int n_port, int n_max_outbound, int n_max_inbound, in
       n_max_inbound_peers(n_max_inbound), n_max_outbound_peers(n_max_outbound),
       n_peers_ping_time(n_ping_time),
       f_running(false), f_stop_requested(false), f_stop_monitor(false),
-      m_last_ping_time(std::chrono::steady_clock::now()) {
+      m_last_ping_time(std::chrono::steady_clock::now()),
+      m_last_rotation_time(std::chrono::steady_clock::now()) {
     m_inbound_peers.reserve(n_max_inbound_peers);
     m_outbound_peers.reserve(n_max_outbound_peers);
 
@@ -528,6 +530,14 @@ void CPeerManager::PeerManagerThread() {
             m_last_ping_time = now;
         }
 
+        // Periodic maintenance tasks
+
+        // Rotate outbound connections (every 30 minutes), enable it after AddressManager is implemented so it can establish new outbound connection
+        // RotateOutboundConnections();
+
+        // Clean up expired bans
+        CleanupExpiredBans();
+
         // Sleep for a bit before next iteration
         std::this_thread::sleep_for(std::chrono::seconds(5));
     }
@@ -573,14 +583,67 @@ void CPeerManager::ListenerThread() {
         inet_ntop(AF_INET, &client_addr.sin_addr, str_ip, INET_ADDRSTRLEN);
         int n_peer_port = ntohs(client_addr.sin_port);
 
+        // Check if peer is banned
+        if (IsPeerBanned(std::string(str_ip))) {
+            LOG_WARN("Rejecting connection from banned peer: " + std::string(str_ip));
+            close(n_client_socket);
+            continue;
+        }
+
         // Check if we've reached max inbound peers
         {
             std::lock_guard<std::mutex> lock(cs_peers);
             if (m_inbound_peers.size() >= static_cast<size_t>(n_max_inbound_peers)) {
-                LOG_WARN("Maximum inbound peers reached (" + std::to_string(n_max_inbound_peers) +
-                         "), rejecting connection from " + std::string(str_ip) + ":" + std::to_string(n_peer_port));
-                close(n_client_socket);
-                continue;
+                // Don't reject - instead, drop a random peer from same subnet (if any)
+                std::string str_new_subnet = GetSubnet(std::string(str_ip));
+
+                // Find peers from the same subnet
+                std::vector<size_t> same_subnet_indices;
+                for (size_t i = 0; i < m_inbound_peers.size(); i++) {
+                    if (m_inbound_peers[i] && m_inbound_peers[i]->f_connected) {
+                        std::string str_peer_subnet = GetSubnet(m_inbound_peers[i]->peer_node.GetAddress());
+                        if (str_peer_subnet == str_new_subnet) {
+                            same_subnet_indices.push_back(i);
+                        }
+                    }
+                }
+
+                if (!same_subnet_indices.empty()) {
+                    // Drop a random peer from the same subnet
+                    std::srand(std::time(nullptr));
+                    size_t random_idx = same_subnet_indices[std::rand() % same_subnet_indices.size()];
+
+                    LOG_INFO("Max inbound peers reached. Dropping peer from same subnet " + str_new_subnet +
+                             " to accept new connection: " + m_inbound_peers[random_idx]->peer_node.GetAddress());
+
+                    DisconnectPeer(m_inbound_peers[random_idx].get());
+                } else {
+                    // No peer from same subnet - drop a random peer anyway for network diversity
+                    std::vector<size_t> connected_indices;
+                    for (size_t i = 0; i < m_inbound_peers.size(); i++) {
+                        if (m_inbound_peers[i] && m_inbound_peers[i]->f_connected) {
+                            connected_indices.push_back(i);
+                        }
+                    }
+
+                    if (!connected_indices.empty()) {
+                        std::srand(std::time(nullptr));
+                        size_t random_idx = connected_indices[std::rand() % connected_indices.size()];
+
+                        LOG_INFO("Max inbound peers reached. All peers from different subnets. "
+                                 "Dropping random peer for network diversity: " +
+                                 m_inbound_peers[random_idx]->peer_node.GetAddress() +
+                                 " to accept new connection from " + std::string(str_ip));
+
+                        DisconnectPeer(m_inbound_peers[random_idx].get());
+                    } else {
+                        // No connected peers - should not happen, but reject as fallback
+                        LOG_ERROR("Maximum inbound peers reached but no connected peers found, add peer connection from " +
+                                 std::string(str_ip) + ":" + std::to_string(n_peer_port));
+                        // close(n_client_socket);
+                        // continue;
+                    }
+                }
             }
 
             LOG_INFO("Accepted inbound peer connection from " + std::string(str_ip) + ":" + std::to_string(n_peer_port));
@@ -1142,8 +1205,120 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
                 }
             } else if (msg_type == MessageType::TX_IDS) {
                 std::string str_tx_ids = received_msg.GetPayloadString();
-                LOG_INFO("Received transaction IDs from peer " + p_peer->peer_node.GetAddress() + ": " + str_tx_ids);
-                // TODO: Process transaction IDs (e.g., request full transactions if not in mempool)
+                LOG_INFO("Received transaction IDs from peer " + p_peer->peer_node.GetAddress() + ": " + str_tx_ids.substr(0, 64) + "...");
+
+                // Parse comma-separated transaction IDs
+                std::vector<std::string> vec_tx_ids;
+                size_t n_start = 0;
+                size_t n_comma_pos = str_tx_ids.find(',');
+
+                while (n_comma_pos != std::string::npos) {
+                    std::string str_tx_id = str_tx_ids.substr(n_start, n_comma_pos - n_start);
+                    if (!str_tx_id.empty()) {
+                        vec_tx_ids.push_back(str_tx_id);
+                    }
+                    n_start = n_comma_pos + 1;
+                    n_comma_pos = str_tx_ids.find(',', n_start);
+                }
+
+                // Don't forget the last one
+                if (n_start < str_tx_ids.length()) {
+                    std::string str_tx_id = str_tx_ids.substr(n_start);
+                    if (!str_tx_id.empty()) {
+                        vec_tx_ids.push_back(str_tx_id);
+                    }
+                }
+
+                LOG_INFO("Parsed " + std::to_string(vec_tx_ids.size()) + " transaction IDs from peer " +
+                         p_peer->peer_node.GetAddress());
+
+                // TODO: In Phase 2.1, we'll implement GETDATA message to request missing transactions
+                // For now, we just log the received transaction IDs
+            } else if (msg_type == MessageType::INVENTORY) {
+                std::string str_inventory = received_msg.GetPayloadString();
+                LOG_INFO("Received INVENTORY from peer " + p_peer->peer_node.GetAddress() + ": " +
+                         str_inventory.substr(0, 64) + "...");
+
+                // Parse inventory format: [type][count][hash1][hash2]...[hashN]
+                // Type: 1 byte ('T' for transaction, 'B' for block)
+                // Count: 4 bytes (uint32_t, network byte order)
+                // Hashes: 64 bytes each (SHA-256 as hex string)
+
+                if (str_inventory.length() < 5) {
+                    LOG_ERROR("Invalid INVENTORY message from peer " + p_peer->peer_node.GetAddress() +
+                             ": too short");
+                } else {
+                    char inv_type = str_inventory[0];
+                    uint32_t n_count;
+                    std::memcpy(&n_count, str_inventory.data() + 1, 4);
+                    n_count = ntohl(n_count);  // Convert from network byte order
+
+                    LOG_INFO("INVENTORY type: " + std::string(1, inv_type) + ", count: " +
+                             std::to_string(n_count));
+
+                    // Relay logic - parse hashes and relay to other peers
+                    size_t n_offset = 5;  // Skip type (1 byte) and count (4 bytes)
+                    const size_t n_hash_length = 64;  // SHA-256 hash as hex string
+
+                    for (uint32_t i = 0; i < n_count && n_offset + n_hash_length <= str_inventory.length(); i++) {
+                        std::string str_hash = str_inventory.substr(n_offset, n_hash_length);
+
+                        // Mark this peer as knowing about this inventory
+                        MarkInventoryKnown(p_peer->peer_node.GetAddress(), str_hash);
+
+                        // Relay to other peers who don't know about it
+                        BroadcastInventory(str_hash, inv_type);
+
+                        n_offset += n_hash_length;
+                    }
+
+                    LOG_INFO("Processed and relayed " + std::to_string(n_count) +
+                             " inventory items from peer " + p_peer->peer_node.GetAddress());
+                }
+            } else if (msg_type == MessageType::VERSION) {
+                std::string str_version_info = received_msg.GetPayloadString();
+                LOG_INFO("Received VERSION from peer " + p_peer->peer_node.GetAddress() + ": " +
+                         str_version_info);
+
+                // Parse version format: [version][services][timestamp][addr_recv][addr_from]
+                // For now, just log it. Full handshake protocol can be implemented in Phase 2.3
+
+                // Store version info in peer node
+                // p_peer->peer_node.SetVersion(str_version_info);
+
+                LOG_INFO("Peer " + p_peer->peer_node.GetAddress() + " version handshake received");
+            } else if (msg_type == MessageType::GETDATA) {
+                std::string str_requested_hashes = received_msg.GetPayloadString();
+                LOG_INFO("Received GETDATA from peer " + p_peer->peer_node.GetAddress() + ": " +
+                         str_requested_hashes.substr(0, 64) + "...");
+
+                // Parse requested hashes (comma-separated)
+                std::vector<std::string> vec_requested_hashes;
+                size_t n_start = 0;
+                size_t n_comma_pos = str_requested_hashes.find(',');
+
+                while (n_comma_pos != std::string::npos) {
+                    std::string str_hash = str_requested_hashes.substr(n_start, n_comma_pos - n_start);
+                    if (!str_hash.empty()) {
+                        vec_requested_hashes.push_back(str_hash);
+                    }
+                    n_start = n_comma_pos + 1;
+                    n_comma_pos = str_requested_hashes.find(',', n_start);
+                }
+
+                // Don't forget the last one
+                if (n_start < str_requested_hashes.length()) {
+                    std::string str_hash = str_requested_hashes.substr(n_start);
+                    if (!str_hash.empty()) {
+                        vec_requested_hashes.push_back(str_hash);
+                    }
+                }
+
+                LOG_INFO("Peer " + p_peer->peer_node.GetAddress() + " requested " +
+                         std::to_string(vec_requested_hashes.size()) + " items via GETDATA");
+
+                // TODO: Look up transactions/blocks and respond with TXS or BLOCKS messages
+                // For now, just log the request
             } else {
                 LOG_TRACE("Received unknown message type '" + msg_type + "' from peer " + p_peer->peer_node.GetAddress());
             }
@@ -1419,7 +1594,13 @@ bool CPeerManager::AddPeer(const std::string& str_address, int n_port) {
  */
 size_t CPeerManager::GetOutboundPeerCount() const {
     std::lock_guard<std::mutex> lock(cs_peers);
-    return m_outbound_peers.size();
+    size_t n_count = 0;
+    for (const auto& p_peer : m_outbound_peers) {
+        if (p_peer && p_peer->f_connected) {
+            n_count++;
+        }
+    }
+    return n_count;
 }
 
 /**
@@ -1431,7 +1612,13 @@ size_t CPeerManager::GetOutboundPeerCount() const {
  */
 size_t CPeerManager::GetInboundPeerCount() const {
     std::lock_guard<std::mutex> lock(cs_peers);
-    return m_inbound_peers.size();
+    size_t n_count = 0;
+    for (const auto& p_peer : m_inbound_peers) {
+        if (p_peer && p_peer->f_connected) {
+            n_count++;
+        }
+    }
+    return n_count;
 }
 
 /**
@@ -1680,4 +1867,222 @@ size_t CPeerManager::SendPingToAllPeers() {
 
     LOG_INFO("Sent " + MessageType::PING + " to " + std::to_string(n_sent) + " peers");
     return n_sent;
+}
+
+void CPeerManager::MarkInventoryKnown(const std::string& str_peer_address, const std::string& str_inventory_hash) {
+    std::lock_guard<std::mutex> lock(cs_inventory);
+    map_inventory_known[str_peer_address].insert(str_inventory_hash);
+}
+
+bool CPeerManager::PeerKnowsInventory(const std::string& str_peer_address, const std::string& str_inventory_hash) {
+    std::lock_guard<std::mutex> lock(cs_inventory);
+    auto it = map_inventory_known.find(str_peer_address);
+    if (it == map_inventory_known.end()) {
+        return false;
+    }
+    return it->second.find(str_inventory_hash) != it->second.end();
+}
+
+void CPeerManager::BroadcastInventory(const std::string& str_inventory_hash, char inv_type) {
+    // Build INVENTORY message: [type][count][hash1][hash2]...[hashN]
+    // For single item: [type][count=1][hash]
+    std::string str_payload;
+    str_payload.push_back(inv_type);  // 'T' for transaction, 'B' for block
+
+    uint32_t n_count = 1;
+    uint32_t n_count_network = htonl(n_count);
+    str_payload.append(reinterpret_cast<const char*>(&n_count_network), 4);
+    str_payload.append(str_inventory_hash);
+
+    CPeerMessage inv_message(MessageType::INVENTORY, str_payload);
+
+    std::lock_guard<std::mutex> lock(cs_peers);
+    size_t n_sent = 0;
+
+    // Send to all connected peers who don't know about this inventory
+    for (auto& p_peer : m_inbound_peers) {
+        if (p_peer && p_peer->f_connected && !PeerKnowsInventory(p_peer->peer_node.GetAddress(), str_inventory_hash)) {
+            SendMessageAsync(p_peer->n_socket, inv_message);
+            MarkInventoryKnown(p_peer->peer_node.GetAddress(), str_inventory_hash);
+            n_sent++;
+        }
+    }
+
+    for (auto& p_peer : m_outbound_peers) {
+        if (p_peer && p_peer->f_connected && !PeerKnowsInventory(p_peer->peer_node.GetAddress(), str_inventory_hash)) {
+            SendMessageAsync(p_peer->n_socket, inv_message);
+            MarkInventoryKnown(p_peer->peer_node.GetAddress(), str_inventory_hash);
+            n_sent++;
+        }
+    }
+
+    LOG_INFO("Broadcasted INVENTORY for " + str_inventory_hash.substr(0, 16) + "... to " +
+             std::to_string(n_sent) + " peers");
+}
+
+// ============= Connection Rotation =============
+
+void CPeerManager::RotateOutboundConnections() {
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_last_rotation_time).count();
+
+    if (elapsed < n_rotation_interval) {
+        return;  // Not time to rotate yet
+    }
+
+    std::lock_guard<std::mutex> lock(cs_peers);
+
+    if (m_outbound_peers.size() < 2) {
+        return;  // Need at least 2 peers to rotate
+    }
+
+    // Find oldest 1-2 connections based on connection time
+    std::vector<CPeerConnection*> oldest_peers;
+    for (auto& p_peer : m_outbound_peers) {
+        if (p_peer && p_peer->f_connected) {
+            oldest_peers.push_back(p_peer.get());
+        }
+    }
+
+    // Sort by connection time (oldest first)
+    std::sort(oldest_peers.begin(), oldest_peers.end(),
+              [](CPeerConnection* a, CPeerConnection* b) {
+                  return a->peer_node.GetConnectionTime() < b->peer_node.GetConnectionTime();
+              });
+
+    // Disconnect 1-2 oldest connections
+    int n_to_disconnect = std::min(2, static_cast<int>(oldest_peers.size()));
+    for (int i = 0; i < n_to_disconnect; i++) {
+        LOG_INFO("Rotating out outbound peer: " + oldest_peers[i]->peer_node.GetAddress());
+        DisconnectPeer(oldest_peers[i]);
+    }
+
+    m_last_rotation_time = now;
+    LOG_INFO("Rotated " + std::to_string(n_to_disconnect) + " outbound connections");
+}
+
+// ============= Subnet-Based Inbound Rotation =============
+
+std::string CPeerManager::GetSubnet(const std::string& str_address) {
+    // Extract /24 subnet (first 3 octets) for IPv4
+    size_t n_third_dot = str_address.find_last_of('.');
+    if (n_third_dot != std::string::npos) {
+        return str_address.substr(0, n_third_dot);
+    }
+    return str_address;  // Return full address if parsing fails
+}
+
+void CPeerManager::EnforceSubnetDiversity() {
+    std::lock_guard<std::mutex> lock(cs_peers);
+
+    // Count connections per subnet
+    std::map<std::string, std::vector<CPeerConnection*>> subnet_connections;
+
+    for (auto& p_peer : m_inbound_peers) {
+        if (p_peer && p_peer->f_connected) {
+            std::string str_subnet = GetSubnet(p_peer->peer_node.GetAddress());
+            subnet_connections[str_subnet].push_back(p_peer.get());
+        }
+    }
+
+    // Disconnect excess connections from same subnet (keep max 3 per /24 subnet)
+    // Exception: Allow unlimited connections from localhost (127.0.0/8) for testing
+    const int n_max_per_subnet = 3;
+    int n_disconnected = 0;
+
+    for (auto& pair : subnet_connections) {
+        if (pair.second.size() > static_cast<size_t>(n_max_per_subnet)) {
+            // Sort by connection time and disconnect newest connections
+            std::sort(pair.second.begin(), pair.second.end(),
+                     [](CPeerConnection* a, CPeerConnection* b) {
+                         return a->peer_node.GetConnectionTime() < b->peer_node.GetConnectionTime();
+                     });
+
+            // Disconnect excess connections (keep oldest n_max_per_subnet)
+            for (size_t i = n_max_per_subnet; i < pair.second.size(); i++) {
+                LOG_INFO("Enforcing subnet diversity: disconnecting peer from subnet " +
+                         pair.first + ": " + pair.second[i]->peer_node.GetAddress());
+                DisconnectPeer(pair.second[i]);
+                n_disconnected++;
+            }
+        }
+    }
+
+    if (n_disconnected > 0) {
+        LOG_INFO("Enforced subnet diversity: disconnected " + std::to_string(n_disconnected) + " peers");
+    }
+}
+
+// ============= Malicious Peer Detection and Banning =============
+
+void CPeerManager::IncreaseMisbehaviorScore(const std::string& str_peer_address, int n_score_increase) {
+    std::lock_guard<std::mutex> lock(cs_bans);
+
+    map_peer_misbehavior[str_peer_address] += n_score_increase;
+    int n_total_score = map_peer_misbehavior[str_peer_address];
+
+    LOG_WARN("Peer " + str_peer_address + " misbehavior score increased by " +
+             std::to_string(n_score_increase) + " to " + std::to_string(n_total_score));
+
+    // Ban peer if score exceeds threshold
+    if (n_total_score >= n_ban_threshold) {
+        auto ban_expiry = std::chrono::steady_clock::now() + std::chrono::seconds(n_ban_duration);
+        map_banned_peers[str_peer_address] = ban_expiry;
+
+        LOG_ERROR("Peer " + str_peer_address + " banned for " + std::to_string(n_ban_duration) +
+                 " seconds (score: " + std::to_string(n_total_score) + ")");
+
+        // Disconnect peer
+        std::lock_guard<std::mutex> peer_lock(cs_peers);
+        for (auto& p_peer : m_inbound_peers) {
+            if (p_peer && p_peer->peer_node.GetAddress() == str_peer_address) {
+                DisconnectPeer(p_peer.get());
+                break;
+            }
+        }
+        for (auto& p_peer : m_outbound_peers) {
+            if (p_peer && p_peer->peer_node.GetAddress() == str_peer_address) {
+                DisconnectPeer(p_peer.get());
+                break;
+            }
+        }
+    }
+}
+
+bool CPeerManager::IsPeerBanned(const std::string& str_peer_address) {
+    std::lock_guard<std::mutex> lock(cs_bans);
+
+    auto it = map_banned_peers.find(str_peer_address);
+    if (it == map_banned_peers.end()) {
+        return false;
+    }
+
+    // Check if ban has expired
+    auto now = std::chrono::steady_clock::now();
+    if (now >= it->second) {
+        // Ban expired
+        map_banned_peers.erase(it);
+        map_peer_misbehavior.erase(str_peer_address);
+        LOG_INFO("Ban expired for peer " + str_peer_address);
+        return false;
+    }
+
+    return true;
+}
+
+void CPeerManager::CleanupExpiredBans() {
+    std::lock_guard<std::mutex> lock(cs_bans);
+
+    auto now = std::chrono::steady_clock::now();
+    auto it = map_banned_peers.begin();
+
+    while (it != map_banned_peers.end()) {
+        if (now >= it->second) {
+            LOG_INFO("Removing expired ban for peer " + it->first);
+            map_peer_misbehavior.erase(it->first);
+            it = map_banned_peers.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }

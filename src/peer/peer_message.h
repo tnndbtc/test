@@ -19,13 +19,14 @@ namespace MessageType {
     const std::string PONG = "pong";               ///< Pong response to ping
     const std::string GET_PEERS = "get_peers";     ///< Request list of known peers
     const std::string PEERS = "peers";             ///< Response with peer list
-    const std::string TX_IDS = "tx_ids";           ///< Broadcast transaction IDs
-    const std::string GET_TX = "get_tx";           ///< Request transaction by ID
-    const std::string TX = "tx";                   ///< Transaction data
-    const std::string GET_BLOCK = "get_block";     ///< Request block by hash
-    const std::string BLOCK = "block";             ///< Block data
+    const std::string TX_IDS = "tx_ids";           ///< Announce transaction IDs
+    const std::string TXS = "txs";                 ///< Response with transaction data
+    const std::string BLOCKS = "blocks";           ///< Response with block data
     const std::string GET_CHAIN = "get_chain";     ///< Request blockchain info
     const std::string CHAIN_INFO = "chain_info";   ///< Blockchain info response
+    const std::string INVENTORY = "inv";           ///< Inventory - broadcast hashes of transactions/blocks
+    const std::string VERSION = "version";         ///< Version handshake message
+    const std::string GETDATA = "getdata";         ///< Request full transaction/block by hash
     const std::string UNKNOWN = "unknown";         ///< Unknown/invalid message type
 
     /**

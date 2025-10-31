@@ -48,12 +48,12 @@ TEST(PeerMessage_ConstructorWithType) {
  */
 TEST(PeerMessage_ConstructorWithStringPayload) {
     std::string payload = "Hello, Peer!";
-    CPeerMessage msg(MessageType::TX, payload);
+    CPeerMessage msg(MessageType::TXS, payload);
 
-    ASSERT_TRUE(CompareMessageType(msg.GetType(), MessageType::TX), "Type should be TX");
+    ASSERT_TRUE(CompareMessageType(msg.GetType(), MessageType::TXS), "Type should be TXS");
     ASSERT_EQUAL(msg.GetPayloadSize(), payload.size(), "Payload size should match");
     ASSERT_EQUAL(msg.GetPayloadString(), payload, "Payload string should match");
-    ASSERT_TRUE(msg.IsValid(), "TX message should be valid");
+    ASSERT_TRUE(msg.IsValid(), "TXS message should be valid");
 }
 
 /**
@@ -61,9 +61,9 @@ TEST(PeerMessage_ConstructorWithStringPayload) {
  */
 TEST(PeerMessage_ConstructorWithBinaryPayload) {
     std::vector<uint8_t> payload = {0x00, 0x01, 0x02, 0xFF, 0xFE, 0xFD};
-    CPeerMessage msg(MessageType::BLOCK, payload);
+    CPeerMessage msg(MessageType::BLOCKS, payload);
 
-    ASSERT_TRUE(CompareMessageType(msg.GetType(), MessageType::BLOCK), "Type should be BLOCK");
+    ASSERT_TRUE(CompareMessageType(msg.GetType(), MessageType::BLOCKS), "Type should be BLOCKS");
     ASSERT_EQUAL(msg.GetPayloadSize(), payload.size(), "Payload size should match");
     ASSERT_TRUE(CompareByteVectors(msg.GetPayloadBytes(), payload), "Payload bytes should match");
 }
@@ -118,20 +118,20 @@ TEST(PeerMessage_SerializeSmallPayload) {
  */
 TEST(PeerMessage_SerializeLargePayload) {
     std::string large_payload(1000, 'X');
-    CPeerMessage msg(MessageType::TX, large_payload);
+    CPeerMessage msg(MessageType::TXS, large_payload);
     std::string serialized = msg.Serialize();
 
-    // Format: [1 byte type_length][2 bytes "tx"][4 bytes payload_length][1000 bytes payload]
-    // Should be 1 + 2 + 4 + 1000 = 1007 bytes
-    ASSERT_EQUAL(serialized.size(), (size_t)1007, "Serialized size should be 1007 bytes");
-    ASSERT_EQUAL((uint8_t)serialized[0], (uint8_t)2, "First byte should be type length (2)");
+    // Format: [1 byte type_length][3 bytes "txs"][4 bytes payload_length][1000 bytes payload]
+    // Should be 1 + 3 + 4 + 1000 = 1008 bytes
+    ASSERT_EQUAL(serialized.size(), (size_t)1008, "Serialized size should be 1008 bytes");
+    ASSERT_EQUAL((uint8_t)serialized[0], (uint8_t)3, "First byte should be type length (3)");
 
     // Extract type string
-    std::string type_str = serialized.substr(1, 2);
-    ASSERT_EQUAL(type_str, std::string("tx"), "Type string should be 'tx'");
+    std::string type_str = serialized.substr(1, 3);
+    ASSERT_EQUAL(type_str, std::string("txs"), "Type string should be 'txs'");
 
-    // Extract and verify payload (starts at offset 7: 1 + 2 + 4)
-    std::string extracted_payload = serialized.substr(7);
+    // Extract and verify payload (starts at offset 8: 1 + 3 + 4)
+    std::string extracted_payload = serialized.substr(8);
     ASSERT_EQUAL(extracted_payload, large_payload, "Large payload should match");
 }
 
@@ -240,7 +240,7 @@ TEST(PeerMessage_RoundTripEmpty) {
  */
 TEST(PeerMessage_RoundTripWithPayload) {
     std::string original_payload = "This is a test message!";
-    CPeerMessage original(MessageType::TX, original_payload);
+    CPeerMessage original(MessageType::TXS, original_payload);
 
     std::string serialized = original.Serialize();
 
@@ -258,7 +258,7 @@ TEST(PeerMessage_RoundTripWithPayload) {
  */
 TEST(PeerMessage_RoundTripBinaryWithNulls) {
     std::vector<uint8_t> original_payload = {0x00, 0xFF, 0x00, 0x42, 0x00};
-    CPeerMessage original(MessageType::BLOCK, original_payload);
+    CPeerMessage original(MessageType::BLOCKS, original_payload);
 
     std::string serialized = original.Serialize();
 
@@ -280,10 +280,8 @@ TEST(PeerMessage_TypeStrings) {
     ASSERT_EQUAL(MessageType::GET_PEERS, std::string("get_peers"), "GET_PEERS string");
     ASSERT_EQUAL(MessageType::PEERS, std::string("peers"), "PEERS string");
     ASSERT_EQUAL(MessageType::TX_IDS, std::string("tx_ids"), "TX_IDS string");
-    ASSERT_EQUAL(MessageType::GET_TX, std::string("get_tx"), "GET_TX string");
-    ASSERT_EQUAL(MessageType::TX, std::string("tx"), "TX string");
-    ASSERT_EQUAL(MessageType::GET_BLOCK, std::string("get_block"), "GET_BLOCK string");
-    ASSERT_EQUAL(MessageType::BLOCK, std::string("block"), "BLOCK string");
+    ASSERT_EQUAL(MessageType::TXS, std::string("txs"), "TXS string");
+    ASSERT_EQUAL(MessageType::BLOCKS, std::string("blocks"), "BLOCKS string");
     ASSERT_EQUAL(MessageType::GET_CHAIN, std::string("get_chain"), "GET_CHAIN string");
     ASSERT_EQUAL(MessageType::CHAIN_INFO, std::string("chain_info"), "CHAIN_INFO string");
     ASSERT_EQUAL(MessageType::UNKNOWN, std::string("unknown"), "UNKNOWN string");
@@ -333,10 +331,8 @@ TEST(PeerMessage_MessageTypeValidity) {
     CPeerMessage get_peers(MessageType::GET_PEERS);
     CPeerMessage peers(MessageType::PEERS);
     CPeerMessage tx_ids(MessageType::TX_IDS);
-    CPeerMessage get_tx(MessageType::GET_TX);
-    CPeerMessage tx(MessageType::TX);
-    CPeerMessage get_block(MessageType::GET_BLOCK);
-    CPeerMessage block(MessageType::BLOCK);
+    CPeerMessage txs(MessageType::TXS);
+    CPeerMessage blocks(MessageType::BLOCKS);
     CPeerMessage get_chain(MessageType::GET_CHAIN);
     CPeerMessage chain_info(MessageType::CHAIN_INFO);
     CPeerMessage unknown(MessageType::UNKNOWN);
@@ -346,10 +342,8 @@ TEST(PeerMessage_MessageTypeValidity) {
     ASSERT_TRUE(get_peers.IsValid(), "GET_PEERS should be valid");
     ASSERT_TRUE(peers.IsValid(), "PEERS should be valid");
     ASSERT_TRUE(tx_ids.IsValid(), "TX_IDS should be valid");
-    ASSERT_TRUE(get_tx.IsValid(), "GET_TX should be valid");
-    ASSERT_TRUE(tx.IsValid(), "TX should be valid");
-    ASSERT_TRUE(get_block.IsValid(), "GET_BLOCK should be valid");
-    ASSERT_TRUE(block.IsValid(), "BLOCK should be valid");
+    ASSERT_TRUE(txs.IsValid(), "TXS should be valid");
+    ASSERT_TRUE(blocks.IsValid(), "BLOCKS should be valid");
     ASSERT_TRUE(get_chain.IsValid(), "GET_CHAIN should be valid");
     ASSERT_TRUE(chain_info.IsValid(), "CHAIN_INFO should be valid");
     ASSERT_FALSE(unknown.IsValid(), "UNKNOWN should be invalid");
@@ -360,28 +354,28 @@ TEST(PeerMessage_MessageTypeValidity) {
  */
 TEST(PeerMessage_SerializationFormat) {
     std::string payload = "ABC";
-    CPeerMessage msg(MessageType::TX, payload);
+    CPeerMessage msg(MessageType::TXS, payload);
     std::string serialized = msg.Serialize();
 
-    // Verify format: [1 byte type_length][2 bytes "tx"][4 bytes payload_length][3 bytes "ABC"]
-    // Total: 1 + 2 + 4 + 3 = 10 bytes
-    ASSERT_EQUAL(serialized.size(), (size_t)10, "Total size should be 10 bytes");
+    // Verify format: [1 byte type_length][3 bytes "txs"][4 bytes payload_length][3 bytes "ABC"]
+    // Total: 1 + 3 + 4 + 3 = 11 bytes
+    ASSERT_EQUAL(serialized.size(), (size_t)11, "Total size should be 11 bytes");
 
     // Byte 0: Type length
-    ASSERT_EQUAL((uint8_t)serialized[0], (uint8_t)2, "Byte 0 should be type length (2)");
+    ASSERT_EQUAL((uint8_t)serialized[0], (uint8_t)3, "Byte 0 should be type length (3)");
 
-    // Bytes 1-2: Type string "tx"
-    std::string type_str = serialized.substr(1, 2);
-    ASSERT_EQUAL(type_str, std::string("tx"), "Type string should be 'tx'");
+    // Bytes 1-3: Type string "txs"
+    std::string type_str = serialized.substr(1, 3);
+    ASSERT_EQUAL(type_str, std::string("txs"), "Type string should be 'txs'");
 
-    // Bytes 3-6: Payload length (network byte order)
+    // Bytes 4-7: Payload length (network byte order)
     uint32_t length_network;
-    std::memcpy(&length_network, serialized.data() + 3, 4);
+    std::memcpy(&length_network, serialized.data() + 4, 4);
     uint32_t length = ntohl(length_network);
     ASSERT_EQUAL(length, (uint32_t)3, "Payload length should be 3");
 
-    // Bytes 7-9: Payload
-    std::string extracted_payload = serialized.substr(7, 3);
+    // Bytes 8-10: Payload
+    std::string extracted_payload = serialized.substr(8, 3);
     ASSERT_EQUAL(extracted_payload, payload, "Payload should match");
 }
 
@@ -408,13 +402,13 @@ TEST(PeerMessage_EmptyStringPayload) {
 TEST(PeerMessage_NetworkByteOrder) {
     // Create message with known size payload
     std::string payload(256, 'X'); // 256 bytes
-    CPeerMessage msg(MessageType::BLOCK, payload);
+    CPeerMessage msg(MessageType::BLOCKS, payload);
     std::string serialized = msg.Serialize();
 
-    // Format: [1 byte type_length][5 bytes "block"][4 bytes payload_length][256 bytes payload]
-    // Extract length field (bytes 6-9, after 1 byte type_length + 5 bytes "block")
+    // Format: [1 byte type_length][6 bytes "blocks"][4 bytes payload_length][256 bytes payload]
+    // Extract length field (bytes 7-10, after 1 byte type_length + 6 bytes "blocks")
     uint32_t length_network;
-    std::memcpy(&length_network, serialized.data() + 6, 4);
+    std::memcpy(&length_network, serialized.data() + 7, 4);
     uint32_t length_host = ntohl(length_network);
 
     ASSERT_EQUAL(length_host, (uint32_t)256, "Payload length should be 256 in host byte order");
