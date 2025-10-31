@@ -722,16 +722,6 @@ std::tuple<int, std::string> CRestApiServer::HandleGetChain() {
     return {HTTP_OK, oss.str()};
 }
 
-std::tuple<int, std::string> CRestApiServer::HandleGetBlock(const std::string& str_hash) {
-    // TODO: Implement block retrieval
-    return {HTTP_NOT_IMPLEMENTED, "{\"error\": \"Not implemented\"}"};
-}
-
-std::tuple<int, std::string> CRestApiServer::HandleGetData(const std::string& str_tx_id) {
-    // TODO: Implement data retrieval
-    return {HTTP_NOT_IMPLEMENTED, "{\"error\": \"Not implemented\"}"};
-}
-
 std::tuple<int, std::string> CRestApiServer::HandlePostTransaction(const std::string& str_body) {
     LOG_INFO("HandlePostTransaction: " + str_body);
     try {
@@ -1025,16 +1015,6 @@ std::tuple<int, std::string> CRestApiServer::HandleGET(const std::string& str_en
     // Route based on endpoint
     if (str_endpoint == "/chain") {
         return HandleGetChain();
-    }
-    else if (str_endpoint.find("/block/") == 0) {
-        // Extract block hash from path (e.g., /block/<hash>)
-        std::string str_hash = str_endpoint.substr(7);
-        return HandleGetBlock(str_hash);
-    }
-    else if (str_endpoint.find("/data/") == 0) {
-        // Extract transaction ID from path (e.g., /data/<tx_id>)
-        std::string str_tx_id = str_endpoint.substr(6);
-        return HandleGetData(str_tx_id);
     }
     else if (str_endpoint == "/rpc/getpeer") {
         return HandleRpcGetPeer();

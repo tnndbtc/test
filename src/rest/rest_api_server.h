@@ -109,20 +109,6 @@ private:
     std::tuple<int, std::string> HandleGetChain();
 
     /**
-     * @brief Handle GET /block/:hash endpoint
-     * @param str_hash Block hash to retrieve
-     * @return Tuple of (HTTP status code, JSON response with block data)
-     */
-    std::tuple<int, std::string> HandleGetBlock(const std::string& str_hash);
-
-    /**
-     * @brief Handle GET /data/:txid endpoint
-     * @param str_tx_id Transaction ID to retrieve
-     * @return Tuple of (HTTP status code, transaction data as response body)
-     */
-    std::tuple<int, std::string> HandleGetData(const std::string& str_tx_id);
-
-    /**
      * @brief Handle POST /transaction endpoint
      * @param str_body Request body containing transaction data
      * @return Tuple of (HTTP status code, JSON response with transaction ID)
