@@ -7,6 +7,7 @@
 #include <set>
 #include <map>
 #include <mutex>
+#include <chrono>
 
 /**
  * @class CPeerFilter
@@ -41,6 +42,16 @@ private:
     std::map<std::string, std::set<std::string>> map_tx_peers; ///< TX_ID -> set of peer "address:port"
     std::map<std::string, std::set<std::string>> map_block_peers; ///< Block hash -> set of peer "address:port"
 
+    // RollingBloomFilter-style time-based eviction
+    std::map<std::string, std::chrono::steady_clock::time_point> map_tx_timestamps;    ///< TX_ID -> insertion time
+    std::map<std::string, std::chrono::steady_clock::time_point> map_block_timestamps; ///< Block hash -> insertion time
+    std::chrono::steady_clock::time_point m_last_cleanup_time; ///< Last time cleanup was performed
+
+    // Size targets (RollingBloomFilter-style limits)
+    const size_t n_max_tx_ids = 50000;     ///< Max transaction IDs (10k-50k target)
+    const size_t n_max_block_hashes = 5000; ///< Max block hashes (1k-5k target)
+    const int n_entry_lifetime_seconds = 600; ///< Entry lifetime (10 minutes)
+
     /**
      * @brief Helper to create peer identifier string
      * @param str_address Peer IP address or hostname
@@ -48,6 +59,16 @@ private:
      * @return Peer identifier in format "address:port"
      */
     static std::string GetPeerIdentifier(const std::string& str_address, int n_port);
+
+    /**
+     * @brief Remove old entries based on timestamp (probabilistic eviction)
+     *
+     * Implements RollingBloomFilter-style cleanup:
+     * - Removes entries older than n_entry_lifetime_seconds
+     * - If still over capacity, removes oldest entries
+     * - Should be called periodically during Add operations
+     */
+    void CleanupOldEntries();
 
 public:
     /**

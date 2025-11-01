@@ -8,6 +8,16 @@
 #include <cstdint>
 
 /**
+ * @enum TransactionType
+ * @brief Types of transactions supported by the blockweave
+ */
+enum class TransactionType : uint8_t {
+    TRANSFER = 0,      ///< Basic coin/token transfer
+    STORAGE = 1,       ///< File storage transaction
+    COMPUTE = 2        ///< Computing power transaction
+};
+
+/**
  * @struct CTransaction
  * @brief Represents a data storage transaction in the blockweave
  *
@@ -36,6 +46,12 @@ struct CTransaction {
     size_t m_n_data_size;          ///< Size of data in bytes (cached for performance)
     uint64_t m_n_reward;           ///< Mining reward/fee in smallest currency unit
     int64_t m_n_timestamp;         ///< UTC timestamp (nanoseconds since Unix epoch) when transaction created
+    TransactionType m_type;        ///< Type of transaction
+
+    // Service-specific metadata (stored as JSON string for flexibility)
+    std::string m_str_metadata;    ///< Service-specific data in JSON format
+                                   ///< For FILE_STORAGE: {"file_hash": "...", "storage_duration": 365, "filename": "..."}
+                                   ///< For COMPUTE: {"task_desc": "...", "cpu_cores": 4, "memory_gb": 8, "duration_hours": 2}
 
     /**
      * @brief Construct a new transaction
@@ -48,9 +64,23 @@ struct CTransaction {
      * - Transaction ID from hash of all transaction data
      * - Timestamp from system clock
      * - Data size from data vector
+     * - Sets type to TRANSFER by default
      */
     CTransaction(const std::string& str_owner, const std::string& str_target,
                  const std::vector<uint8_t>& data, uint64_t n_reward);
+
+    /**
+     * @brief Construct a new transaction with type and metadata
+     * @param str_owner Owner/sender address
+     * @param str_target Target/recipient address
+     * @param data Binary data payload
+     * @param n_reward Mining reward/fee
+     * @param type Transaction type
+     * @param str_meta Service-specific metadata (JSON string)
+     */
+    CTransaction(const std::string& str_owner, const std::string& str_target,
+                 const std::vector<uint8_t>& data, uint64_t n_reward,
+                 TransactionType type, const std::string& str_meta = "");
 };
 
 #endif

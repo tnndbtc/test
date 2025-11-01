@@ -15,7 +15,7 @@ std::string CPeerFilter::GetPeerIdentifier(const std::string& str_address, int n
 
 // ============= Constructor =============
 
-CPeerFilter::CPeerFilter() {
+CPeerFilter::CPeerFilter() : m_last_cleanup_time(std::chrono::steady_clock::now()) {
 }
 
 // ============= Public Methods =============
@@ -27,6 +27,15 @@ void CPeerFilter::AddTxIdForPeer(const std::string& str_tx_id, const std::string
     std::lock_guard<std::mutex> lock(cs_filter);
     std::string str_peer = GetPeerIdentifier(str_address, n_port);
     map_tx_peers[str_tx_id].insert(str_peer);
+    map_tx_timestamps[str_tx_id] = std::chrono::steady_clock::now();
+
+    // Periodic cleanup (every 60 seconds)
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_last_cleanup_time).count();
+    if (elapsed >= 60) {
+        CleanupOldEntries();
+        m_last_cleanup_time = now;
+    }
 }
 
 /**
@@ -36,6 +45,15 @@ void CPeerFilter::AddBlockForPeer(const std::string& str_block_hash, const std::
     std::lock_guard<std::mutex> lock(cs_filter);
     std::string str_peer = GetPeerIdentifier(str_address, n_port);
     map_block_peers[str_block_hash].insert(str_peer);
+    map_block_timestamps[str_block_hash] = std::chrono::steady_clock::now();
+
+    // Periodic cleanup (every 60 seconds)
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_last_cleanup_time).count();
+    if (elapsed >= 60) {
+        CleanupOldEntries();
+        m_last_cleanup_time = now;
+    }
 }
 
 /**
@@ -153,4 +171,81 @@ size_t CPeerFilter::GetTxIdCount() const {
 size_t CPeerFilter::GetBlockCount() const {
     std::lock_guard<std::mutex> lock(cs_filter);
     return map_block_peers.size();
+}
+
+// ============= Private Methods =============
+
+/**
+ * @brief Remove old entries based on timestamp (RollingBloomFilter-style)
+ *
+ * Implements probabilistic eviction:
+ * - Removes entries older than n_entry_lifetime_seconds (10 minutes)
+ * - If still over capacity, removes oldest entries
+ * - Target sizes: 50,000 TXs, 5,000 blocks
+ *
+ * Must be called with cs_filter lock already held.
+ */
+void CPeerFilter::CleanupOldEntries() {
+    auto now = std::chrono::steady_clock::now();
+    auto max_age = std::chrono::seconds(n_entry_lifetime_seconds);
+
+    // Clean up old transaction IDs
+    std::vector<std::string> tx_to_remove;
+    for (const auto& pair : map_tx_timestamps) {
+        auto age = now - pair.second;
+        if (age > max_age) {
+            tx_to_remove.push_back(pair.first);
+        }
+    }
+
+    for (const auto& tx_id : tx_to_remove) {
+        map_tx_peers.erase(tx_id);
+        map_tx_timestamps.erase(tx_id);
+    }
+
+    // If still over capacity, remove oldest entries
+    if (map_tx_peers.size() > n_max_tx_ids) {
+        // Sort by timestamp (oldest first)
+        std::vector<std::pair<std::string, std::chrono::steady_clock::time_point>> sorted_txs(
+            map_tx_timestamps.begin(), map_tx_timestamps.end());
+        std::sort(sorted_txs.begin(), sorted_txs.end(),
+                 [](const auto& a, const auto& b) { return a.second < b.second; });
+
+        // Remove oldest entries to get under capacity
+        size_t n_to_remove = map_tx_peers.size() - n_max_tx_ids;
+        for (size_t i = 0; i < n_to_remove && i < sorted_txs.size(); i++) {
+            map_tx_peers.erase(sorted_txs[i].first);
+            map_tx_timestamps.erase(sorted_txs[i].first);
+        }
+    }
+
+    // Clean up old block hashes
+    std::vector<std::string> blocks_to_remove;
+    for (const auto& pair : map_block_timestamps) {
+        auto age = now - pair.second;
+        if (age > max_age) {
+            blocks_to_remove.push_back(pair.first);
+        }
+    }
+
+    for (const auto& block_hash : blocks_to_remove) {
+        map_block_peers.erase(block_hash);
+        map_block_timestamps.erase(block_hash);
+    }
+
+    // If still over capacity, remove oldest entries
+    if (map_block_peers.size() > n_max_block_hashes) {
+        // Sort by timestamp (oldest first)
+        std::vector<std::pair<std::string, std::chrono::steady_clock::time_point>> sorted_blocks(
+            map_block_timestamps.begin(), map_block_timestamps.end());
+        std::sort(sorted_blocks.begin(), sorted_blocks.end(),
+                 [](const auto& a, const auto& b) { return a.second < b.second; });
+
+        // Remove oldest entries to get under capacity
+        size_t n_to_remove = map_block_peers.size() - n_max_block_hashes;
+        for (size_t i = 0; i < n_to_remove && i < sorted_blocks.size(); i++) {
+            map_block_peers.erase(sorted_blocks[i].first);
+            map_block_timestamps.erase(sorted_blocks[i].first);
+        }
+    }
 }
