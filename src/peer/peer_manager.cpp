@@ -34,7 +34,7 @@
  * Initializes all fields to default values (no socket, no connection).
  */
 CPeerConnection::CPeerConnection()
-    : n_socket(-1), peer_node(), f_connected(false), f_active(false), n_last_ping_nonce(0) {}
+    : n_socket(-1), peer_node(std::make_shared<CPeerNode>()), f_connected(false), f_active(false), n_last_ping_nonce(0) {}
 
 /**
  * @brief Construct peer with address and port
@@ -45,7 +45,7 @@ CPeerConnection::CPeerConnection()
  * Call ConnectToPeer() to actually connect.
  */
 CPeerConnection::CPeerConnection(const std::string& str_addr, int n_port_num)
-    : n_socket(-1), peer_node(str_addr, n_port_num), f_connected(false), f_active(false), n_last_ping_nonce(0) {}
+    : n_socket(-1), peer_node(std::make_shared<CPeerNode>(str_addr, n_port_num)), f_connected(false), f_active(false), n_last_ping_nonce(0) {}
 
 /**
  * @brief Construct peer with CPeerNode
@@ -55,7 +55,7 @@ CPeerConnection::CPeerConnection(const std::string& str_addr, int n_port_num)
  * Does not establish connection - call ConnectToPeer() to actually connect.
  */
 CPeerConnection::CPeerConnection(const CPeerNode& node)
-    : n_socket(-1), peer_node(node), f_connected(false), f_active(false), n_last_ping_nonce(0) {}
+    : n_socket(-1), peer_node(std::make_shared<CPeerNode>(node)), f_connected(false), f_active(false), n_last_ping_nonce(0) {}
 
 /**
  * @brief Destructor - closes connection and joins thread
@@ -601,7 +601,7 @@ void CPeerManager::ListenerThread() {
                 std::vector<size_t> same_subnet_indices;
                 for (size_t i = 0; i < m_inbound_peers.size(); i++) {
                     if (m_inbound_peers[i] && m_inbound_peers[i]->f_connected) {
-                        std::string str_peer_subnet = GetSubnet(m_inbound_peers[i]->peer_node.GetAddress());
+                        std::string str_peer_subnet = GetSubnet(m_inbound_peers[i]->peer_node->GetAddress());
                         if (str_peer_subnet == str_new_subnet) {
                             same_subnet_indices.push_back(i);
                         }
@@ -614,7 +614,7 @@ void CPeerManager::ListenerThread() {
                     size_t random_idx = same_subnet_indices[std::rand() % same_subnet_indices.size()];
 
                     LOG_INFO("Max inbound peers reached. Dropping peer from same subnet " + str_new_subnet +
-                             " to accept new connection: " + m_inbound_peers[random_idx]->peer_node.GetAddress());
+                             " to accept new connection: " + m_inbound_peers[random_idx]->peer_node->GetAddress());
 
                     DisconnectPeer(m_inbound_peers[random_idx].get());
                 } else {
@@ -632,7 +632,7 @@ void CPeerManager::ListenerThread() {
 
                         LOG_INFO("Max inbound peers reached. All peers from different subnets. "
                                  "Dropping random peer for network diversity: " +
-                                 m_inbound_peers[random_idx]->peer_node.GetAddress() +
+                                 m_inbound_peers[random_idx]->peer_node->GetAddress() +
                                  " to accept new connection from " + std::string(str_ip));
 
                         DisconnectPeer(m_inbound_peers[random_idx].get());
@@ -660,8 +660,8 @@ void CPeerManager::ListenerThread() {
             // Set connection_time for inbound peer
             int64_t n_now = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
-            p_peer->peer_node.SetConnectionTime(n_now);
-            p_peer->peer_node.SetInbound(true);  // Mark as inbound connection
+            p_peer->peer_node->SetConnectionTime(n_now);
+            p_peer->peer_node->SetInbound(true);  // Mark as inbound connection
             LOG_INFO("Set connection_time for inbound peer " + std::string(str_ip) + " to " + std::to_string(n_now));
 
             // Add to inbound peers list BEFORE registering socket
@@ -898,7 +898,7 @@ void CPeerManager::HandleAsyncRead(const boost::system::error_code& ec,
                     p_peer->f_connected = false;
                     p_peer->f_active = false;
                     p_peer->n_socket = -1;
-                    LOG_INFO("Marked inbound peer " + p_peer->peer_node.GetAddress() + " as disconnected");
+                    LOG_INFO("Marked inbound peer " + p_peer->peer_node->GetAddress() + " as disconnected");
                     break;
                 }
             }
@@ -956,7 +956,7 @@ void CPeerManager::HandleAsyncRead(const boost::system::error_code& ec,
                     p_peer->f_connected = false;
                     p_peer->f_active = false;
                     p_peer->n_socket = -1;
-                    LOG_INFO("Marked inbound peer " + p_peer->peer_node.GetAddress() + " as disconnected (re-register failed)");
+                    LOG_INFO("Marked inbound peer " + p_peer->peer_node->GetAddress() + " as disconnected (re-register failed)");
                     break;
                 }
             }
@@ -1058,7 +1058,7 @@ void CPeerManager::HandleAsyncWrite(const boost::system::error_code& ec,
                     p_peer->f_connected = false;
                     p_peer->f_active = false;
                     p_peer->n_socket = -1;
-                    LOG_INFO("Marked inbound peer " + p_peer->peer_node.GetAddress() + " as disconnected (write error)");
+                    LOG_INFO("Marked inbound peer " + p_peer->peer_node->GetAddress() + " as disconnected (write error)");
                     break;
                 }
             }
@@ -1139,7 +1139,7 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
         if (received_msg.Deserialize(str_data)) {
             // Successfully deserialized a message
             std::string msg_type = received_msg.GetType();
-            LOG_TRACE("Received " + msg_type + " message from peer " + p_peer->peer_node.GetAddress());
+            LOG_TRACE("Received " + msg_type + " message from peer " + p_peer->peer_node->GetAddress());
 
             // Calculate message size and remove from buffer
             // Message size = 1 (type_length) + type_length + 4 (payload_length) + payload_length
@@ -1158,9 +1158,9 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
                              (static_cast<uint32_t>(payload[2]) << 8) |
                              static_cast<uint32_t>(payload[3]);
                     LOG_INFO("Received " + msg_type + " with nonce " + std::to_string(n_nonce) +
-                            " from peer " + p_peer->peer_node.GetAddress() + ", sending PONG");
+                            " from peer " + p_peer->peer_node->GetAddress() + ", sending PONG");
                 } else {
-                    LOG_WARN("Unexpected " + msg_type + " from peer " + p_peer->peer_node.GetAddress() + ", ignore");
+                    LOG_WARN("Unexpected " + msg_type + " from peer " + p_peer->peer_node->GetAddress() + ", ignore");
                     break;
                 }
 
@@ -1171,7 +1171,7 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
                 SendMessageAsync(n_socket_fd, pong_msg);
 
                 LOG_TRACE("Queued PONG response with nonce " + std::to_string(n_nonce) +
-                         " to peer " + p_peer->peer_node.GetAddress());
+                         " to peer " + p_peer->peer_node->GetAddress());
 
             } else if (msg_type == MessageType::PONG) {
                 // Extract nonce from PONG payload
@@ -1191,22 +1191,22 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
                         double d_roundtrip_ms = duration.count() / 1000.0;
 
                         // Update peer node with ping round-trip time
-                        p_peer->peer_node.SetPingRoundtripTime(d_roundtrip_ms);
+                        p_peer->peer_node->SetPingRoundtripTime(d_roundtrip_ms);
 
-                        LOG_INFO("Received PONG from peer " + p_peer->peer_node.GetAddress() +
+                        LOG_INFO("Received PONG from peer " + p_peer->peer_node->GetAddress() +
                                 " with matching nonce " + std::to_string(n_nonce) +
                                 ", round-trip time: " + std::to_string(d_roundtrip_ms) + " ms");
                     } else {
-                        LOG_WARN("Received PONG from peer " + p_peer->peer_node.GetAddress() +
+                        LOG_WARN("Received PONG from peer " + p_peer->peer_node->GetAddress() +
                                 " with nonce " + std::to_string(n_nonce) +
                                 " but expected " + std::to_string(p_peer->n_last_ping_nonce));
                     }
                 } else {
-                    LOG_TRACE("Received PONG from peer " + p_peer->peer_node.GetAddress() + " (no nonce)");
+                    LOG_TRACE("Received PONG from peer " + p_peer->peer_node->GetAddress() + " (no nonce)");
                 }
             } else if (msg_type == MessageType::TX_IDS) {
                 std::string str_tx_ids = received_msg.GetPayloadString();
-                LOG_INFO("Received transaction IDs from peer " + p_peer->peer_node.GetAddress() + ": " + str_tx_ids.substr(0, 64) + "...");
+                LOG_INFO("Received transaction IDs from peer " + p_peer->peer_node->GetAddress() + ": " + str_tx_ids.substr(0, 64) + "...");
 
                 // Parse comma-separated transaction IDs
                 std::vector<std::string> vec_tx_ids;
@@ -1231,66 +1231,99 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
                 }
 
                 LOG_INFO("Parsed " + std::to_string(vec_tx_ids.size()) + " transaction IDs from peer " +
-                         p_peer->peer_node.GetAddress());
+                         p_peer->peer_node->GetAddress());
 
                 // TODO: In Phase 2.1, we'll implement GETDATA message to request missing transactions
                 // For now, we just log the received transaction IDs
             } else if (msg_type == MessageType::INVENTORY) {
                 std::string str_inventory = received_msg.GetPayloadString();
-                LOG_INFO("Received INVENTORY from peer " + p_peer->peer_node.GetAddress() + ": " +
-                         str_inventory.substr(0, 64) + "...");
+                LOG_INFO("Received INVENTORY from peer " + p_peer->peer_node->GetAddress() + ": " +
+                         std::to_string(str_inventory.length()) + " bytes");
 
-                // Parse inventory format: [type][count][hash1][hash2]...[hashN]
-                // Type: 1 byte ('T' for transaction, 'B' for block)
+                // Parse inventory format: [count:4bytes][type:2bytes][hash:64bytes][type:2bytes][hash:64bytes]...
                 // Count: 4 bytes (uint32_t, network byte order)
-                // Hashes: 64 bytes each (SHA-256 as hex string)
+                // For each item: Type (2 bytes, ObjectType::Type) + Hash (64 bytes, SHA-256 hex string)
 
-                if (str_inventory.length() < 5) {
-                    LOG_ERROR("Invalid INVENTORY message from peer " + p_peer->peer_node.GetAddress() +
-                             ": too short");
+                if (str_inventory.length() < 4) {
+                    LOG_ERROR("Invalid INVENTORY message from peer " + p_peer->peer_node->GetAddress() +
+                             ": too short (need at least count field)");
                 } else {
-                    char inv_type = str_inventory[0];
+                    // Parse count
                     uint32_t n_count;
-                    std::memcpy(&n_count, str_inventory.data() + 1, 4);
+                    std::memcpy(&n_count, str_inventory.data(), 4);
                     n_count = ntohl(n_count);  // Convert from network byte order
 
-                    LOG_INFO("INVENTORY type: " + std::string(1, inv_type) + ", count: " +
-                             std::to_string(n_count));
+                    LOG_INFO("INVENTORY count: " + std::to_string(n_count));
 
-                    // Relay logic - parse hashes and relay to other peers
-                    size_t n_offset = 5;  // Skip type (1 byte) and count (4 bytes)
-                    const size_t n_hash_length = 64;  // SHA-256 hash as hex string
+                    // Validate total length: 4 (count) + n_count * (2 (type) + 64 (hash))
+                    const size_t n_item_size = 2 + 64;  // type + hash
+                    const size_t n_expected_length = 4 + (n_count * n_item_size);
 
-                    for (uint32_t i = 0; i < n_count && n_offset + n_hash_length <= str_inventory.length(); i++) {
-                        std::string str_hash = str_inventory.substr(n_offset, n_hash_length);
+                    if (str_inventory.length() < n_expected_length) {
+                        LOG_ERROR("Invalid INVENTORY message from peer " + p_peer->peer_node->GetAddress() +
+                                 ": expected " + std::to_string(n_expected_length) + " bytes, got " +
+                                 std::to_string(str_inventory.length()));
+                    } else {
+                        // Track all inventory items for relay
+                        std::vector<std::pair<ObjectType::Type, std::string>> vec_inventory;
 
-                        // Mark this peer as knowing about this inventory
-                        MarkInventoryKnown(p_peer->peer_node.GetAddress(), str_hash);
+                        // Track missing items for GETDATA request
+                        std::vector<std::pair<ObjectType::Type, std::string>> vec_missing_items;
 
-                        // Relay to other peers who don't know about it
-                        BroadcastInventory(str_hash, inv_type);
+                        // Parse each inventory item
+                        size_t n_offset = 4;  // Skip count field
+                        for (uint32_t i = 0; i < n_count; i++) {
+                            // Read type (2 bytes)
+                            ObjectType::Type obj_type = ReadObjectType(str_inventory.data() + n_offset);
+                            n_offset += 2;
 
-                        n_offset += n_hash_length;
+                            // Read hash (64 bytes)
+                            std::string str_hash = str_inventory.substr(n_offset, 64);
+                            n_offset += 64;
+
+                            // Add to inventory list for relay
+                            vec_inventory.push_back({obj_type, str_hash});
+
+                            // Mark this peer as knowing about this inventory
+                            MarkInventoryKnown(p_peer->peer_node, obj_type, str_hash);
+
+                            // TODO: Check if we need this item (requires blockweave access)
+                            // For now, we'll request everything we don't know about
+                            // This will be optimized later when peer_manager has blockweave access
+                            vec_missing_items.push_back({obj_type, str_hash});
+                        }
+
+                        LOG_INFO("Processed " + std::to_string(n_count) + " inventory items from peer " +
+                                 p_peer->peer_node->GetAddress());
+
+                        // Relay to other peers who don't know about it (called once with full inventory)
+                        if (!vec_inventory.empty()) {
+                            BroadcastInventory(vec_inventory);
+                        }
+
+                        // Request missing items via GETDATA
+                        if (!vec_missing_items.empty()) {
+                            SendGetDataMessage(p_peer->n_socket, vec_missing_items);
+                            LOG_INFO("Sent GETDATA request for " + std::to_string(vec_missing_items.size()) +
+                                     " items to peer " + p_peer->peer_node->GetAddress());
+                        }
                     }
-
-                    LOG_INFO("Processed and relayed " + std::to_string(n_count) +
-                             " inventory items from peer " + p_peer->peer_node.GetAddress());
                 }
             } else if (msg_type == MessageType::VERSION) {
                 std::string str_version_info = received_msg.GetPayloadString();
-                LOG_INFO("Received VERSION from peer " + p_peer->peer_node.GetAddress() + ": " +
+                LOG_INFO("Received VERSION from peer " + p_peer->peer_node->GetAddress() + ": " +
                          str_version_info);
 
                 // Parse version format: [version][services][timestamp][addr_recv][addr_from]
                 // For now, just log it. Full handshake protocol can be implemented in Phase 2.3
 
                 // Store version info in peer node
-                // p_peer->peer_node.SetVersion(str_version_info);
+                // p_peer->peer_node->SetVersion(str_version_info);
 
-                LOG_INFO("Peer " + p_peer->peer_node.GetAddress() + " version handshake received");
+                LOG_INFO("Peer " + p_peer->peer_node->GetAddress() + " version handshake received");
             } else if (msg_type == MessageType::GETDATA) {
                 std::string str_requested_hashes = received_msg.GetPayloadString();
-                LOG_INFO("Received GETDATA from peer " + p_peer->peer_node.GetAddress() + ": " +
+                LOG_INFO("Received GETDATA from peer " + p_peer->peer_node->GetAddress() + ": " +
                          str_requested_hashes.substr(0, 64) + "...");
 
                 // Parse requested hashes (comma-separated)
@@ -1315,13 +1348,13 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
                     }
                 }
 
-                LOG_INFO("Peer " + p_peer->peer_node.GetAddress() + " requested " +
+                LOG_INFO("Peer " + p_peer->peer_node->GetAddress() + " requested " +
                          std::to_string(vec_requested_hashes.size()) + " items via GETDATA");
 
                 // TODO: Look up transactions/blocks and respond with TXS or BLOCKS messages
                 // For now, just log the request
             } else {
-                LOG_TRACE("Received unknown message type '" + msg_type + "' from peer " + p_peer->peer_node.GetAddress());
+                LOG_TRACE("Received unknown message type '" + msg_type + "' from peer " + p_peer->peer_node->GetAddress());
             }
         } else {
             // Not enough data yet for a complete message, wait for more
@@ -1400,8 +1433,8 @@ bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
     // Set connection_time to current timestamp
     int64_t n_now = std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
-    p_peer->peer_node.SetConnectionTime(n_now);
-    p_peer->peer_node.SetInbound(false);  // Mark as outbound connection
+    p_peer->peer_node->SetConnectionTime(n_now);
+    p_peer->peer_node->SetInbound(false);  // Mark as outbound connection
     LOG_INFO("Set connection_time for outbound peer " + str_address + " to " + std::to_string(n_now));
 
     // Register outbound socket with async I/O context (same infrastructure as inbound)
@@ -1452,7 +1485,7 @@ void CPeerManager::DisconnectPeer(CPeerConnection* p_peer) {
         p_peer->n_socket = -1;
     }
 
-    LOG_INFO("Disconnected peer " + p_peer->peer_node.GetAddress());
+    LOG_INFO("Disconnected peer " + p_peer->peer_node->GetAddress());
 }
 
 /**
@@ -1557,7 +1590,7 @@ bool CPeerManager::AddPeer(const std::string& str_address, int n_port) {
 
         // Check if already connected to this peer
         for (const auto& p_peer : m_outbound_peers) {
-            if (p_peer && p_peer->peer_node.GetAddress() == str_address && p_peer->peer_node.GetPort() == n_port) {
+            if (p_peer && p_peer->peer_node->GetAddress() == str_address && p_peer->peer_node->GetPort() == n_port) {
                 LOG_INFO("Already connected to peer " + str_address + ":" + std::to_string(n_port));
                 return false;
             }
@@ -1638,14 +1671,14 @@ std::vector<CPeerNode> CPeerManager::GetConnectedPeers() const {
     // Add inbound peers
     for (const auto& p_peer : m_inbound_peers) {
         if (p_peer && p_peer->f_connected) {
-            peers.push_back(p_peer->peer_node);
+            peers.push_back(*p_peer->peer_node);
         }
     }
 
     // Add outbound peers
     for (const auto& p_peer : m_outbound_peers) {
         if (p_peer && p_peer->f_connected) {
-            peers.push_back(p_peer->peer_node);
+            peers.push_back(*p_peer->peer_node);
         }
     }
 
@@ -1679,10 +1712,10 @@ bool CPeerManager::SendMessageToPeer(const std::string& str_address, int n_port,
 
         // Search in outbound peers
         for (const auto& p_peer : m_outbound_peers) {
-            if (p_peer && p_peer->peer_node.GetAddress() == str_address && p_peer->peer_node.GetPort() == n_port) {
+            if (p_peer && p_peer->peer_node->GetAddress() == str_address && p_peer->peer_node->GetPort() == n_port) {
                 if (p_peer->f_connected && p_peer->n_socket >= 0) {
                     n_target_socket = p_peer->n_socket;
-                    str_peer_id = p_peer->peer_node.GetAddress() + ":" + std::to_string(p_peer->peer_node.GetPort());
+                    str_peer_id = p_peer->peer_node->GetAddress() + ":" + std::to_string(p_peer->peer_node->GetPort());
                 }
                 break;
             }
@@ -1691,10 +1724,10 @@ bool CPeerManager::SendMessageToPeer(const std::string& str_address, int n_port,
         // If not found in outbound, search in inbound peers
         if (n_target_socket == -1) {
             for (const auto& p_peer : m_inbound_peers) {
-                if (p_peer && p_peer->peer_node.GetAddress() == str_address && p_peer->peer_node.GetPort() == n_port) {
+                if (p_peer && p_peer->peer_node->GetAddress() == str_address && p_peer->peer_node->GetPort() == n_port) {
                     if (p_peer->f_connected && p_peer->n_socket >= 0) {
                         n_target_socket = p_peer->n_socket;
-                        str_peer_id = p_peer->peer_node.GetAddress() + ":" + std::to_string(p_peer->peer_node.GetPort());
+                        str_peer_id = p_peer->peer_node->GetAddress() + ":" + std::to_string(p_peer->peer_node->GetPort());
                     }
                     break;
                 }
@@ -1758,7 +1791,7 @@ size_t CPeerManager::BroadcastMessage(const CPeerMessage& message) {
             if (p_peer && p_peer->f_connected && p_peer->n_socket >= 0) {
                 peer_sockets.push_back({
                     p_peer->n_socket,
-                    p_peer->peer_node.GetAddress() + ":" + std::to_string(p_peer->peer_node.GetPort())
+                    p_peer->peer_node->GetAddress() + ":" + std::to_string(p_peer->peer_node->GetPort())
                 });
             }
         }
@@ -1768,7 +1801,7 @@ size_t CPeerManager::BroadcastMessage(const CPeerMessage& message) {
             if (p_peer && p_peer->f_connected && p_peer->n_socket >= 0) {
                 peer_sockets.push_back({
                     p_peer->n_socket,
-                    p_peer->peer_node.GetAddress() + ":" + std::to_string(p_peer->peer_node.GetPort())
+                    p_peer->peer_node->GetAddress() + ":" + std::to_string(p_peer->peer_node->GetPort())
                 });
             }
         }
@@ -1835,7 +1868,7 @@ size_t CPeerManager::SendPingToAllPeers() {
                 if (n_bytes_sent > 0) {
                     n_sent++;
                     LOG_TRACE("Sent " + ping_message.GetType() + " with nonce " + std::to_string(n_nonce) + " to peer " +
-                             p_peer->peer_node.GetIdentifier());
+                             p_peer->peer_node->GetIdentifier());
                 }
             }
         }
@@ -1862,7 +1895,7 @@ size_t CPeerManager::SendPingToAllPeers() {
                 SendMessageAsync(p_peer->n_socket, ping_message);
                 n_sent++;
                 LOG_TRACE("Queued async " + ping_message.GetType() + " with nonce " + std::to_string(n_nonce) + " to inbound peer " +
-                         p_peer->peer_node.GetIdentifier());
+                         p_peer->peer_node->GetIdentifier());
             }
         }
     }
@@ -1871,55 +1904,134 @@ size_t CPeerManager::SendPingToAllPeers() {
     return n_sent;
 }
 
-void CPeerManager::MarkInventoryKnown(const std::string& str_peer_address, const std::string& str_inventory_hash) {
-    std::lock_guard<std::mutex> lock(cs_inventory);
-    map_inventory_known[str_peer_address].insert(str_inventory_hash);
-}
-
-bool CPeerManager::PeerKnowsInventory(const std::string& str_peer_address, const std::string& str_inventory_hash) {
-    std::lock_guard<std::mutex> lock(cs_inventory);
-    auto it = map_inventory_known.find(str_peer_address);
-    if (it == map_inventory_known.end()) {
-        return false;
+void CPeerManager::MarkInventoryKnown(std::shared_ptr<IPeerNode> p_peer_node, ObjectType::Type obj_type, const std::string& str_inventory_hash) {
+    if (!p_peer_node) {
+        return;  // Ignore null peer nodes
     }
-    return it->second.find(str_inventory_hash) != it->second.end();
+
+    std::lock_guard<std::mutex> lock(cs_inventory);
+    map_inventory_known[p_peer_node][obj_type].insert(str_inventory_hash);
 }
 
-void CPeerManager::BroadcastInventory(const std::string& str_inventory_hash, char inv_type) {
-    // Build INVENTORY message: [type][count][hash1][hash2]...[hashN]
-    // For single item: [type][count=1][hash]
-    std::string str_payload;
-    str_payload.push_back(inv_type);  // 'T' for transaction, 'B' for block
+bool CPeerManager::PeerKnowsInventory(std::shared_ptr<IPeerNode> p_peer_node, ObjectType::Type obj_type, const std::string& str_inventory_hash) {
+    if (!p_peer_node) {
+        return false;  // Null peer knows nothing
+    }
 
-    uint32_t n_count = 1;
-    uint32_t n_count_network = htonl(n_count);
-    str_payload.append(reinterpret_cast<const char*>(&n_count_network), 4);
-    str_payload.append(str_inventory_hash);
+    std::lock_guard<std::mutex> lock(cs_inventory);
+    auto it_peer = map_inventory_known.find(p_peer_node);
+    if (it_peer == map_inventory_known.end()) {
+        return false;  // Peer not in map
+    }
 
-    CPeerMessage inv_message(MessageType::INVENTORY, str_payload);
+    auto it_type = it_peer->second.find(obj_type);
+    if (it_type == it_peer->second.end()) {
+        return false;  // Object type not tracked for this peer
+    }
+
+    return it_type->second.find(str_inventory_hash) != it_type->second.end();
+}
+
+void CPeerManager::BroadcastInventory(const std::vector<std::pair<ObjectType::Type, std::string>>& vec_inventory) {
+    if (vec_inventory.empty()) {
+        return;  // Nothing to broadcast
+    }
 
     std::lock_guard<std::mutex> lock(cs_peers);
-    size_t n_sent = 0;
+    size_t n_total_sent = 0;
 
-    // Send to all connected peers who don't know about this inventory
+    // Build inventory per peer (filtering items they already know)
+    std::vector<CPeerConnection*> all_peers;
     for (auto& p_peer : m_inbound_peers) {
-        if (p_peer && p_peer->f_connected && !PeerKnowsInventory(p_peer->peer_node.GetAddress(), str_inventory_hash)) {
-            SendMessageAsync(p_peer->n_socket, inv_message);
-            MarkInventoryKnown(p_peer->peer_node.GetAddress(), str_inventory_hash);
-            n_sent++;
+        if (p_peer && p_peer->f_connected) {
+            all_peers.push_back(p_peer.get());
         }
     }
-
     for (auto& p_peer : m_outbound_peers) {
-        if (p_peer && p_peer->f_connected && !PeerKnowsInventory(p_peer->peer_node.GetAddress(), str_inventory_hash)) {
-            SendMessageAsync(p_peer->n_socket, inv_message);
-            MarkInventoryKnown(p_peer->peer_node.GetAddress(), str_inventory_hash);
-            n_sent++;
+        if (p_peer && p_peer->f_connected) {
+            all_peers.push_back(p_peer.get());
         }
     }
 
-    LOG_INFO("Broadcasted INVENTORY for " + str_inventory_hash.substr(0, 16) + "... to " +
-             std::to_string(n_sent) + " peers");
+    // For each peer, build custom inventory message with items they don't know
+    for (CPeerConnection* p_peer : all_peers) {
+        // Filter inventory to items this peer doesn't know about
+        std::vector<std::pair<ObjectType::Type, std::string>> peer_inventory;
+
+        for (const auto& item : vec_inventory) {
+            if (!PeerKnowsInventory(p_peer->peer_node, item.first, item.second)) {
+                peer_inventory.push_back(item);
+            }
+        }
+
+        if (peer_inventory.empty()) {
+            continue;  // Peer already knows everything
+        }
+
+        // Build message: [count][type][hash][type][hash]...
+        std::string str_payload;
+
+        // Write count (4 bytes, network byte order)
+        uint32_t n_count = static_cast<uint32_t>(peer_inventory.size());
+        uint32_t n_count_network = htonl(n_count);
+        str_payload.append(reinterpret_cast<const char*>(&n_count_network), 4);
+
+        // Write each item (type + hash)
+        for (const auto& item : peer_inventory) {
+            // Write type (2 bytes)
+            char type_buf[2];
+            WriteObjectType(item.first, type_buf);
+            str_payload.append(type_buf, 2);
+
+            // Write hash (64 bytes)
+            str_payload.append(item.second);
+        }
+
+        // Send message
+        CPeerMessage inv_message(MessageType::INVENTORY, str_payload);
+        SendMessageAsync(p_peer->n_socket, inv_message);
+
+        // Mark all items as known by this peer
+        for (const auto& item : peer_inventory) {
+            MarkInventoryKnown(p_peer->peer_node, item.first, item.second);
+        }
+
+        n_total_sent++;
+    }
+
+    LOG_INFO("Broadcasted INVENTORY with " + std::to_string(vec_inventory.size()) +
+             " items to " + std::to_string(n_total_sent) + " peers");
+}
+
+void CPeerManager::SendGetDataMessage(int n_socket, const std::vector<std::pair<ObjectType::Type, std::string>>& vec_items) {
+    if (vec_items.empty()) {
+        return;  // Nothing to request
+    }
+
+    // Build GETDATA message: [count][type][hash][type][hash]...
+    std::string str_payload;
+
+    // Write count (4 bytes, network byte order)
+    uint32_t n_count = static_cast<uint32_t>(vec_items.size());
+    uint32_t n_count_network = htonl(n_count);
+    str_payload.append(reinterpret_cast<const char*>(&n_count_network), 4);
+
+    // Write each item (type + hash)
+    for (const auto& item : vec_items) {
+        // Write type (2 bytes)
+        char type_buf[2];
+        WriteObjectType(item.first, type_buf);
+        str_payload.append(type_buf, 2);
+
+        // Write hash (64 bytes)
+        str_payload.append(item.second);
+    }
+
+    // Send message
+    CPeerMessage getdata_message(MessageType::GETDATA, str_payload);
+    SendMessageAsync(n_socket, getdata_message);
+
+    LOG_TRACE("Sent GETDATA request for " + std::to_string(vec_items.size()) + " items");
 }
 
 // ============= Connection Rotation =============
@@ -1949,13 +2061,13 @@ void CPeerManager::RotateOutboundConnections() {
     // Sort by connection time (oldest first)
     std::sort(oldest_peers.begin(), oldest_peers.end(),
               [](CPeerConnection* a, CPeerConnection* b) {
-                  return a->peer_node.GetConnectionTime() < b->peer_node.GetConnectionTime();
+                  return a->peer_node->GetConnectionTime() < b->peer_node->GetConnectionTime();
               });
 
     // Disconnect 1-2 oldest connections
     int n_to_disconnect = std::min(2, static_cast<int>(oldest_peers.size()));
     for (int i = 0; i < n_to_disconnect; i++) {
-        LOG_INFO("Rotating out outbound peer: " + oldest_peers[i]->peer_node.GetAddress());
+        LOG_INFO("Rotating out outbound peer: " + oldest_peers[i]->peer_node->GetAddress());
         DisconnectPeer(oldest_peers[i]);
     }
 
@@ -1982,7 +2094,7 @@ void CPeerManager::EnforceSubnetDiversity() {
 
     for (auto& p_peer : m_inbound_peers) {
         if (p_peer && p_peer->f_connected) {
-            std::string str_subnet = GetSubnet(p_peer->peer_node.GetAddress());
+            std::string str_subnet = GetSubnet(p_peer->peer_node->GetAddress());
             subnet_connections[str_subnet].push_back(p_peer.get());
         }
     }
@@ -1996,12 +2108,12 @@ void CPeerManager::EnforceSubnetDiversity() {
             // Sort by connection time (oldest first)
             std::sort(pair.second.begin(), pair.second.end(),
                      [](CPeerConnection* a, CPeerConnection* b) {
-                         return a->peer_node.GetConnectionTime() < b->peer_node.GetConnectionTime();
+                         return a->peer_node->GetConnectionTime() < b->peer_node->GetConnectionTime();
                      });
 
             // Disconnect only the oldest connection from this subnet
             LOG_INFO("Enforcing subnet diversity: disconnecting oldest peer from subnet " +
-                     pair.first + ": " + pair.second[0]->peer_node.GetAddress());
+                     pair.first + ": " + pair.second[0]->peer_node->GetAddress());
             DisconnectPeer(pair.second[0]);
             n_disconnected++;
         }
@@ -2034,13 +2146,13 @@ void CPeerManager::IncreaseMisbehaviorScore(const std::string& str_peer_address,
         // Disconnect peer
         std::lock_guard<std::mutex> peer_lock(cs_peers);
         for (auto& p_peer : m_inbound_peers) {
-            if (p_peer && p_peer->peer_node.GetAddress() == str_peer_address) {
+            if (p_peer && p_peer->peer_node->GetAddress() == str_peer_address) {
                 DisconnectPeer(p_peer.get());
                 break;
             }
         }
         for (auto& p_peer : m_outbound_peers) {
-            if (p_peer && p_peer->peer_node.GetAddress() == str_peer_address) {
+            if (p_peer && p_peer->peer_node->GetAddress() == str_peer_address) {
                 DisconnectPeer(p_peer.get());
                 break;
             }

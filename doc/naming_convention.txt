@@ -15,3 +15,5 @@ String variables: 'str' prefix
 Set: 'set' prefix
 Map: 'map' prefix
 Critical Section or Mutex: 'cs_' prefix
+=========================================================================
+coding style for numbers and strings: try to define constant in src/utils/setting.h, instead of hard coded number or string

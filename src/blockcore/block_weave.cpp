@@ -201,6 +201,19 @@ size_t CBlockweave::GetMempoolSize() const {
     return m_mempool.size();
 }
 
+bool CBlockweave::HasTransactionInMempool(const std::string& str_tx_hash) const {
+    std::lock_guard<std::mutex> lock(cs_blockweave);
+
+    // Search mempool for transaction with matching hash
+    for (const auto& p_tx : m_mempool) {
+        if (p_tx && p_tx->m_id.GetData() == str_tx_hash) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void CBlockweave::SetPeerManager(IPeerManager* p_mgr) {
     p_peer_manager = p_mgr;
     if (p_peer_manager != nullptr) {

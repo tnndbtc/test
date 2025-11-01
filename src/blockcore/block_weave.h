@@ -46,6 +46,14 @@ public:
     bool ShouldStopMining() const;
     size_t GetMempoolSize() const;
 
+    // Mempool query methods
+    /**
+     * @brief Check if transaction exists in mempool
+     * @param str_tx_hash Transaction hash (hex string)
+     * @return true if transaction is in mempool, false otherwise
+     */
+    bool HasTransactionInMempool(const std::string& str_tx_hash) const;
+
     // Peer management
     void SetPeerManager(IPeerManager* p_mgr);
 };

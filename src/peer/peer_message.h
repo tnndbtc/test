@@ -5,6 +5,35 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+#include <stdexcept>
+#include <cstring>
+#include "blockcore/object_type.h"
+
+/**
+ * @brief Read ObjectType::Type from wire format (2 bytes, network byte order)
+ * @param p_data Pointer to 2-byte buffer containing object type
+ * @return ObjectType::Type value
+ *
+ * New inventory format uses raw ObjectType::Type values (uint16) instead of characters.
+ * Format: 2 bytes in network byte order (big-endian)
+ */
+inline ObjectType::Type ReadObjectType(const char* p_data) {
+    uint16_t n_type;
+    std::memcpy(&n_type, p_data, 2);
+    return ntohs(n_type);  // Convert from network byte order
+}
+
+/**
+ * @brief Write ObjectType::Type to wire format (2 bytes, network byte order)
+ * @param type Object type to write
+ * @param p_buffer Pointer to buffer (must have at least 2 bytes)
+ *
+ * Converts ObjectType::Type to 2-byte network byte order representation.
+ */
+inline void WriteObjectType(ObjectType::Type type, char* p_buffer) {
+    uint16_t n_type = htons(type);  // Convert to network byte order
+    std::memcpy(p_buffer, &n_type, 2);
+}
 
 /**
  * @namespace MessageType

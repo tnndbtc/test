@@ -20,6 +20,26 @@
 #include <boost/asio/posix/stream_descriptor.hpp>
 
 /**
+ * @struct PeerNodePtrComparator
+ * @brief Custom comparator for shared_ptr<IPeerNode> map keys
+ *
+ * Compares peer node pointers by their identifier (address:port) for use as map keys.
+ * This allows efficient lookup and prevents duplicate entries for the same peer.
+ * Uses lexicographic comparison of the peer identifier string.
+ */
+struct PeerNodePtrComparator {
+    bool operator()(const std::shared_ptr<IPeerNode>& lhs, const std::shared_ptr<IPeerNode>& rhs) const {
+        // Handle null pointers - null is less than non-null
+        if (!lhs && !rhs) return false;
+        if (!lhs) return true;
+        if (!rhs) return false;
+
+        // Compare by identifier (address:port)
+        return lhs->GetIdentifier() < rhs->GetIdentifier();
+    }
+};
+
+/**
  * @struct CPeerConnection
  * @brief Represents a single P2P network connection
  *
@@ -35,7 +55,7 @@
  */
 struct CPeerConnection {
     int n_socket;                                                ///< Socket file descriptor (-1 if not connected)
-    CPeerNode peer_node;                                         ///< Peer node information (address and port)
+    std::shared_ptr<CPeerNode> peer_node;                        ///< Peer node information (address and port) - shared pointer for inventory tracking
     bool f_connected;                                            ///< Current connection status
     std::atomic<bool> f_active;                                  ///< Whether connection thread is active
     std::thread m_thread;                                        ///< Thread handling this connection
@@ -149,7 +169,9 @@ private:
     std::chrono::steady_clock::time_point m_last_ping_time;  ///< Last time PING was sent to peers
 
     // Inventory broadcasting and relay
-    std::map<std::string, std::set<std::string>> map_inventory_known;  ///< Map of peer address -> set of known inventory hashes
+    // Map structure: peer_node -> object_type -> set of inventory hashes
+    // This separates transaction and block knowledge per peer for efficient relay logic
+    std::map<std::shared_ptr<IPeerNode>, std::map<ObjectType::Type, std::set<std::string>>, PeerNodePtrComparator> map_inventory_known;
     mutable std::mutex cs_inventory;                                   ///< Mutex protecting inventory tracking
 
     // Connection rotation
@@ -339,25 +361,38 @@ private:
 
     /**
      * @brief Mark inventory as known by a peer
-     * @param str_peer_address Peer address
+     * @param p_peer_node Shared pointer to peer node
+     * @param obj_type Object type (ObjectType::TRANSACTION or ObjectType::BLOCK)
      * @param str_inventory_hash Inventory hash
      */
-    void MarkInventoryKnown(const std::string& str_peer_address, const std::string& str_inventory_hash);
+    void MarkInventoryKnown(std::shared_ptr<IPeerNode> p_peer_node, ObjectType::Type obj_type, const std::string& str_inventory_hash);
 
     /**
      * @brief Check if peer knows about inventory
-     * @param str_peer_address Peer address
+     * @param p_peer_node Shared pointer to peer node
+     * @param obj_type Object type (ObjectType::TRANSACTION or ObjectType::BLOCK)
      * @param str_inventory_hash Inventory hash
      * @return true if peer knows about this inventory
      */
-    bool PeerKnowsInventory(const std::string& str_peer_address, const std::string& str_inventory_hash);
+    bool PeerKnowsInventory(std::shared_ptr<IPeerNode> p_peer_node, ObjectType::Type obj_type, const std::string& str_inventory_hash);
 
     /**
      * @brief Broadcast inventory to peers who don't have it
-     * @param str_inventory_hash Inventory hash
-     * @param inv_type Inventory type ('T' for transaction, 'B' for block)
+     * @param vec_inventory Vector of (type, hash) pairs to broadcast
+     *
+     * Sends full inventory list to peers, filtering per-peer based on what they already know.
+     * New format: [count][type][hash][type][hash]... with multiple items per message.
      */
-    void BroadcastInventory(const std::string& str_inventory_hash, char inv_type);
+    void BroadcastInventory(const std::vector<std::pair<ObjectType::Type, std::string>>& vec_inventory);
+
+    /**
+     * @brief Send GETDATA message to request missing inventory items
+     * @param n_socket Socket to send to
+     * @param vec_items Vector of (type, hash) pairs to request
+     *
+     * Format: [count][type][hash][type][hash]... (same as inventory format)
+     */
+    void SendGetDataMessage(int n_socket, const std::vector<std::pair<ObjectType::Type, std::string>>& vec_items);
 
     /**
      * @brief Rotate outbound peer connections
