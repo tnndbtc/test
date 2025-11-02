@@ -3,6 +3,8 @@
 #define HASH_H
 
 #include <string>
+#include <array>
+#include <cstdint>
 
 /**
  * @class CHash
@@ -10,12 +12,13 @@
  *
  * Encapsulates SHA-256 hash computation and storage using OpenSSL.
  * Provides a convenient interface for hashing strings and comparing
- * hash values. Hash data is stored as a 64-character hexadecimal string.
+ * hash values. Hash data is stored as a 32-byte binary array internally.
  *
  * Features:
  * - Automatic SHA-256 computation on construction
  * - Comparison operators for equality and ordering
  * - Immutable hash value after construction
+ * - Binary storage for efficient network transmission
  *
  * Example usage:
  *   CHash hash1("Hello, World!");
@@ -26,7 +29,7 @@
  */
 class CHash {
 private:
-    std::string m_str_data;  ///< Hexadecimal string representation of hash (64 chars)
+    std::array<uint8_t, 32> m_data;  ///< Binary hash data (32 bytes, SHA-256 output)
 
 public:
     /**
@@ -40,10 +43,20 @@ public:
      * @brief Construct hash from input string
      * @param input String to hash using SHA-256
      *
-     * Computes SHA-256 hash of input and stores as hex string.
+     * Computes SHA-256 hash of input and stores as binary data.
      * Uses OpenSSL SHA256 function for cryptographic hashing.
      */
     explicit CHash(const std::string& input);
+
+    /**
+     * @brief Construct hash from binary data
+     * @param data Pointer to 32-byte binary hash data
+     * @param size Size of data (must be 32)
+     *
+     * Creates hash from pre-computed binary data (e.g., received from network).
+     * Used for deserializing hashes without recomputing them.
+     */
+    CHash(const unsigned char* data, size_t size);
 
     /**
      * @brief Equality comparison operator
@@ -63,12 +76,22 @@ public:
 
     /**
      * @brief Get hash data as hexadecimal string
-     * @return Const reference to 64-character hex string
+     * @return 64-character hex string representation
      *
-     * Returns the SHA-256 hash as a lowercase hexadecimal string.
-     * Each byte of the 32-byte hash is represented as two hex digits.
+     * Converts the 32-byte binary hash to a lowercase hexadecimal string.
+     * Each byte is represented as two hex digits (00-ff).
+     * This method performs conversion on-demand for display purposes.
      */
-    const std::string& GetData() const { return m_str_data; }
+    std::string GetData() const;
+
+    /**
+     * @brief Get raw binary hash data
+     * @return Const reference to 32-byte array
+     *
+     * Returns direct access to the internal binary hash representation.
+     * Use this for efficient network transmission and storage operations.
+     */
+    const std::array<uint8_t, 32>& GetBytes() const { return m_data; }
 };
 
 #endif

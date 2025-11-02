@@ -25,7 +25,8 @@ TEST(PeerConnection_DefaultConstructor) {
  * @brief Test CPeerConnection parameterized constructor
  */
 TEST(PeerConnection_ParameterizedConstructor) {
-    CPeerConnection peer("127.0.0.1", 8333);
+    CPeerNode node("127.0.0.1", 8333);
+    CPeerConnection peer(node);
 
     ASSERT_EQUAL(peer.peer_node->GetAddress(), std::string("127.0.0.1"), "Address should be set");
     ASSERT_EQUAL(peer.peer_node->GetPort(), 8333, "Port should be set");
@@ -38,7 +39,8 @@ TEST(PeerConnection_ParameterizedConstructor) {
  * @brief Test CPeerConnection move constructor
  */
 TEST(PeerConnection_MoveConstructor) {
-    CPeerConnection peer1("192.168.1.1", 9999);
+    CPeerNode node("192.168.1.1", 9999);
+    CPeerConnection peer1(node);
     peer1.f_connected = true;
     peer1.f_active = true;
 
@@ -190,7 +192,8 @@ TEST(PeerManager_BroadcastMessage_TxIdsPayload) {
  * safely accessed from multiple threads.
  */
 TEST(PeerConnection_AtomicFlag) {
-    CPeerConnection peer("127.0.0.1", 8080);
+    CPeerNode node("127.0.0.1", 8080);
+    CPeerConnection peer(node);
 
     std::atomic<int> read_count{0};
     std::atomic<bool> stop_flag{false};

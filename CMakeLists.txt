@@ -147,9 +147,10 @@ if(APPLE)
     )
 endif()
 
-# Link logger and threadname to peer
+# Link logger, threadname, and utils to peer
 # Note: Boost.Asio is header-only, no linking required
 target_link_libraries(bwpeer
+    PUBLIC bwutils
     PUBLIC bwlogger
     PUBLIC bwthreadname
 )

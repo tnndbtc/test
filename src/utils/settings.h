@@ -50,4 +50,20 @@ constexpr int LOG_FILE_SIZE_MB = 10;
 // Number of rotated log files to keep
 constexpr int LOG_FILE_KEEP = 5;
 
+// ============================================================
+// P2P Message Format Constants
+// ============================================================
+
+// Size of count field in inventory/GETDATA messages (uint32_t, network byte order)
+constexpr size_t MESSAGE_COUNT_SIZE = 4;
+
+// Size of object type field in inventory/GETDATA messages (ObjectType::Type, uint16, network byte order)
+constexpr size_t MESSAGE_TYPE_SIZE = 2;
+
+// Size of binary hash in inventory/GETDATA messages (SHA-256, 32 bytes)
+constexpr size_t MESSAGE_HASH_SIZE = 32;
+
+// Size of hexadecimal hash string representation (SHA-256 as hex, 64 characters)
+constexpr size_t MESSAGE_HASH_HEX_SIZE = 64;
+
 #endif // SETTINGS_H

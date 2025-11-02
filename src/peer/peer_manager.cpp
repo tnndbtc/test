@@ -11,6 +11,7 @@
 #include "peer/peer_manager.h"
 #include "peer/peer_message.h"
 #include "utils/threadname.h"
+#include "utils/hash.h"
 #include "logger/logger.h"
 #include <iostream>
 #include <cstring>
@@ -37,17 +38,6 @@ CPeerConnection::CPeerConnection()
     : n_socket(-1), peer_node(std::make_shared<CPeerNode>()), f_connected(false), f_active(false), n_last_ping_nonce(0) {}
 
 /**
- * @brief Construct peer with address and port
- * @param str_addr Peer IP address or hostname
- * @param n_port_num Peer listening port
- *
- * Creates peer connection object but does not establish connection.
- * Call ConnectToPeer() to actually connect.
- */
-CPeerConnection::CPeerConnection(const std::string& str_addr, int n_port_num)
-    : n_socket(-1), peer_node(std::make_shared<CPeerNode>(str_addr, n_port_num)), f_connected(false), f_active(false), n_last_ping_nonce(0) {}
-
-/**
  * @brief Construct peer with CPeerNode
  * @param node Peer node information
  *
@@ -58,20 +48,17 @@ CPeerConnection::CPeerConnection(const CPeerNode& node)
     : n_socket(-1), peer_node(std::make_shared<CPeerNode>(node)), f_connected(false), f_active(false), n_last_ping_nonce(0) {}
 
 /**
- * @brief Destructor - closes connection and joins thread
+ * @brief Destructor - closes connection and cleans up resources
  *
- * Performs cleanup in correct order:
- * 1. Signal thread to stop (f_active = false)
- * 2. Wait for thread to finish (join)
- * 3. Close socket and mark invalid
+ * Performs cleanup:
+ * 1. Signal connection should stop (f_active = false)
+ * 2. Close socket and mark invalid
  *
- * This prevents race conditions during shutdown.
+ * Note: Actual I/O is handled by Boost.Asio async infrastructure,
+ * not per-connection threads.
  */
 CPeerConnection::~CPeerConnection() {
     f_active = false;
-    if (m_thread.joinable()) {
-        m_thread.join();
-    }
     if (n_socket >= 0) {
         close(n_socket);
         n_socket = -1;
@@ -82,7 +69,7 @@ CPeerConnection::~CPeerConnection() {
  * @brief Move constructor for transferring ownership
  * @param other Peer connection to move from
  *
- * Transfers all resources (socket, thread, address) from other.
+ * Transfers all resources (socket, peer node, flags) from other.
  * Resets other to disconnected state to prevent double-close.
  * Uses atomic load() to safely copy f_active flag.
  */
@@ -91,7 +78,6 @@ CPeerConnection::CPeerConnection(CPeerConnection&& other) noexcept
       peer_node(std::move(other.peer_node)),
       f_connected(other.f_connected),
       f_active(other.f_active.load()),
-      m_thread(std::move(other.m_thread)),
       n_last_ping_nonce(other.n_last_ping_nonce),
       m_last_ping_send_time(other.m_last_ping_send_time) {
     other.n_socket = -1;
@@ -106,7 +92,7 @@ CPeerConnection::CPeerConnection(CPeerConnection&& other) noexcept
  * @return Reference to this
  *
  * Safely transfers resources by:
- * 1. Cleaning up existing resources (close socket, join thread)
+ * 1. Cleaning up existing resources (close socket)
  * 2. Moving resources from other
  * 3. Resetting other to prevent double-free
  *
@@ -118,16 +104,12 @@ CPeerConnection& CPeerConnection::operator=(CPeerConnection&& other) noexcept {
         if (n_socket >= 0) {
             close(n_socket);
         }
-        if (m_thread.joinable()) {
-            m_thread.join();
-        }
 
         // Move from other
         n_socket = other.n_socket;
         peer_node = std::move(other.peer_node);
         f_connected = other.f_connected;
         f_active = other.f_active.load();
-        m_thread = std::move(other.m_thread);
         n_last_ping_nonce = other.n_last_ping_nonce;
         m_last_ping_send_time = other.m_last_ping_send_time;
 
@@ -159,7 +141,8 @@ CPeerManager::CPeerManager(int n_port, int n_max_outbound, int n_max_inbound, in
       n_peers_ping_time(n_ping_time),
       f_running(false), f_stop_requested(false), f_stop_monitor(false),
       m_last_ping_time(std::chrono::steady_clock::now()),
-      m_last_rotation_time(std::chrono::steady_clock::now()) {
+      m_last_rotation_time(std::chrono::steady_clock::now()),
+      p_blockweave(nullptr) {
     m_inbound_peers.reserve(n_max_inbound_peers);
     m_outbound_peers.reserve(n_max_outbound_peers);
 
@@ -652,7 +635,8 @@ void CPeerManager::ListenerThread() {
             SetSocketKeepAlive(n_client_socket);
 
             // Create peer connection object for inbound peer (no thread for async I/O)
-            auto p_peer = std::make_unique<CPeerConnection>(std::string(str_ip), n_peer_port);
+            CPeerNode node(std::string(str_ip), n_peer_port);
+            auto p_peer = std::make_unique<CPeerConnection>(node);
             p_peer->n_socket = n_client_socket;
             p_peer->f_active = true;
             p_peer->f_connected = true;
@@ -1240,24 +1224,24 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
                 LOG_INFO("Received INVENTORY from peer " + p_peer->peer_node->GetAddress() + ": " +
                          std::to_string(str_inventory.length()) + " bytes");
 
-                // Parse inventory format: [count:4bytes][type:2bytes][hash:64bytes][type:2bytes][hash:64bytes]...
-                // Count: 4 bytes (uint32_t, network byte order)
-                // For each item: Type (2 bytes, ObjectType::Type) + Hash (64 bytes, SHA-256 hex string)
+                // Parse inventory format: [count:4bytes][type:2bytes][hash:32bytes][type:2bytes][hash:32bytes]...
+                // Count: MESSAGE_COUNT_SIZE bytes (uint32_t, network byte order)
+                // For each item: Type (MESSAGE_TYPE_SIZE bytes, ObjectType::Type) + Hash (MESSAGE_HASH_HEX_SIZE bytes, SHA-256 hex string)
 
-                if (str_inventory.length() < 4) {
+                if (str_inventory.length() < MESSAGE_COUNT_SIZE) {
                     LOG_ERROR("Invalid INVENTORY message from peer " + p_peer->peer_node->GetAddress() +
                              ": too short (need at least count field)");
                 } else {
                     // Parse count
                     uint32_t n_count;
-                    std::memcpy(&n_count, str_inventory.data(), 4);
+                    std::memcpy(&n_count, str_inventory.data(), MESSAGE_COUNT_SIZE);
                     n_count = ntohl(n_count);  // Convert from network byte order
 
                     LOG_INFO("INVENTORY count: " + std::to_string(n_count));
 
-                    // Validate total length: 4 (count) + n_count * (2 (type) + 64 (hash))
-                    const size_t n_item_size = 2 + 64;  // type + hash
-                    const size_t n_expected_length = 4 + (n_count * n_item_size);
+                    // Validate total length: MESSAGE_COUNT_SIZE + n_count * (MESSAGE_TYPE_SIZE + MESSAGE_HASH_HEX_SIZE)
+                    const size_t n_item_size = MESSAGE_TYPE_SIZE + MESSAGE_HASH_HEX_SIZE;
+                    const size_t n_expected_length = MESSAGE_COUNT_SIZE + (n_count * n_item_size);
 
                     if (str_inventory.length() < n_expected_length) {
                         LOG_ERROR("Invalid INVENTORY message from peer " + p_peer->peer_node->GetAddress() +
@@ -1271,15 +1255,17 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
                         std::vector<std::pair<ObjectType::Type, std::string>> vec_missing_items;
 
                         // Parse each inventory item
-                        size_t n_offset = 4;  // Skip count field
+                        size_t n_offset = MESSAGE_COUNT_SIZE;  // Skip count field
                         for (uint32_t i = 0; i < n_count; i++) {
-                            // Read type (2 bytes)
+                            // Read type (MESSAGE_TYPE_SIZE bytes)
                             ObjectType::Type obj_type = ReadObjectType(str_inventory.data() + n_offset);
-                            n_offset += 2;
+                            n_offset += MESSAGE_TYPE_SIZE;
 
-                            // Read hash (64 bytes)
-                            std::string str_hash = str_inventory.substr(n_offset, 64);
-                            n_offset += 64;
+                            // Read hash (MESSAGE_HASH_SIZE bytes, binary format)
+                            // std::string str_hash = str_inventory.substr(n_offset, MESSAGE_HASH_SIZE);
+                            std::string str_hash(str_inventory.data() + n_offset, MESSAGE_HASH_SIZE);
+                            
+                            n_offset += MESSAGE_HASH_SIZE;
 
                             // Add to inventory list for relay
                             vec_inventory.push_back({obj_type, str_hash});
@@ -1287,14 +1273,32 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
                             // Mark this peer as knowing about this inventory
                             MarkInventoryKnown(p_peer->peer_node, obj_type, str_hash);
 
-                            // TODO: Check if we need this item (requires blockweave access)
-                            // For now, we'll request everything we don't know about
-                            // This will be optimized later when peer_manager has blockweave access
-                            vec_missing_items.push_back({obj_type, str_hash});
+                            // Smart filtering: only request if we don't already have it
+                            bool f_need_item = false;
+                            if (p_blockweave) {
+                                if (obj_type == ObjectType::TRANSACTION) {
+                                    // Check if transaction is in mempool (expects hex string)
+                                    CHash hash(reinterpret_cast<const unsigned char*>(str_hash.data()), str_hash.size());
+                                    f_need_item = !p_blockweave->HasTransactionInMempool(hash.GetData());
+                                } else if (obj_type == ObjectType::BLOCK) {
+                                    // Check if block exists in blockchain
+                                    CHash hash(reinterpret_cast<const unsigned char*>(str_hash.data()), str_hash.size());
+                                    f_need_item = (p_blockweave->GetBlock(hash) == nullptr);
+                                }
+                            } else {
+                                // No blockweave access - request everything (conservative)
+                                f_need_item = true;
+                            }
+
+                            if (f_need_item) {
+                                vec_missing_items.push_back({obj_type, str_hash});
+                            }
                         }
 
                         LOG_INFO("Processed " + std::to_string(n_count) + " inventory items from peer " +
-                                 p_peer->peer_node->GetAddress());
+                                 p_peer->peer_node->GetAddress() + " (" +
+                                 std::to_string(vec_missing_items.size()) + " missing, " +
+                                 std::to_string(n_count - vec_missing_items.size()) + " already have)");
 
                         // Relay to other peers who don't know about it (called once with full inventory)
                         if (!vec_inventory.empty()) {
@@ -1306,6 +1310,9 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
                             SendGetDataMessage(p_peer->n_socket, vec_missing_items);
                             LOG_INFO("Sent GETDATA request for " + std::to_string(vec_missing_items.size()) +
                                      " items to peer " + p_peer->peer_node->GetAddress());
+                        } else {
+                            LOG_TRACE("No GETDATA needed - already have all inventory items from peer " +
+                                      p_peer->peer_node->GetAddress());
                         }
                     }
                 }
@@ -1425,7 +1432,8 @@ bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
     }
 
     // Create peer connection object
-    auto p_peer = std::make_unique<CPeerConnection>(str_address, n_port);
+    CPeerNode node(str_address, n_port);
+    auto p_peer = std::make_unique<CPeerConnection>(node);
     p_peer->n_socket = n_socket;
     p_peer->f_connected = true;
     p_peer->f_active = true;
@@ -1971,19 +1979,19 @@ void CPeerManager::BroadcastInventory(const std::vector<std::pair<ObjectType::Ty
         // Build message: [count][type][hash][type][hash]...
         std::string str_payload;
 
-        // Write count (4 bytes, network byte order)
+        // Write count (MESSAGE_COUNT_SIZE bytes, network byte order)
         uint32_t n_count = static_cast<uint32_t>(peer_inventory.size());
         uint32_t n_count_network = htonl(n_count);
-        str_payload.append(reinterpret_cast<const char*>(&n_count_network), 4);
+        str_payload.append(reinterpret_cast<const char*>(&n_count_network), MESSAGE_COUNT_SIZE);
 
         // Write each item (type + hash)
         for (const auto& item : peer_inventory) {
-            // Write type (2 bytes)
-            char type_buf[2];
+            // Write type (MESSAGE_TYPE_SIZE bytes)
+            char type_buf[MESSAGE_TYPE_SIZE];
             WriteObjectType(item.first, type_buf);
-            str_payload.append(type_buf, 2);
+            str_payload.append(type_buf, MESSAGE_TYPE_SIZE);
 
-            // Write hash (64 bytes)
+            // Write hash (MESSAGE_HASH_SIZE bytes, binary format)
             str_payload.append(item.second);
         }
 
@@ -2011,19 +2019,19 @@ void CPeerManager::SendGetDataMessage(int n_socket, const std::vector<std::pair<
     // Build GETDATA message: [count][type][hash][type][hash]...
     std::string str_payload;
 
-    // Write count (4 bytes, network byte order)
+    // Write count (MESSAGE_COUNT_SIZE bytes, network byte order)
     uint32_t n_count = static_cast<uint32_t>(vec_items.size());
     uint32_t n_count_network = htonl(n_count);
-    str_payload.append(reinterpret_cast<const char*>(&n_count_network), 4);
+    str_payload.append(reinterpret_cast<const char*>(&n_count_network), MESSAGE_COUNT_SIZE);
 
     // Write each item (type + hash)
     for (const auto& item : vec_items) {
-        // Write type (2 bytes)
-        char type_buf[2];
+        // Write type (MESSAGE_TYPE_SIZE bytes)
+        char type_buf[MESSAGE_TYPE_SIZE];
         WriteObjectType(item.first, type_buf);
-        str_payload.append(type_buf, 2);
+        str_payload.append(type_buf, MESSAGE_TYPE_SIZE);
 
-        // Write hash (64 bytes)
+        // Write hash (MESSAGE_HASH_SIZE bytes, binary format)
         str_payload.append(item.second);
     }
 
@@ -2196,4 +2204,11 @@ void CPeerManager::CleanupExpiredBans() {
             ++it;
         }
     }
+}
+
+// ============= Blockweave Integration =============
+
+void CPeerManager::SetBlockweave(IBlockweave* p_bw) {
+    p_blockweave = p_bw;
+    LOG_INFO("Blockweave instance set for peer manager");
 }

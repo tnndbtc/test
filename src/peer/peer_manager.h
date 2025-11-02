@@ -5,6 +5,7 @@
 #include "peer/i_peer_manager.h"
 #include "peer/peer_message.h"
 #include "peer/peer_node.h"
+#include "blockcore/i_block_weave.h"
 #include "utils/settings.h"
 #include <string>
 #include <vector>
@@ -44,11 +45,11 @@ struct PeerNodePtrComparator {
  * @brief Represents a single P2P network connection
  *
  * Encapsulates a TCP socket connection to another blockweave node.
- * Each connection runs in its own thread for asynchronous communication.
- * Supports move semantics but not copying (non-copyable due to thread member).
+ * I/O is handled by Boost.Asio async infrastructure (not per-connection threads).
+ * Supports move semantics but not copying.
  *
  * Features:
- * - Thread-per-connection model
+ * - Async I/O model using Boost.Asio
  * - Atomic flags for thread-safe status checking
  * - Move-only semantics for safe transfer of ownership
  * - Automatic resource cleanup in destructor
@@ -58,7 +59,6 @@ struct CPeerConnection {
     std::shared_ptr<CPeerNode> peer_node;                        ///< Peer node information (address and port) - shared pointer for inventory tracking
     bool f_connected;                                            ///< Current connection status
     std::atomic<bool> f_active;                                  ///< Whether connection thread is active
-    std::thread m_thread;                                        ///< Thread handling this connection
     uint32_t n_last_ping_nonce;                                  ///< Nonce of last sent PING message
     std::chrono::steady_clock::time_point m_last_ping_send_time; ///< Time when last PING was sent
 
@@ -66,13 +66,6 @@ struct CPeerConnection {
      * @brief Default constructor - creates disconnected peer
      */
     CPeerConnection();
-
-    /**
-     * @brief Construct peer with address and port
-     * @param str_addr Peer IP address or hostname
-     * @param n_port_num Peer listening port
-     */
-    CPeerConnection(const std::string& str_addr, int n_port_num);
 
     /**
      * @brief Construct peer with CPeerNode
@@ -181,6 +174,9 @@ private:
     std::map<std::string, int> map_peer_misbehavior;           ///< Map of peer address -> misbehavior score
     std::map<std::string, std::chrono::steady_clock::time_point> map_banned_peers;  ///< Map of banned peer address -> ban expiry time
     mutable std::mutex cs_bans;                                 ///< Mutex protecting ban tracking
+
+    // Blockweave integration
+    IBlockweave* p_blockweave;                                  ///< Pointer to blockweave for querying mempool/blockchain
 
     /**
      * @brief Main peer management thread function (renamed from PeerThread)
@@ -555,6 +551,16 @@ public:
      * Thread-safe operation with mutex protection.
      */
     virtual size_t SendPingToAllPeers() override;
+
+    /**
+     * @brief Set blockweave instance for querying mempool/blockchain
+     * @param p_bw Pointer to blockweave instance
+     *
+     * Sets the blockweave pointer to enable smart GETDATA filtering.
+     * Allows peer_manager to query whether transactions/blocks exist
+     * before requesting them from peers.
+     */
+    void SetBlockweave(IBlockweave* p_bw);
 };
 
 #endif // PEER_MANAGER_H

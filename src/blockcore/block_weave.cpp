@@ -9,6 +9,9 @@
 CBlockweave::CBlockweave() : CBlockweave("data/blocks") {
 }
 
+CBlockweave::~CBlockweave() {
+}
+
 CBlockweave::CBlockweave(const std::string& str_data_dir)
     : f_mining_enabled(false), f_stop_mining(false), p_peer_manager(nullptr),
       m_p_blockfile(std::make_unique<CBlockFile>(str_data_dir)) {

@@ -1,10 +1,11 @@
 // ============= blockweave.h =============
-#ifndef BLOCKWEAVE_H
-#define BLOCKWEAVE_H
+#ifndef BLOCK_WEAVE_H
+#define BLOCK_WEAVE_H
 
 #include "blockcore/block.h"
 #include "blockcore/block_file.h"
 #include "blockcore/transaction.h"
+#include "blockcore/i_block_weave.h"
 #include "utils/hash.h"
 #include "peer/i_peer_manager.h"
 #include <unordered_map>
@@ -14,7 +15,7 @@
 #include <mutex>
 #include <atomic>
 
-class CBlockweave {
+class CBlockweave : public IBlockweave {
 private:
     std::unordered_map<std::string, std::shared_ptr<CBlock>> map_blocks;
     std::vector<CHash> m_block_hashes;
@@ -32,30 +33,23 @@ private:
 public:
     CBlockweave();
     CBlockweave(const std::string& str_data_dir);
+    virtual ~CBlockweave();
 
-    void AddTransaction(std::shared_ptr<CTransaction> tx);
-    void MineBlock(const std::string& str_miner_address);
-    std::shared_ptr<CBlock> GetBlock(const CHash& hash);
-    std::vector<uint8_t> GetData(const CHash& tx_id);
+    // IBlockweave interface implementation
+    virtual void AddTransaction(std::shared_ptr<CTransaction> tx) override;
+    virtual void MineBlock(const std::string& str_miner_address) override;
+    virtual std::shared_ptr<CBlock> GetBlock(const CHash& hash) override;
+    virtual std::vector<uint8_t> GetData(const CHash& tx_id) override;
+    virtual void StartMining() override;
+    virtual void StopMining() override;
+    virtual bool IsMiningEnabled() const override;
+    virtual size_t GetMempoolSize() const override;
+    virtual bool HasTransactionInMempool(const std::string& str_tx_hash) const override;
+    virtual void SetPeerManager(IPeerManager* p_mgr) override;
+
+    // Additional methods not in interface
     void PrintChain();
-
-    // Thread control methods
-    void StartMining();
-    void StopMining();
-    bool IsMiningEnabled() const;
     bool ShouldStopMining() const;
-    size_t GetMempoolSize() const;
-
-    // Mempool query methods
-    /**
-     * @brief Check if transaction exists in mempool
-     * @param str_tx_hash Transaction hash (hex string)
-     * @return true if transaction is in mempool, false otherwise
-     */
-    bool HasTransactionInMempool(const std::string& str_tx_hash) const;
-
-    // Peer management
-    void SetPeerManager(IPeerManager* p_mgr);
 };
 
 #endif
