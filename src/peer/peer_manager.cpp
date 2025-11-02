@@ -2208,7 +2208,11 @@ void CPeerManager::CleanupExpiredBans() {
 
 // ============= Blockweave Integration =============
 
-void CPeerManager::SetBlockweave(IBlockweave* p_bw) {
+void CPeerManager::SetBlockweave(std::shared_ptr<IBlockweave> p_bw) {
     p_blockweave = p_bw;
-    LOG_INFO("Blockweave instance set for peer manager");
+    if (p_blockweave) {
+        LOG_INFO("Blockweave instance set for peer manager (shared ownership)");
+    } else {
+        LOG_INFO("Blockweave instance cleared from peer manager");
+    }
 }

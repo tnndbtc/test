@@ -176,7 +176,7 @@ private:
     mutable std::mutex cs_bans;                                 ///< Mutex protecting ban tracking
 
     // Blockweave integration
-    IBlockweave* p_blockweave;                                  ///< Pointer to blockweave for querying mempool/blockchain
+    std::shared_ptr<IBlockweave> p_blockweave;                  ///< Shared pointer to blockweave for querying mempool/blockchain
 
     /**
      * @brief Main peer management thread function (renamed from PeerThread)
@@ -554,13 +554,13 @@ public:
 
     /**
      * @brief Set blockweave instance for querying mempool/blockchain
-     * @param p_bw Pointer to blockweave instance
+     * @param p_bw Shared pointer to blockweave instance
      *
-     * Sets the blockweave pointer to enable smart GETDATA filtering.
+     * Sets the blockweave shared pointer to enable smart GETDATA filtering.
      * Allows peer_manager to query whether transactions/blocks exist
-     * before requesting them from peers.
+     * before requesting them from peers. Uses shared_ptr for safe ownership.
      */
-    void SetBlockweave(IBlockweave* p_bw);
+    void SetBlockweave(std::shared_ptr<IBlockweave> p_bw);
 };
 
 #endif // PEER_MANAGER_H
