@@ -1239,8 +1239,8 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
 
                     LOG_INFO("INVENTORY count: " + std::to_string(n_count));
 
-                    // Validate total length: MESSAGE_COUNT_SIZE + n_count * (MESSAGE_TYPE_SIZE + MESSAGE_HASH_HEX_SIZE)
-                    const size_t n_item_size = MESSAGE_TYPE_SIZE + MESSAGE_HASH_HEX_SIZE;
+                    // Validate total length: MESSAGE_COUNT_SIZE + n_count * (MESSAGE_TYPE_SIZE + MESSAGE_HASH_SIZE)
+                    const size_t n_item_size = MESSAGE_TYPE_SIZE + MESSAGE_HASH_SIZE;
                     const size_t n_expected_length = MESSAGE_COUNT_SIZE + (n_count * n_item_size);
 
                     if (str_inventory.length() < n_expected_length) {

@@ -1,6 +1,8 @@
 // ============= test_transaction.cpp =============
 #include "unit_test.h"
 #include "blockcore/transaction.h"
+#include <thread>
+#include <chrono>
 
 using namespace UnitTest;
 
@@ -25,14 +27,31 @@ TEST(Transaction_IDGeneration) {
     std::vector<uint8_t> data1 = {'d', 'a', 't', 'a', '1'};
     std::vector<uint8_t> data2 = {'d', 'a', 't', 'a', '2'};
 
+    // Create transactions with same owner, target, reward but different data
     CTransaction tx1("from", "to", data1, 50);
     CTransaction tx2("from", "to", data2, 50);
 
     // Different data should produce different transaction IDs
+    // (no delay needed - data is now included in hash)
     ASSERT_NOT_EQUAL(tx1.m_id.GetData(), tx2.m_id.GetData(),
-                     "Different transactions should have different IDs");
+                     "Different data should produce different IDs");
     ASSERT_TRUE(tx1.m_id.GetData().length() > 0, "Transaction ID should not be empty");
     ASSERT_TRUE(tx2.m_id.GetData().length() > 0, "Transaction ID should not be empty");
+
+    // Same data should produce same ID (if created at exact same timestamp)
+    // Create two transactions with identical data
+    std::vector<uint8_t> data3 = {'t', 'e', 's', 't'};
+    CTransaction tx3("alice", "bob", data3, 100);
+
+    // Different owner should produce different ID even with same data
+    CTransaction tx4("charlie", "bob", data3, 100);
+    ASSERT_NOT_EQUAL(tx3.m_id.GetData(), tx4.m_id.GetData(),
+                     "Different owner should produce different ID");
+
+    // Different reward should produce different ID
+    CTransaction tx5("alice", "bob", data3, 200);
+    ASSERT_NOT_EQUAL(tx3.m_id.GetData(), tx5.m_id.GetData(),
+                     "Different reward should produce different ID");
 }
 
 /**
