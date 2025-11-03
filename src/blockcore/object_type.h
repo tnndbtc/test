@@ -19,8 +19,10 @@ namespace ObjectType {
      */
     typedef unsigned short int Type;
 
+    constexpr Type OBJ_BEGIN = 0;    ///< Begin index of object definition
     constexpr Type BLOCK = 1;        ///< Block object
     constexpr Type TRANSACTION = 2;  ///< Transaction object
+    constexpr Type OBJ_LAST = 3;     ///< Last index of object definition
 }
 
 #endif // OBJECT_TYPE_H

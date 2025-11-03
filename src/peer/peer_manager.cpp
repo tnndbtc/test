@@ -1228,6 +1228,7 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
                 // Count: MESSAGE_COUNT_SIZE bytes (uint32_t, network byte order)
                 // For each item: Type (MESSAGE_TYPE_SIZE bytes, ObjectType::Type) + Hash (MESSAGE_HASH_HEX_SIZE bytes, SHA-256 hex string)
 
+                bool f_continue = false;
                 if (str_inventory.length() < MESSAGE_COUNT_SIZE) {
                     LOG_ERROR("Invalid INVENTORY message from peer " + p_peer->peer_node->GetAddress() +
                              ": too short (need at least count field)");
@@ -1259,6 +1260,14 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
                         for (uint32_t i = 0; i < n_count; i++) {
                             // Read type (MESSAGE_TYPE_SIZE bytes)
                             ObjectType::Type obj_type = ReadObjectType(str_inventory.data() + n_offset);
+                            // TODO check VERSION to decide whether this is within the expected object type range
+                            if (obj_type <= ObjectType::OBJ_BEGIN || obj_type >= ObjectType::OBJ_LAST) {
+                                LOG_ERROR("Invalid INVENTORY message from peer " + p_peer->peer_node->GetAddress() +
+                                 ": object type unknown " + std::to_string(obj_type));
+                                 f_continue = true; // break out, then continue with the message loop
+                                 break;
+                                 
+                            }
                             n_offset += MESSAGE_TYPE_SIZE;
 
                             // Read hash (MESSAGE_HASH_SIZE bytes, binary format)
@@ -1293,6 +1302,9 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
                             if (f_need_item) {
                                 vec_missing_items.push_back({obj_type, str_hash});
                             }
+                        }
+                        if (f_continue) {
+                            continue;
                         }
 
                         LOG_INFO("Processed " + std::to_string(n_count) + " inventory items from peer " +
