@@ -34,6 +34,10 @@ sudo sysctl -w kernel.yama.ptrace_scope=0
 # install boost: https://www.boost.org/releases/latest/
 # install python3: type python3 on command prompt and it will open Microsoft Store to download
 # install nodejs/npm: https://nodejs.org/en/download
+to build:
+configure.bat
+cd build
+cmake --build .
 --------------------------
 install boost:
 	mac: brew install boost
