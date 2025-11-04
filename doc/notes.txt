@@ -1,4 +1,40 @@
 --------------------------
+Ubuntu setup:
+sudo apt update
+# libboost-all-dev has more
+sudo apt install -y openssh-server net-tools git cmake llvm clang lldb lld openssl libssl-dev libboost-dev
+
+# for claude:
+sudo apt install -y nodejs npm
+sudo npm install -g @anthropic-ai/claude-code
+
+sudo systemctl enable --now ssh
+sudo systemctl status ssh
+
+# for laptop lid close
+sudo vi /etc/systemd/logind.conf
+HandleLidSwitch=ignore # do nothing when lid is closed
+sudo systemctl restart systemd-logind
+
+# error: attach failed: The current value of ptrace_scope is 1, which can cause ptrace to fail to attach to a running process. To fix this, run:
+sudo sysctl -w kernel.yama.ptrace_scope=0
+--------------------------
+# windows 11, 1, name: LAPTOP-PDUE6LIR
+# Open PowerShell as Administrator and run:
+# Start-Service sshd
+# Make SSH server start automatically on boot
+# Set-Service -Name sshd -StartupType 'Automatic'
+# Check status:
+# Get-Service sshd
+#
+# install git: https://git-scm.com/install/windows
+# install openssl: https://slproweb.com/products/Win32OpenSSL.html win64 exe
+# install LLVM: https://github.com/llvm/llvm-project/releases
+# install cmake: https://cmake.org/download/
+# install boost: https://www.boost.org/releases/latest/
+# install python3: type python3 on command prompt and it will open Microsoft Store to download
+# install nodejs/npm: https://nodejs.org/en/download
+--------------------------
 install boost:
 	mac: brew install boost
 --------------------------

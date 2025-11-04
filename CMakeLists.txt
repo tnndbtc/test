@@ -4,9 +4,14 @@ project(RestDaemon VERSION 1.0.0)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Set policy for Boost (suppress FindBoost warning)
+# Set policy to use <PackageName>_ROOT variables
+if(POLICY CMP0074)
+    cmake_policy(SET CMP0074 NEW)
+endif()
+
+# Use legacy FindBoost.cmake for header-only Boost libraries
 if(POLICY CMP0167)
-    cmake_policy(SET CMP0167 NEW)
+    cmake_policy(SET CMP0167 OLD)
 endif()
 
 # Find OpenSSL
