@@ -412,6 +412,9 @@ bool CRestApiServer::Start() {
     f_running = true;
     f_stop_requested = false;
 
+    // Reset request queue for restart (clears shutdown flag from previous Stop())
+    p_request_queue->Reset();
+
     // Start listener thread
     m_listener_thread = std::thread(&CRestApiServer::ListenerThread, this);
 
@@ -451,6 +454,8 @@ void CRestApiServer::Stop() {
 
     // Close server socket
     if (n_server_socket >= 0) {
+        // Shutdown socket first to wake up blocking accept()
+        shutdown(n_server_socket, SHUT_RDWR);
         close(n_server_socket);
         n_server_socket = -1;
     }
@@ -465,6 +470,9 @@ void CRestApiServer::Stop() {
             thread.join();
         }
     }
+
+    // Clear worker threads vector for clean restart
+    m_worker_threads.clear();
 
     LOG_INFO("REST API server stopped");
 }

@@ -7,6 +7,9 @@
 #include <cstdint>
 #include <stdexcept>
 #include <cstring>
+#ifdef __LINUX__
+#include <arpa/inet.h>  // For ntohs, htons (Linux/POSIX network byte order functions)
+#endif
 #include "blockcore/object_type.h"
 
 /**

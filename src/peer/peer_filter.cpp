@@ -1,5 +1,6 @@
 // ============= peer_filter.cpp =============
 #include "peer_filter.h"
+#include <algorithm>
 #include <sstream>
 
 // ============= Helper Functions =============

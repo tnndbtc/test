@@ -85,6 +85,11 @@ public:
     void Shutdown();
 
     /**
+     * @brief Reset shutdown flag for restarting the queue
+     */
+    void Reset();
+
+    /**
      * @brief Get current queue size
      * @return Number of requests in queue
      */

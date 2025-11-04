@@ -38,6 +38,7 @@ elseif(APPLE)
 elseif(UNIX)
     message(STATUS "Configuring for Linux")
     add_definitions(-DPLATFORM_LINUX)
+    add_definitions(-D__LINUX__)  # Linux-specific macro for conditional compilation
 endif()
 
 include_directories(include src ${OPENSSL_INCLUDE_DIR} ${Boost_INCLUDE_DIRS})

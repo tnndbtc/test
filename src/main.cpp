@@ -14,6 +14,7 @@
 #include <vector>
 #include <thread>
 #include <chrono>
+#include <cstring>
 #include <unistd.h>
 #include <limits.h>
 #include <sys/stat.h>
@@ -81,24 +82,20 @@ int main(int argc, char* argv[]) {
     }
 
     // Convert log directory to absolute path (needed for daemon mode)
-    char abs_log_dir[PATH_MAX];
     if (str_log_dir[0] != '/') {
         // Relative path - convert to absolute
         char cwd[PATH_MAX];
         if (getcwd(cwd, sizeof(cwd)) != nullptr) {
-            snprintf(abs_log_dir, sizeof(abs_log_dir), "%s/%s", cwd, str_log_dir.c_str());
-            str_log_dir = abs_log_dir;
+            str_log_dir = std::string(cwd) + "/" + str_log_dir;
         }
     }
 
     // Convert data directory to absolute path (needed for daemon mode)
-    char abs_data_dir[PATH_MAX];
     if (str_data_dir[0] != '/') {
         // Relative path - convert to absolute
         char cwd[PATH_MAX];
         if (getcwd(cwd, sizeof(cwd)) != nullptr) {
-            snprintf(abs_data_dir, sizeof(abs_data_dir), "%s/%s", cwd, str_data_dir.c_str());
-            str_data_dir = abs_data_dir;
+            str_data_dir = std::string(cwd) + "/" + str_data_dir;
             config.SetValue("data_dir", str_data_dir);
         }
     }

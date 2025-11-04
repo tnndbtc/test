@@ -3,6 +3,7 @@
 #define DAEMON_H
 
 #include <string>
+#include <csignal>
 
 class CDaemon {
 public:

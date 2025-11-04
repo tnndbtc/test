@@ -227,6 +227,17 @@ bool CPeerManager::Start() {
  * access peer list during shutdown.
  */
 void CPeerManager::Stop() {
+    // Always clean up Boost.Asio resources, even if never started
+    // This prevents hangs when CPeerManager is constructed but not started
+    if (m_io_work) {
+        m_io_work.reset();
+    }
+    m_io_context.stop();
+
+    if (m_thread_pool) {
+        m_thread_pool->join();
+    }
+
     if (!f_running) {
         return;
     }
@@ -235,12 +246,6 @@ void CPeerManager::Stop() {
     f_stop_requested = true;
     f_stop_monitor = true;
     f_running = false;
-
-    // Stop Boost.Asio I/O infrastructure
-    // Destroy work guard first to allow io_context to complete
-    m_io_work.reset();
-    // Stop io_context event processing
-    m_io_context.stop();
 
     // Close listen socket
     CloseListenSocket();
@@ -312,10 +317,7 @@ void CPeerManager::Stop() {
         m_monitor_inbound_thread.join();
     }
 
-    // Wait for thread pool to finish all pending work
-    if (m_thread_pool) {
-        m_thread_pool->join();
-    }
+    // Thread pool already joined at the beginning of Stop()
 
     // Clear peer lists (all peers now use async I/O, no threads to join)
     {

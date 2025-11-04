@@ -65,6 +65,22 @@ void CRequestQueue::Shutdown() {
 }
 
 /**
+ * @brief Reset shutdown flag for restarting the queue
+ *
+ * Clears the shutdown flag to allow the queue to be reused
+ * after Stop() has been called. This enables multiple start/stop
+ * cycles without recreating the queue.
+ */
+void CRequestQueue::Reset() {
+    std::lock_guard<std::mutex> lock(cs_queue);
+    f_shutdown = false;
+    // Clear any remaining requests from previous run
+    while (!m_queue.empty()) {
+        m_queue.pop();
+    }
+}
+
+/**
  * @brief Get current queue size (thread-safe)
  * @return Number of requests in queue
  */

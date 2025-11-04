@@ -34,6 +34,7 @@ elseif(APPLE)
 elseif(UNIX)
     message(STATUS "Configuring tests for Linux")
     add_definitions(-DPLATFORM_LINUX)
+    add_definitions(-D__LINUX__)  # Linux-specific macro for conditional compilation
 endif()
 
 # Determine if building standalone or as part of parent project
