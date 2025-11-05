@@ -345,8 +345,6 @@ class P2PTest(TestFramework):
             return ""
         try:
             platform_specific_behavior = 'r+' # for apple darwin
-            if sys.platform.startswith("linux"):
-                platform_specific_behavior = 'rw+'
             with open(self.log_file, platform_specific_behavior) as f:
                 # on Linux, log contents is still in OS buffer because node only called flush().  Force write to disk first
                 os.fsync(f.fileno())
