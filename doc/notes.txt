@@ -28,16 +28,17 @@ sudo sysctl -w kernel.yama.ptrace_scope=0
 # Get-Service sshd
 #
 # install git: https://git-scm.com/install/windows
-# install openssl: https://slproweb.com/products/Win32OpenSSL.html win64 exe
+# install openssl: https://slproweb.com/products/Win32OpenSSL.html win64 exe, OpenSSL 3.6
 # install LLVM: https://github.com/llvm/llvm-project/releases
 # install cmake: https://cmake.org/download/
 # install boost: https://www.boost.org/releases/latest/
 # install python3: type python3 on command prompt and it will open Microsoft Store to download
 # install nodejs/npm: https://nodejs.org/en/download
+# install ninja: https://github.com/ninja-build/ninja/releases
 to build:
 configure.bat
 cd build
-cmake --build .
+cmake --build . -- -j4
 --------------------------
 install boost:
 	mac: brew install boost
