@@ -171,14 +171,14 @@ inline int RunAllTests(const std::string& filter = "") {
         try {
             test.test_func();
             g_stats.passed++;
-            std::cout << "\033[32m✓ PASSED\033[0m\n";
+            std::cout << " PASSED\n";
         } catch (const TestFailure& e) {
             g_stats.failed++;
-            std::cout << "\033[31m✗ FAILED\033[0m\n";
+            std::cout << " FAILED\n";
             std::cout << e.what() << "\n\n";
         } catch (const std::exception& e) {
             g_stats.failed++;
-            std::cout << "\033[31m✗ EXCEPTION\033[0m\n";
+            std::cout << " EXCEPTION\n";
             std::cout << "Unexpected exception: " << e.what() << "\n\n";
         }
     }
@@ -187,18 +187,18 @@ inline int RunAllTests(const std::string& filter = "") {
     std::cout << "TEST SUMMARY\n";
     std::cout << "======================================================================\n";
     std::cout << "Total:  " << g_stats.total << "\n";
-    std::cout << "Passed: \033[32m" << g_stats.passed << "\033[0m\n";
-    std::cout << "Failed: \033[31m" << g_stats.failed << "\033[0m\n";
+    std::cout << "Passed: " << g_stats.passed << "\n";
+    std::cout << "Failed: " << g_stats.failed << "\n";
     if (skipped > 0) {
         std::cout << "Skipped: " << skipped << "\n";
     }
     std::cout << "======================================================================\n";
 
     if (g_stats.failed == 0) {
-        std::cout << "\n\033[32m✓ ALL TESTS PASSED\033[0m\n\n";
+        std::cout << "\n ALL TESTS PASSED\n\n";
         return 0;
     } else {
-        std::cout << "\n\033[31m✗ SOME TESTS FAILED\033[0m\n\n";
+        std::cout << "\n SOME TESTS FAILED\n\n";
         return 1;
     }
 }
