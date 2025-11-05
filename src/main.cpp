@@ -15,17 +15,37 @@
 #include <thread>
 #include <chrono>
 #include <cstring>
-#include <unistd.h>
-#include <limits.h>
 #include <sys/stat.h>
+
+#ifdef _WIN32
+    #include <direct.h>  // for _getcwd on Windows
+    #include <windows.h>
+    #include "blockcore/win_service.h"  // Windows service support
+    #ifndef PATH_MAX
+        #define PATH_MAX MAX_PATH
+    #endif
+    #define getcwd _getcwd
+#else
+    #include <unistd.h>
+    #include <limits.h>
+#endif
+
+// Forward declaration
+int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode);
 
 void PrintUsage(const char* program_name) {
     std::cout << "Usage: " << program_name << " [OPTIONS]\n\n";
     std::cout << "Options:\n";
     std::cout << "  -c, --config <file>    Configuration file (default: bweave.conf)\n";
     std::cout << "  -d, --daemon           Run as daemon process\n";
-    std::cout << "  -h, --help             Show this help message\n\n";
-    std::cout << "Configuration file (bweave.conf) should contain:\n";
+    std::cout << "  -h, --help             Show this help message\n";
+#ifdef _WIN32
+    std::cout << "\nWindows Service Options:\n";
+    std::cout << "  --install-service      Install as Windows service\n";
+    std::cout << "  --uninstall-service    Uninstall Windows service\n";
+    std::cout << "  --service              Run as Windows service (internal use)\n";
+#endif
+    std::cout << "\nConfiguration file (bweave.conf) should contain:\n";
     std::cout << "  miner_address=<address>\n";
     std::cout << "  rest_api_port=28443\n";
     std::cout << "  daemon=false\n";
@@ -34,6 +54,43 @@ void PrintUsage(const char* program_name) {
 int main(int argc, char* argv[]) {
     // Set main thread name for easier debugging and logging
     SetThreadName("main_thread");
+
+#ifdef _WIN32
+    // Windows: Handle service installation/uninstallation first
+    for (int n_i = 1; n_i < argc; n_i++) {
+        std::string str_arg = argv[n_i];
+
+        if (str_arg == "--install-service") {
+            // Get executable path
+            char exe_path[MAX_PATH];
+            if (GetModuleFileNameA(NULL, exe_path, MAX_PATH) == 0) {
+                std::cerr << "[Service] Failed to get executable path\n";
+                return 1;
+            }
+            return InstallService(exe_path) ? 0 : 1;
+        }
+        else if (str_arg == "--uninstall-service") {
+            return UninstallService() ? 0 : 1;
+        }
+    }
+
+    // Windows: Check if running as service
+    bool f_running_as_service = IsRunningAsService();
+    if (f_running_as_service) {
+        // Running as Windows service - start service dispatcher
+        if (StartServiceDispatcher(argc, argv)) {
+            return 0;  // Service completed successfully
+        } else {
+            return 1;  // Service failed
+        }
+    }
+
+    // Windows console mode: Setup console control handler for Ctrl+C
+    if (!SetupConsoleCtrlHandler()) {
+        std::cerr << "[Console] Warning: Failed to setup console control handler\n";
+        // Continue anyway - not fatal
+    }
+#endif
 
     std::string str_config_file = "bweave.conf";
     bool f_daemon_mode = false;
@@ -51,6 +108,18 @@ int main(int argc, char* argv[]) {
         else if (str_arg == "-d" || str_arg == "--daemon") {
             f_daemon_mode = true;
         }
+#ifdef _WIN32
+        else if (str_arg == "--service") {
+            // Internal flag used by SCM - should not reach here
+            // Service mode is handled above via StartServiceDispatcher
+            std::cerr << "Error: --service flag should only be used by Service Control Manager\n";
+            return 1;
+        }
+        else if (str_arg == "--install-service" || str_arg == "--uninstall-service") {
+            // Already handled above
+            continue;
+        }
+#endif
         else {
             std::cerr << "Unknown option: " << str_arg << "\n\n";
             PrintUsage(argv[0]);
@@ -58,6 +127,21 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // Run the main application logic
+    return RunApplicationMain(str_config_file, f_daemon_mode);
+}
+
+/**
+ * @brief Main application logic - runs the daemon
+ * @param str_config_file Path to configuration file
+ * @param f_daemon_mode true to run as daemon (POSIX only)
+ * @return Exit code (0 for success)
+ *
+ * This function contains the main application logic and is called from:
+ * - main() in console mode (Windows and POSIX)
+ * - ServiceMain() via RunApplication() in Windows service mode
+ */
+int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode) {
     // Load configuration
     CConfig config(str_config_file);
     std::string str_miner_address = config.GetMinerAddress();
@@ -81,33 +165,61 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Convert log directory to absolute path (needed for daemon mode)
-    if (str_log_dir[0] != '/') {
+    // Convert log directory to absolute path (needed for daemon/service mode)
+#ifdef _WIN32
+    // Windows: Check if path starts with drive letter (e.g., "C:\") or is UNC path
+    bool is_absolute = (str_log_dir.length() >= 2 && str_log_dir[1] == ':') ||
+                       (str_log_dir.length() >= 2 && str_log_dir[0] == '\\' && str_log_dir[1] == '\\');
+#else
+    // POSIX: Check if path starts with '/'
+    bool is_absolute = (str_log_dir.length() > 0 && str_log_dir[0] == '/');
+#endif
+    if (!is_absolute) {
         // Relative path - convert to absolute
         char cwd[PATH_MAX];
         if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+#ifdef _WIN32
+            str_log_dir = std::string(cwd) + "\\" + str_log_dir;
+#else
             str_log_dir = std::string(cwd) + "/" + str_log_dir;
+#endif
         }
     }
 
-    // Convert data directory to absolute path (needed for daemon mode)
-    if (str_data_dir[0] != '/') {
+    // Convert data directory to absolute path (needed for daemon/service mode)
+#ifdef _WIN32
+    // Windows: Check if path starts with drive letter (e.g., "C:\") or is UNC path
+    bool is_data_absolute = (str_data_dir.length() >= 2 && str_data_dir[1] == ':') ||
+                            (str_data_dir.length() >= 2 && str_data_dir[0] == '\\' && str_data_dir[1] == '\\');
+#else
+    // POSIX: Check if path starts with '/'
+    bool is_data_absolute = (str_data_dir.length() > 0 && str_data_dir[0] == '/');
+#endif
+    if (!is_data_absolute) {
         // Relative path - convert to absolute
         char cwd[PATH_MAX];
         if (getcwd(cwd, sizeof(cwd)) != nullptr) {
+#ifdef _WIN32
+            str_data_dir = std::string(cwd) + "\\" + str_data_dir;
+#else
             str_data_dir = std::string(cwd) + "/" + str_data_dir;
+#endif
             config.SetValue("data_dir", str_data_dir);
         }
     }
 
-    // Setup signal handlers
+    // Setup signal handlers (POSIX) or console control handler (Windows console mode)
     CDaemon::SetupSignalHandlers();
 
-    // Daemonize if requested
+    // Daemonize if requested (POSIX only)
     if (config.IsDaemonMode()) {
         // Note: Using cout here because logger is not yet initialized
         std::cout << "[Main] Starting in daemon mode...\n";
         std::cout << "[Main] Log directory: " << str_log_dir << "\n";
+#ifdef _WIN32
+        std::cerr << "[Main] Warning: Windows daemon mode (-d) runs as console background process\n";
+        std::cerr << "[Main] For true Windows service, use: bweave.exe --install-service\n";
+#endif
         if (!CDaemon::Daemonize("/tmp/bweave.pid")) {
             std::cerr << "Failed to daemonize process\n";
             return 1;
@@ -140,8 +252,8 @@ int main(int argc, char* argv[]) {
     // Create data directory if it doesn't exist
     struct stat st;
     if (stat(str_data_dir.c_str(), &st) != 0) {
-#ifdef PLATFORM_WINDOWS
-        _mkdir(str_data_dir.c_str());
+#ifdef _WIN32
+        mkdir(str_data_dir.c_str());
 #else
         mkdir(str_data_dir.c_str(), 0755);
 #endif

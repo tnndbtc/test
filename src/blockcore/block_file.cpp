@@ -13,7 +13,7 @@ CBlockFile::CBlockFile(const std::string& str_data_dir)
     if (stat(m_str_data_dir.c_str(), &st) != 0) {
         // Directory doesn't exist, create it
 #ifdef PLATFORM_WINDOWS
-        _mkdir(m_str_data_dir.c_str());
+        mkdir(m_str_data_dir.c_str());
 #else
         mkdir(m_str_data_dir.c_str(), 0755);
 #endif

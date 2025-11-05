@@ -16,16 +16,29 @@
 #include <iostream>
 #include <cstring>
 #include <cerrno>
-#include <unistd.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <errno.h>
 #include <algorithm>
 #include <sstream>
 #include <ctime>
+
+// Platform-specific socket headers
+#ifdef _WIN32
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+    #include <windows.h>
+    // Don't define close as closesocket - Boost.Asio handles this
+    #define SHUT_RDWR SD_BOTH
+    // Helper function for closing raw sockets (not Boost.Asio wrapped ones)
+    inline void close_socket(int sock) { closesocket(sock); }
+#else
+    #include <unistd.h>
+    #include <sys/socket.h>
+    #include <netinet/in.h>
+    #include <netinet/tcp.h>
+    #include <arpa/inet.h>
+    #include <fcntl.h>
+    #include <errno.h>
+    inline void close_socket(int sock) { close(sock); }
+#endif
 
 // ============= CPeerConnection Implementation =============
 
@@ -60,7 +73,7 @@ CPeerConnection::CPeerConnection(const CPeerNode& node)
 CPeerConnection::~CPeerConnection() {
     f_active = false;
     if (n_socket >= 0) {
-        close(n_socket);
+        close_socket(n_socket);
         n_socket = -1;
     }
 }
@@ -102,7 +115,7 @@ CPeerConnection& CPeerConnection::operator=(CPeerConnection&& other) noexcept {
     if (this != &other) {
         // Clean up existing resources
         if (n_socket >= 0) {
-            close(n_socket);
+            close_socket(n_socket);
         }
 
         // Move from other
@@ -365,7 +378,11 @@ bool CPeerManager::CreateListenSocket() {
 
     // Set socket options
     int n_opt = 1;
+#ifdef _WIN32
+    setsockopt(n_listen_socket, SOL_SOCKET, SO_REUSEADDR, (const char*)&n_opt, sizeof(n_opt));
+#else
     setsockopt(n_listen_socket, SOL_SOCKET, SO_REUSEADDR, &n_opt, sizeof(n_opt));
+#endif
 
     // Bind socket
     sockaddr_in server_addr{};
@@ -375,7 +392,7 @@ bool CPeerManager::CreateListenSocket() {
 
     if (bind(n_listen_socket, (sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
         std::cerr << "[Peer Manager] Failed to bind to port " << n_listen_port << "\n";
-        close(n_listen_socket);
+        close_socket(n_listen_socket);
         n_listen_socket = -1;
         return false;
     }
@@ -383,7 +400,7 @@ bool CPeerManager::CreateListenSocket() {
     // Listen
     if (listen(n_listen_socket, 10) < 0) {
         std::cerr << "[Peer Manager] Failed to listen\n";
-        close(n_listen_socket);
+        close_socket(n_listen_socket);
         n_listen_socket = -1;
         return false;
     }
@@ -401,7 +418,7 @@ bool CPeerManager::CreateListenSocket() {
 void CPeerManager::CloseListenSocket() {
     if (n_listen_socket >= 0) {
         shutdown(n_listen_socket, SHUT_RDWR);
-        close(n_listen_socket);
+        close_socket(n_listen_socket);
         n_listen_socket = -1;
     }
 }
@@ -425,6 +442,27 @@ void CPeerManager::CloseListenSocket() {
  * generate warnings but don't prevent operation.
  */
 bool CPeerManager::SetSocketKeepAlive(int n_socket) {
+#ifdef _WIN32
+    // Windows: Enable keepalive and configure timing
+    BOOL n_keepalive = TRUE;
+    if (setsockopt(n_socket, SOL_SOCKET, SO_KEEPALIVE, (const char*)&n_keepalive, sizeof(n_keepalive)) < 0) {
+        LOG_ERROR("Failed to set SO_KEEPALIVE");
+        return false;
+    }
+
+    // Configure keepalive timing using tcp_keepalive structure
+    struct tcp_keepalive keepalive_vals;
+    keepalive_vals.onoff = 1;
+    keepalive_vals.keepalivetime = 60000;     // 60 seconds (in milliseconds)
+    keepalive_vals.keepaliveinterval = 10000; // 10 seconds (in milliseconds)
+
+    DWORD bytes_returned;
+    if (WSAIoctl(n_socket, SIO_KEEPALIVE_VALS, &keepalive_vals, sizeof(keepalive_vals),
+                 NULL, 0, &bytes_returned, NULL, NULL) == SOCKET_ERROR) {
+        LOG_WARN("Failed to set keepalive timing");
+    }
+#else
+    // POSIX (Linux/macOS)
     int n_keepalive = 1;
     int n_keepidle = 60;      // Start sending keepalive probes after 60 seconds
     int n_keepintvl = 10;     // Send keepalive probes every 10 seconds
@@ -454,6 +492,7 @@ bool CPeerManager::SetSocketKeepAlive(int n_socket) {
     if (setsockopt(n_socket, IPPROTO_TCP, TCP_KEEPCNT, &n_keepcnt, sizeof(n_keepcnt)) < 0) {
         LOG_WARN("Failed to set TCP_KEEPCNT");
     }
+#endif
 
     return true;
 }
@@ -471,6 +510,10 @@ bool CPeerManager::SetSocketKeepAlive(int n_socket) {
  * Returns false if fcntl() fails to get or set flags.
  */
 bool CPeerManager::SetSocketNonBlocking(int n_socket, bool f_non_blocking) {
+#ifdef _WIN32
+    u_long mode = f_non_blocking ? 1 : 0;
+    return ioctlsocket(n_socket, FIONBIO, &mode) == 0;
+#else
     int n_flags = fcntl(n_socket, F_GETFL, 0);
     if (n_flags < 0) {
         return false;
@@ -483,6 +526,7 @@ bool CPeerManager::SetSocketNonBlocking(int n_socket, bool f_non_blocking) {
     }
 
     return fcntl(n_socket, F_SETFL, n_flags) >= 0;
+#endif
 }
 
 /**
@@ -728,9 +772,16 @@ void CPeerManager::MonitorInboundSocketThread() {
  */
 void CPeerManager::RegisterInboundSocket(int n_socket_fd, const std::string& str_address, int n_port) {
     try {
-        // Create stream_descriptor to wrap the socket
+        // Create async socket descriptor to wrap the socket
         // This transfers ownership of the socket FD to Boost.Asio
-        auto p_descriptor = std::make_shared<boost::asio::posix::stream_descriptor>(m_io_context, n_socket_fd);
+#ifdef _WIN32
+        // Windows: Use tcp::socket and assign native handle
+        auto p_descriptor = std::make_shared<AsyncSocketDescriptor>(m_io_context);
+        p_descriptor->assign(boost::asio::ip::tcp::v4(), n_socket_fd);
+#else
+        // POSIX: Use stream_descriptor with file descriptor
+        auto p_descriptor = std::make_shared<AsyncSocketDescriptor>(m_io_context, n_socket_fd);
+#endif
 
         // Store descriptor in map for later access
         {
@@ -781,9 +832,16 @@ void CPeerManager::RegisterInboundSocket(int n_socket_fd, const std::string& str
  */
 void CPeerManager::RegisterOutboundSocket(int n_socket_fd, const std::string& str_address, int n_port) {
     try {
-        // Create stream_descriptor to wrap the socket
+        // Create async socket descriptor to wrap the socket
         // This transfers ownership of the socket FD to Boost.Asio
-        auto p_descriptor = std::make_shared<boost::asio::posix::stream_descriptor>(m_io_context, n_socket_fd);
+#ifdef _WIN32
+        // Windows: Use tcp::socket and assign native handle
+        auto p_descriptor = std::make_shared<AsyncSocketDescriptor>(m_io_context);
+        p_descriptor->assign(boost::asio::ip::tcp::v4(), n_socket_fd);
+#else
+        // POSIX: Use stream_descriptor with file descriptor
+        auto p_descriptor = std::make_shared<AsyncSocketDescriptor>(m_io_context, n_socket_fd);
+#endif
 
         // Store descriptor in map for later access
         {
@@ -838,7 +896,7 @@ void CPeerManager::HandleAsyncRead(const boost::system::error_code& ec,
                                     std::shared_ptr<std::vector<uint8_t>> p_buffer) {
 
     // Check if socket descriptor still exists
-    std::shared_ptr<boost::asio::posix::stream_descriptor> p_descriptor;
+    std::shared_ptr<AsyncSocketDescriptor> p_descriptor;
     {
         std::lock_guard<std::mutex> lock(cs_inbound_descriptors);
         auto it = map_inbound_descriptors.find(n_socket_fd);
@@ -961,7 +1019,7 @@ void CPeerManager::HandleAsyncRead(const boost::system::error_code& ec,
  */
 void CPeerManager::SendMessageAsync(int n_socket_fd, const CPeerMessage& message) {
     // Get descriptor for this socket
-    std::shared_ptr<boost::asio::posix::stream_descriptor> p_descriptor;
+    std::shared_ptr<AsyncSocketDescriptor> p_descriptor;
     {
         std::lock_guard<std::mutex> lock(cs_inbound_descriptors);
         auto it = map_inbound_descriptors.find(n_socket_fd);
@@ -1018,7 +1076,7 @@ void CPeerManager::HandleAsyncWrite(const boost::system::error_code& ec,
         }
 
         // On error: Cancel pending operations, remove descriptor, close socket, and mark peer disconnected
-        std::shared_ptr<boost::asio::posix::stream_descriptor> p_descriptor;
+        std::shared_ptr<AsyncSocketDescriptor> p_descriptor;
         {
             std::lock_guard<std::mutex> lock(cs_inbound_descriptors);
             auto it = map_inbound_descriptors.find(n_socket_fd);
@@ -1428,20 +1486,20 @@ bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
 
     if (inet_pton(AF_INET, str_address.c_str(), &peer_addr.sin_addr) <= 0) {
         LOG_ERROR("Invalid peer address: " + str_address);
-        close(n_socket);
+        close_socket(n_socket);
         return false;
     }
 
     if (connect(n_socket, (sockaddr*)&peer_addr, sizeof(peer_addr)) < 0) {
         LOG_ERROR("Failed to connect to peer " + str_address + ":" + std::to_string(n_port) + " - " + strerror(errno));
-        close(n_socket);
+        close_socket(n_socket);
         return false;
     }
 
     // Set socket to non-blocking mode (required for Boost.Asio async I/O)
     if (!SetSocketNonBlocking(n_socket, true)) {
         LOG_ERROR("Failed to set non-blocking mode for peer " + str_address);
-        close(n_socket);
+        close_socket(n_socket);
         return false;
     }
 

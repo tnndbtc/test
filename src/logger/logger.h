@@ -7,6 +7,13 @@
 #include <mutex>
 #include <memory>
 
+// Undefine Windows ERROR macro to avoid conflict with ELogLevel::ERROR
+#ifdef _WIN32
+#ifdef ERROR
+#undef ERROR
+#endif
+#endif
+
 /**
  * @enum ELogLevel
  * @brief Log severity levels in ascending order of severity

@@ -3,25 +3,54 @@
 #include "logger/logger.h"
 #include <iostream>
 #include <fstream>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <signal.h>
-#include <fcntl.h>
 #include <cstdlib>
 #include <cstring>
 
-// Global shutdown flag
-volatile sig_atomic_t g_f_shutdown_requested = 0;
+#ifndef _WIN32
+    #include <unistd.h>
+    #include <sys/stat.h>
+    #include <sys/types.h>
+    #include <signal.h>
+    #include <fcntl.h>
+#else
+    #include <windows.h>
+    #include <process.h>
+#endif
 
-// Signal handler
+// Global shutdown flag
+#ifndef _WIN32
+volatile sig_atomic_t g_f_shutdown_requested = 0;
+#else
+volatile int g_f_shutdown_requested = 0;
+#endif
+
+// Signal handler (POSIX only)
+#ifndef _WIN32
 static void SignalHandler(int n_signal) {
     if (n_signal == SIGTERM || n_signal == SIGINT) {
         g_f_shutdown_requested = 1;
     }
 }
+#endif
 
 bool CDaemon::Daemonize(const std::string& str_pid_file) {
+#ifdef _WIN32
+    // Windows: Daemonization not supported (would need Windows Service)
+    // Just write PID file and run as foreground process
+    std::cerr << "[Daemon] Note: Running as foreground process on Windows (daemonization not supported)\n";
+
+    // Write PID file with current process ID
+    std::ofstream pid_file(str_pid_file);
+    if (!pid_file.is_open()) {
+        std::cerr << "[Daemon] Failed to create PID file: " << str_pid_file << "\n";
+        return false;
+    }
+    pid_file << _getpid() << "\n";
+    pid_file.close();
+
+    return true;
+#else
+    // POSIX: Traditional daemonization
     // Fork first child
     pid_t pid = fork();
     if (pid < 0) {
@@ -84,6 +113,7 @@ bool CDaemon::Daemonize(const std::string& str_pid_file) {
 
     std::cout << "[Daemon] Process daemonized successfully\n";
     return true;
+#endif
 }
 
 bool CDaemon::WritePidFile(const std::string& str_pid_file) {
@@ -94,14 +124,27 @@ bool CDaemon::WritePidFile(const std::string& str_pid_file) {
         return false;
     }
 
+#ifdef _WIN32
+    file << _getpid();
+#else
     file << getpid();
+#endif
     file.close();
+
+#ifdef _WIN32
+    LOG_INFO("PID file written: " + str_pid_file + " (PID: " + std::to_string(_getpid()) + ")");
+#else
     LOG_INFO("PID file written: " + str_pid_file + " (PID: " + std::to_string(getpid()) + ")");
+#endif
     return true;
 }
 
 void CDaemon::RemovePidFile(const std::string& str_pid_file) {
+#ifdef _WIN32
+    _unlink(str_pid_file.c_str());
+#else
     unlink(str_pid_file.c_str());
+#endif
 }
 
 bool CDaemon::IsRunning(const std::string& str_pid_file) {
@@ -115,9 +158,18 @@ bool CDaemon::IsRunning(const std::string& str_pid_file) {
     file.close();
 
     // Check if process exists
+#ifdef _WIN32
+    // Windows: Try to open the process
+    HANDLE h_process = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, n_pid);
+    if (h_process != NULL) {
+        CloseHandle(h_process);
+        return true;
+    }
+#else
     if (kill(n_pid, 0) == 0) {
         return true;
     }
+#endif
 
     // PID file exists but process doesn't, remove stale file
     RemovePidFile(str_pid_file);
@@ -125,6 +177,8 @@ bool CDaemon::IsRunning(const std::string& str_pid_file) {
 }
 
 void CDaemon::SetupSignalHandlers() {
+#ifndef _WIN32
+    // POSIX: Setup signal handlers for SIGTERM and SIGINT
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = SignalHandler;
@@ -134,4 +188,12 @@ void CDaemon::SetupSignalHandlers() {
     sigaction(SIGTERM, &sa, nullptr);
     sigaction(SIGINT, &sa, nullptr);
     signal(SIGPIPE, SIG_IGN);  // Ignore broken pipe
+#else
+    // Windows: Console control handler is set up in win_service.cpp
+    // via SetupConsoleCtrlHandler() which is called from main()
+    // This function is called from RunApplicationMain() after mode detection,
+    // so the console control handler is already registered by that point.
+    // Service mode doesn't need console handler - uses ServiceCtrlHandler instead.
+    // Nothing to do here for Windows.
+#endif
 }

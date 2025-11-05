@@ -7,9 +7,18 @@
 #include <cstdint>
 #include <stdexcept>
 #include <cstring>
-#ifdef __LINUX__
-#include <arpa/inet.h>  // For ntohs, htons (Linux/POSIX network byte order functions)
+
+// Platform-specific headers for network byte order functions (ntohs, htons)
+#ifdef _WIN32
+    #ifndef WIN32_LEAN_AND_MEAN
+    #define WIN32_LEAN_AND_MEAN
+    #endif
+    #include <winsock2.h>  // For ntohs, htons on Windows (must come before windows.h)
+    #include <ws2tcpip.h>
+#else
+    #include <arpa/inet.h>  // For ntohs, htons on Linux/POSIX
 #endif
+
 #include "blockcore/object_type.h"
 
 /**

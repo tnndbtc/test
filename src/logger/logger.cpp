@@ -184,7 +184,11 @@ bool CLogger::Initialize(const std::string& str_log_dir, ELogLevel min_level,
     struct stat st;
     if (stat(str_log_dir.c_str(), &st) != 0) {
         // Directory doesn't exist, try to create it
+#ifdef _WIN32
+        if (mkdir(str_log_dir.c_str()) != 0) {
+#else
         if (mkdir(str_log_dir.c_str(), 0755) != 0) {
+#endif
             std::cerr << "[Logger] Failed to create log directory: " << str_log_dir << "\n";
             return false;
         }

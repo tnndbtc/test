@@ -18,7 +18,17 @@
 #include <algorithm>
 #include <boost/asio.hpp>
 #include <boost/asio/thread_pool.hpp>
-#include <boost/asio/posix/stream_descriptor.hpp>
+#include <boost/asio/ip/tcp.hpp>
+
+// Platform-specific async I/O types
+#ifdef _WIN32
+    // Windows: Use ip::tcp::socket for async operations
+    using AsyncSocketDescriptor = boost::asio::ip::tcp::socket;
+#else
+    // POSIX: Use posix::stream_descriptor for async operations
+    #include <boost/asio/posix/stream_descriptor.hpp>
+    using AsyncSocketDescriptor = boost::asio::posix::stream_descriptor;
+#endif
 
 /**
  * @struct PeerNodePtrComparator
@@ -150,7 +160,7 @@ private:
     boost::asio::io_context m_io_context;                              ///< I/O context for async socket monitoring
     std::unique_ptr<boost::asio::executor_work_guard<boost::asio::io_context::executor_type>> m_io_work;  ///< Work guard to keep io_context running
     std::unique_ptr<boost::asio::thread_pool> m_thread_pool;           ///< Thread pool (MAX_INBOUND_PEERS workers) for recv/send operations
-    std::map<int, std::shared_ptr<boost::asio::posix::stream_descriptor>> map_inbound_descriptors;  ///< Map of socket FD to stream descriptors for async I/O
+    std::map<int, std::shared_ptr<AsyncSocketDescriptor>> map_inbound_descriptors;  ///< Map of socket FD to async socket descriptors for async I/O
     mutable std::mutex cs_inbound_descriptors;                         ///< Mutex protecting inbound descriptors map
 
     // Threads

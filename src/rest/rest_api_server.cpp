@@ -23,13 +23,21 @@
 #include "blockcore/transaction.h"
 #include <iostream>
 #include <sstream>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <unistd.h>
-#include <arpa/inet.h>
 #include <cstring>
 #include <algorithm>
 #include <cctype>
+
+// Platform-specific socket headers
+#ifndef _WIN32
+    #include <sys/socket.h>
+    #include <netinet/in.h>
+    #include <unistd.h>
+    #include <arpa/inet.h>
+#else
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+    #define SHUT_RDWR SD_BOTH
+#endif
 #include <fstream>
 #include <random>
 #include <iomanip>
@@ -319,7 +327,11 @@ static bool CreateDirectoryRecursive(const std::string& str_path) {
     }
 
     // Create this directory
+#ifdef _WIN32
+    return mkdir(str_path.c_str()) == 0;
+#else
     return mkdir(str_path.c_str(), 0755) == 0;
+#endif
 }
 
 // ============= CRestApiServer Implementation =============
@@ -385,7 +397,11 @@ bool CRestApiServer::Start() {
 
     // Set socket options
     int n_opt = 1;
+#ifdef _WIN32
+    setsockopt(n_server_socket, SOL_SOCKET, SO_REUSEADDR, (const char*)&n_opt, sizeof(n_opt));
+#else
     setsockopt(n_server_socket, SOL_SOCKET, SO_REUSEADDR, &n_opt, sizeof(n_opt));
+#endif
 
     // Bind socket
     sockaddr_in server_addr{};

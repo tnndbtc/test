@@ -164,6 +164,7 @@ target_link_libraries(bwpeer
 # ============================================================
 # Blockcore Library (libbwblockcore.so / .dylib / .dll)
 # Core blockchain implementation: block, block_weave, transaction, daemon, mining, block_file
+# Note: win_service.cpp is compiled directly into bweave.exe, not this library
 # ============================================================
 add_library(bwblockcore SHARED
     src/blockcore/block.cpp
@@ -230,11 +231,20 @@ target_link_libraries(bwrest
 # ============================================================
 # Main Executable: bweave
 # Links with all libraries
+# Windows: Also includes win_service.cpp for Windows Service support
 # ============================================================
-add_executable(bweave
-    src/main.cpp
-    src/wallet/wallet.cpp
-)
+if(WIN32)
+    add_executable(bweave
+        src/main.cpp
+        src/wallet/wallet.cpp
+        src/blockcore/win_service.cpp
+    )
+else()
+    add_executable(bweave
+        src/main.cpp
+        src/wallet/wallet.cpp
+    )
+endif()
 
 # Link bweave with all libraries
 target_link_libraries(bweave
@@ -305,20 +315,32 @@ endif()
 # Daemon CLI: bweave_cli
 # Control utility for starting/stopping bweave
 # Lightweight - standalone executable
+# Cross-platform: Works on Windows (service control) and POSIX (daemon control)
 # ============================================================
 add_executable(bweave_cli
     src/cli/bweave_cli.cpp
 )
 
-# bweave_cli doesn't need libraries - it only starts/stops bweave
-# No linking needed - standalone executable
+# bweave_cli doesn't need libraries on POSIX - it only starts/stops bweave
+# On Windows, it needs advapi32 for Service Control Manager APIs
 
 # Platform-specific libraries
 if(WIN32)
     # Windows specific settings
     target_compile_definitions(bweave PRIVATE _WIN32_WINNT=0x0601)
     target_compile_definitions(wallet PRIVATE _WIN32_WINNT=0x0601)
-    target_compile_definitions(bweave_cli PRIVATE _WIN32_WINNT=0x0601)
+    if(TARGET bweave_cli)
+        target_compile_definitions(bweave_cli PRIVATE _WIN32_WINNT=0x0601)
+    endif()
+
+    # Link Windows socket library (ws2_32) and service library (advapi32)
+    target_link_libraries(bwpeer PUBLIC ws2_32)
+    target_link_libraries(bwblockcore PUBLIC advapi32)  # For Windows Service APIs
+    target_link_libraries(bweave PRIVATE ws2_32 advapi32)
+    target_link_libraries(wallet PRIVATE ws2_32)
+    if(TARGET bweave_cli)
+        target_link_libraries(bweave_cli PRIVATE advapi32)  # For Service Control Manager APIs
+    endif()
 else()
     # Linux/macOS: Use POSIX threads for threading support
     find_package(Threads REQUIRED)
@@ -342,7 +364,9 @@ if(MSVC)
     target_compile_options(bwrest PRIVATE /W4)
     target_compile_options(bweave PRIVATE /W4)
     target_compile_options(wallet PRIVATE /W4)
-    target_compile_options(bweave_cli PRIVATE /W4)
+    if(TARGET bweave_cli)
+        target_compile_options(bweave_cli PRIVATE /W4)
+    endif()
 else()
     # GCC/Clang
     target_compile_options(bwthreadname PRIVATE -Wall -Wextra -pedantic)
@@ -353,7 +377,9 @@ else()
     target_compile_options(bwrest PRIVATE -Wall -Wextra -pedantic)
     target_compile_options(bweave PRIVATE -Wall -Wextra -pedantic)
     target_compile_options(wallet PRIVATE -Wall -Wextra -pedantic)
-    target_compile_options(bweave_cli PRIVATE -Wall -Wextra -pedantic)
+    if(TARGET bweave_cli)
+        target_compile_options(bweave_cli PRIVATE -Wall -Wextra -pedantic)
+    endif()
 endif()
 
 # ============================================================
@@ -382,4 +408,8 @@ install(TARGETS bwthreadname bwlogger bwutils bwpeer bwblockcore bwrest
     ARCHIVE DESTINATION lib
     RUNTIME DESTINATION bin
 )
-install(TARGETS bweave wallet bweave_cli DESTINATION bin)
+if(TARGET bweave_cli)
+    install(TARGETS bweave wallet bweave_cli DESTINATION bin)
+else()
+    install(TARGETS bweave wallet DESTINATION bin)
+endif()

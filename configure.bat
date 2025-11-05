@@ -22,8 +22,20 @@ if "%arg:~0,9%"=="--prefix=" (
     shift
     goto :parse_args
 )
+if "%arg%"=="--prefix" (
+    set INSTALL_PREFIX=%~2
+    shift
+    shift
+    goto :parse_args
+)
 if "%arg:~0,12%"=="--build-dir=" (
     set BUILD_DIR=%arg:~12%
+    shift
+    goto :parse_args
+)
+if "%arg%"=="--build-dir" (
+    set BUILD_DIR=%~2
+    shift
     shift
     goto :parse_args
 )
@@ -42,13 +54,31 @@ if "%arg:~0,12%"=="--generator=" (
     shift
     goto :parse_args
 )
+if "%arg%"=="--generator" (
+    set GENERATOR=%~2
+    shift
+    shift
+    goto :parse_args
+)
 if "%arg:~0,16%"=="--openssl-root=" (
     set OPENSSL_ROOT_DIR=%arg:~16%
     shift
     goto :parse_args
 )
+if "%arg%"=="--openssl-root" (
+    set OPENSSL_ROOT_DIR=%~2
+    shift
+    shift
+    goto :parse_args
+)
 if "%arg:~0,13%"=="--boost-root=" (
     set BOOST_ROOT=%arg:~13%
+    shift
+    goto :parse_args
+)
+if "%arg%"=="--boost-root" (
+    set BOOST_ROOT=%~2
+    shift
     shift
     goto :parse_args
 )
@@ -345,15 +375,15 @@ echo.
 echo Next steps:
 if "%GENERATOR%"=="Ninja" (
     echo   1. Build:   cd %BUILD_DIR% ^&^& ninja
-    echo   2. Test:    %BUILD_DIR%\rest_daemon.exe
+    echo   2. Test:    %BUILD_DIR%\bweave.exe
     echo   3. Install: cd %BUILD_DIR% ^&^& ninja install
 ) else if "%GENERATOR:Visual Studio=%"=="%GENERATOR%" (
     echo   1. Build:   cd %BUILD_DIR% ^&^& cmake --build . --config %BUILD_TYPE%
-    echo   2. Test:    %BUILD_DIR%\%BUILD_TYPE%\rest_daemon.exe
+    echo   2. Test:    %BUILD_DIR%\%BUILD_TYPE%\bweave.exe
     echo   3. Install: cd %BUILD_DIR% ^&^& cmake --build . --config %BUILD_TYPE% --target install
 ) else (
     echo   1. Build:   cd %BUILD_DIR% ^&^& cmake --build .
-    echo   2. Test:    %BUILD_DIR%\rest_daemon.exe
+    echo   2. Test:    %BUILD_DIR%\bweave.exe
     echo   3. Install: cd %BUILD_DIR% ^&^& cmake --build . --target install
 )
 echo.
@@ -366,17 +396,29 @@ echo Usage: configure.bat [OPTIONS]
 echo.
 echo Options:
 echo   --prefix=DIR          Installation prefix (default: C:\Program Files\RestDaemon)
+echo   --prefix DIR          (or use space-separated format)
 echo   --build-dir=DIR       Build directory (default: build)
+echo   --build-dir DIR       (or use space-separated format)
 echo   --debug               Build with debug symbols
 echo   --release             Build with optimizations (default)
 echo   --generator=GEN       CMake generator (default: auto-detect)
+echo   --generator GEN       (or use space-separated format)
 echo   --openssl-root=DIR    Path to OpenSSL installation
+echo   --openssl-root DIR    (or use space-separated format)
 echo   --boost-root=DIR      Path to Boost installation
+echo   --boost-root DIR      (or use space-separated format)
 echo   --help                Show this help message
+echo.
+echo Available generators:
+echo   "MinGW Makefiles"     MinGW with make
+echo   "Ninja"               Ninja build system (fast)
+echo   "Visual Studio 17 2022"  Visual Studio 2022
+echo   "Visual Studio 16 2019"  Visual Studio 2019
 echo.
 echo Examples:
 echo   configure.bat --prefix="C:\MyApp"
 echo   configure.bat --debug --build-dir=debug_build
 echo   configure.bat --generator=Ninja
-echo   configure.bat --openssl-root="C:\OpenSSL-Win64"
+echo   configure.bat --generator "MinGW Makefiles"
+echo   configure.bat --openssl-root "C:\OpenSSL-Win64"
 exit /b 0

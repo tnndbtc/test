@@ -235,11 +235,94 @@ Custom test framework in `unit_test.h`, no external dependencies.
 
 ## Platform Support
 
-- **macOS**: Primary development platform
-- **Linux**: Fully supported
-- **Windows**: Configured but untested
+- **macOS**: Fully supported (POSIX daemon)
+- **Linux**: Fully supported (POSIX daemon)
+- **Windows**: Fully supported (Windows Service + Console daemon)
 
 Platform-specific defines: `PLATFORM_MACOS`, `PLATFORM_LINUX`, `PLATFORM_WINDOWS`
+
+### Windows Service Support
+
+**bweave** runs as a native Windows Service with full Service Control Manager (SCM) integration.
+
+**Three run modes on Windows:**
+1. **Service mode** (recommended): Runs under SCM control, managed via services.msc
+2. **Console mode**: Runs as foreground process with Ctrl+C support
+3. **Console daemon mode**: Runs detached from console with PID file (like POSIX)
+
+**Installation and Management:**
+
+```cmd
+REM Install as Windows service (requires Administrator)
+bweave.exe --install-service
+
+REM Or use bweave_cli
+bweave_cli install
+
+REM Start service
+bweave_cli start
+REM Or: net start bweave
+REM Or: services.msc GUI
+
+REM Check status
+bweave_cli status
+REM Or: sc query bweave
+
+REM Stop service
+bweave_cli stop
+REM Or: net stop bweave
+
+REM Uninstall service
+bweave.exe --uninstall-service
+REM Or: bweave_cli uninstall
+```
+
+**Console daemon mode** (when not installed as service):
+```cmd
+REM Start console daemon (background process with PID file)
+bweave.exe -d
+
+REM Or use bweave_cli
+bweave_cli start
+
+REM Stop console daemon
+bweave_cli stop
+```
+
+**Console mode** (foreground):
+```cmd
+REM Run in console (Ctrl+C to stop)
+bweave.exe
+```
+
+**Service configuration:**
+- Service name: `bweave`
+- Display name: `Blockweave Daemon`
+- Startup type: Automatic
+- Account: LocalSystem (default)
+- Dependencies: None
+
+**Implementation details:**
+- **src/blockcore/win_service.h/cpp**: Windows Service wrapper
+  - `ServiceMain()` - SCM entry point
+  - `ServiceCtrlHandler()` - Handles STOP/SHUTDOWN control codes
+  - `ConsoleCtrlHandler()` - Handles Ctrl+C in console mode
+  - `InstallService()/UninstallService()` - Service installation
+- **src/main.cpp**: Automatic mode detection
+  - Detects service vs console mode via `IsRunningAsService()`
+  - Calls `StartServiceDispatcher()` in service mode
+  - Registers `ConsoleCtrlHandler()` in console mode
+- **src/cli/bweave_cli.cpp**: Cross-platform CLI
+  - Windows: Uses SCM APIs when service installed, CreateProcess for console daemon
+  - POSIX: Uses fork/exec and signals
+
+**Shutdown mechanism:**
+- **Service mode**: `ServiceCtrlHandler()` sets `g_f_shutdown_requested` on SERVICE_CONTROL_STOP
+- **Console mode**: `ConsoleCtrlHandler()` sets `g_f_shutdown_requested` on Ctrl+C
+- **Console daemon**: `TerminateProcess()` via bweave_cli (not graceful)
+- **POSIX**: Signal handler sets `g_f_shutdown_requested` on SIGTERM/SIGINT
+
+All modes use the same shutdown flag for consistent graceful shutdown.
 
 ## Development Workflow
 

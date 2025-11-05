@@ -1,7 +1,7 @@
 // ============= peer_message.cpp =============
 #include "peer_message.h"
 #include <cstring>
-#include <arpa/inet.h>
+// Network byte order functions are in peer_message.h (platform-specific)
 
 // ============= MessageType Namespace Functions =============
 
