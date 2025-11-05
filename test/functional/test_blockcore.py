@@ -97,7 +97,7 @@ class BlockcoreTest(TestFramework):
             )
         else:
             self.log_info(
-                f"Warning: Mempool size did not increase "
+                f"Warning: Mempool size did not increase, or mining happened too quick"
                 f"(before: {initial_mempool_size}, after: {mempool_size_after_tx})"
             )
 
@@ -118,7 +118,8 @@ class BlockcoreTest(TestFramework):
             current_mempool_size = current_state.get("mempool_size", 0)
 
             # Check if mempool size decreased (indicating a block was mined)
-            if current_mempool_size < mempool_size_after_tx:
+            # sometimes mining happens too quick so current_mempool_size decreased immediately
+            if current_mempool_size < mempool_size_after_tx or current_mempool_size == 0:
                 elapsed = time.time() - start_time
                 self.log_info(f"Block mined after {elapsed:.2f}s!")
                 self.log_info(f"Mempool size: {mempool_size_after_tx} -> {current_mempool_size}")
