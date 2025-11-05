@@ -29,7 +29,7 @@ extern SERVICE_STATUS g_service_status;
 
 // Service configuration
 const char* const SERVICE_NAME = "bweave";
-const char* const SERVICE_DISPLAY_NAME = "Blockweave Daemon";
+const char* const SERVICE_DISPLAY_NAME = "Blockweave";
 const char* const BWEAVE_SERVICE_DESCRIPTION = "Blockweave blockchain daemon with REST API and P2P mining";
 
 /**
