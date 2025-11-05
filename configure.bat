@@ -1,12 +1,12 @@
 @echo off
-REM Configure script for RestDaemon - Windows
+REM Configure script for bweave - Windows
 
 setlocal enabledelayedexpansion
 
 REM Default values
 set BUILD_DIR=build
 set BUILD_TYPE=Release
-set INSTALL_PREFIX=C:\Program Files\RestDaemon
+set INSTALL_PREFIX=C:\Program Files\bweave
 set GENERATOR=
 if not defined OPENSSL_ROOT_DIR set OPENSSL_ROOT_DIR=
 if not defined BOOST_ROOT set BOOST_ROOT=
@@ -395,7 +395,7 @@ REM Usage function
 echo Usage: configure.bat [OPTIONS]
 echo.
 echo Options:
-echo   --prefix=DIR          Installation prefix (default: C:\Program Files\RestDaemon)
+echo   --prefix=DIR          Installation prefix (default: C:\Program Files\bweave)
 echo   --prefix DIR          (or use space-separated format)
 echo   --build-dir=DIR       Build directory (default: build)
 echo   --build-dir DIR       (or use space-separated format)

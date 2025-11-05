@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Configure script for RestDaemon - Linux/macOS
+# Configure script for bweave - Linux/macOS
 
 set -e
 
