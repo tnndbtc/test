@@ -104,16 +104,8 @@ std::string CLogger::GetProcessName() {
     }
     return str_full_path;
 #elif defined(__linux__)
-    // Try /proc/self/comm first (more reliable for process name)
-    std::ifstream comm_file("/proc/self/comm");
-    if (comm_file.is_open()) {
-        std::string str_name;
-        std::getline(comm_file, str_name);
-        if (!str_name.empty()) {
-            return str_name;
-        }
-    }
-    // Fallback to cmdline
+    // Use /proc/self/cmdline to get actual process name
+    // Note: /proc/self/comm can be modified by pthread_setname_np(), so we avoid it
     std::ifstream cmdline_file("/proc/self/cmdline");
     if (cmdline_file.is_open()) {
         std::string str_cmdline;
@@ -122,7 +114,9 @@ std::string CLogger::GetProcessName() {
         if (n_last_slash != std::string::npos) {
             return str_cmdline.substr(n_last_slash + 1);
         }
-        return str_cmdline;
+        if (!str_cmdline.empty()) {
+            return str_cmdline;
+        }
     }
     return "unknown";
 #else

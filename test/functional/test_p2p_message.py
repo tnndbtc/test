@@ -14,6 +14,7 @@ This test suite covers:
 """
 
 import sys
+import os
 import time
 import unittest
 import socket
@@ -343,7 +344,12 @@ class P2PTest(TestFramework):
         if log_position is None:
             return ""
         try:
-            with open(self.log_file, 'r') as f:
+            platform_specific_behavior = 'r+' # for apple darwin
+            if sys.platform.startswith("linux"):
+                platform_specific_behavior = 'rw+'
+            with open(self.log_file, platform_specific_behavior) as f:
+                # on Linux, log contents is still in OS buffer because node only called flush().  Force write to disk first
+                os.fsync(f.fileno())
                 f.seek(log_position)
                 return f.read()
         except Exception as e:
