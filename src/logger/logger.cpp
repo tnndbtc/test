@@ -16,10 +16,22 @@
 #include <ctime>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <unistd.h>
+
+#ifdef _WIN32
+    #include <windows.h>
+    #include <direct.h>
+    #include <process.h>
+    #define getpid _getpid
+    // Windows defines ERROR as a macro, which conflicts with ELogLevel::ERROR
+    #ifdef ERROR
+        #undef ERROR
+    #endif
+#else
+    #include <unistd.h>
+#endif
 
 #ifdef __APPLE__
-#include <libproc.h>
+    #include <libproc.h>
 #endif
 
 /// Global logger instance (initialized by InitializeLogger)
@@ -89,7 +101,29 @@ std::string CLogger::GetLevelString(ELogLevel level) {
  * On Linux, reads from /proc/self/comm or /proc/self/cmdline.
  */
 std::string CLogger::GetProcessName() {
-#ifdef __APPLE__
+#ifdef _WIN32
+    // Windows implementation using GetModuleFileName
+    char path_buf[MAX_PATH];
+    DWORD len = GetModuleFileNameA(NULL, path_buf, sizeof(path_buf));
+    if (len == 0 || len == sizeof(path_buf)) {
+        return "unknown";
+    }
+    // Extract basename from full path and remove .exe extension
+    std::string str_full_path(path_buf);
+    size_t n_last_slash = str_full_path.find_last_of('\\');
+    std::string str_basename;
+    if (n_last_slash != std::string::npos) {
+        str_basename = str_full_path.substr(n_last_slash + 1);
+    } else {
+        str_basename = str_full_path;
+    }
+    // Remove .exe extension if present
+    size_t n_ext_pos = str_basename.find_last_of('.');
+    if (n_ext_pos != std::string::npos && str_basename.substr(n_ext_pos) == ".exe") {
+        return str_basename.substr(0, n_ext_pos);
+    }
+    return str_basename;
+#elif defined(__APPLE__)
     char path_buf[PROC_PIDPATHINFO_MAXSIZE];
     pid_t pid = getpid();
     int ret = proc_pidpath(pid, path_buf, sizeof(path_buf));
@@ -185,7 +219,7 @@ bool CLogger::Initialize(const std::string& str_log_dir, ELogLevel min_level,
     if (stat(str_log_dir.c_str(), &st) != 0) {
         // Directory doesn't exist, try to create it
 #ifdef _WIN32
-        if (mkdir(str_log_dir.c_str()) != 0) {
+        if (_mkdir(str_log_dir.c_str()) != 0) {
 #else
         if (mkdir(str_log_dir.c_str(), 0755) != 0) {
 #endif
@@ -196,7 +230,11 @@ bool CLogger::Initialize(const std::string& str_log_dir, ELogLevel min_level,
 
     // Use process name as log file name
     std::string str_process_name = GetProcessName();
+#ifdef _WIN32
+    m_str_log_file = str_log_dir + "\\" + str_process_name + ".log";
+#else
     m_str_log_file = str_log_dir + "/" + str_process_name + ".log";
+#endif
 
     // Open log file in append mode (appends to existing file)
     m_log_stream.open(m_str_log_file, std::ios::out | std::ios::app);

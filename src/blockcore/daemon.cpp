@@ -35,18 +35,11 @@ static void SignalHandler(int n_signal) {
 
 bool CDaemon::Daemonize(const std::string& str_pid_file) {
 #ifdef _WIN32
-    // Windows: Daemonization not supported (would need Windows Service)
-    // Just write PID file and run as foreground process
-    std::cerr << "[Daemon] Note: Running as foreground process on Windows (daemonization not supported)\n";
-
-    // Write PID file with current process ID
-    std::ofstream pid_file(str_pid_file);
-    if (!pid_file.is_open()) {
-        std::cerr << "[Daemon] Failed to create PID file: " << str_pid_file << "\n";
-        return false;
-    }
-    pid_file << _getpid() << "\n";
-    pid_file.close();
+    // Windows: Daemonization not supported (use Windows Service instead)
+    // PID files are not needed on Windows - Services are managed by SCM
+    (void)str_pid_file; // Suppress unused parameter warning
+    std::cerr << "[Daemon] Note: Running as foreground process on Windows\n";
+    std::cerr << "[Daemon] To run as background service, install as Windows Service using 'sc create' or 'bweave_cli service install'\n";
 
     return true;
 #else
@@ -117,6 +110,13 @@ bool CDaemon::Daemonize(const std::string& str_pid_file) {
 }
 
 bool CDaemon::WritePidFile(const std::string& str_pid_file) {
+#ifdef _WIN32
+    // Windows: Do not create PID files - Services are managed by SCM
+    (void)str_pid_file; // Suppress unused parameter warning
+    LOG_INFO("PID files not used on Windows - use Windows Service instead");
+    return true;
+#else
+    // POSIX: Write PID file
     std::ofstream file(str_pid_file);
     if (!file.is_open()) {
         std::cerr << "[Daemon] Failed to write PID file: " << str_pid_file << "\n";
@@ -124,30 +124,30 @@ bool CDaemon::WritePidFile(const std::string& str_pid_file) {
         return false;
     }
 
-#ifdef _WIN32
-    file << _getpid();
-#else
     file << getpid();
-#endif
     file.close();
 
-#ifdef _WIN32
-    LOG_INFO("PID file written: " + str_pid_file + " (PID: " + std::to_string(_getpid()) + ")");
-#else
     LOG_INFO("PID file written: " + str_pid_file + " (PID: " + std::to_string(getpid()) + ")");
-#endif
     return true;
+#endif
 }
 
 void CDaemon::RemovePidFile(const std::string& str_pid_file) {
 #ifdef _WIN32
-    _unlink(str_pid_file.c_str());
+    // Windows: No PID files to remove - Services are managed by SCM
+    (void)str_pid_file; // Suppress unused parameter warning
 #else
     unlink(str_pid_file.c_str());
 #endif
 }
 
 bool CDaemon::IsRunning(const std::string& str_pid_file) {
+#ifdef _WIN32
+    // Windows: No PID files - check service status via SCM instead
+    (void)str_pid_file; // Suppress unused parameter warning
+    // Note: For Windows Service status, query SCM using service APIs
+    return false;
+#else
     std::ifstream file(str_pid_file);
     if (!file.is_open()) {
         return false;
@@ -158,22 +158,14 @@ bool CDaemon::IsRunning(const std::string& str_pid_file) {
     file.close();
 
     // Check if process exists
-#ifdef _WIN32
-    // Windows: Try to open the process
-    HANDLE h_process = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, n_pid);
-    if (h_process != NULL) {
-        CloseHandle(h_process);
-        return true;
-    }
-#else
     if (kill(n_pid, 0) == 0) {
         return true;
     }
-#endif
 
     // PID file exists but process doesn't, remove stale file
     RemovePidFile(str_pid_file);
     return false;
+#endif
 }
 
 void CDaemon::SetupSignalHandlers() {

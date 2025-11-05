@@ -20,8 +20,17 @@
 #include <sstream>
 #include <cstdio>
 #include <sys/stat.h>
-#include <dirent.h>
-#include <unistd.h>
+#include <filesystem>
+
+#ifdef _WIN32
+    #include <windows.h>
+    // Windows defines ERROR as a macro, which conflicts with ELogLevel::ERROR
+    #ifdef ERROR
+        #undef ERROR
+    #endif
+#else
+    #include <dirent.h>
+#endif
 
 // ============= Helper Functions =============
 
@@ -43,7 +52,11 @@ static std::string CreateTempLogDirName() {
 static std::string GetLogFilePath(const std::string& str_log_dir) {
     // Logger uses process name as log file name
     // For tests, the process is "test_all"
+#ifdef _WIN32
+    return str_log_dir + "\\test_all.log";
+#else
     return str_log_dir + "/test_all.log";
+#endif
 }
 
 /**
@@ -51,19 +64,10 @@ static std::string GetLogFilePath(const std::string& str_log_dir) {
  * @param str_path Path to directory to remove
  */
 static void CleanupLogDir(const std::string& str_path) {
-    DIR* p_dir = opendir(str_path.c_str());
-    if (p_dir) {
-        struct dirent* p_entry;
-        while ((p_entry = readdir(p_dir)) != nullptr) {
-            std::string str_name = p_entry->d_name;
-            if (str_name != "." && str_name != "..") {
-                std::string str_full_path = str_path + "/" + str_name;
-                std::remove(str_full_path.c_str());
-            }
-        }
-        closedir(p_dir);
-    }
-    rmdir(str_path.c_str());
+    // Use C++17 filesystem for cross-platform directory removal
+    std::error_code ec;
+    std::filesystem::remove_all(str_path, ec);
+    // Ignore errors - directory may not exist or already cleaned up
 }
 
 /**
@@ -114,6 +118,7 @@ static size_t CountLines(const std::string& str_path) {
  * @param str_path File path
  * @return File size in bytes
  */
+/*
 static size_t GetFileSize(const std::string& str_path) {
     struct stat st;
     if (stat(str_path.c_str(), &st) == 0) {
@@ -121,7 +126,7 @@ static size_t GetFileSize(const std::string& str_path) {
     }
     return 0;
 }
-
+*/
 /**
  * @brief Count number of files matching pattern in directory
  * @param str_dir Directory path
@@ -129,6 +134,27 @@ static size_t GetFileSize(const std::string& str_path) {
  * @return Number of matching files
  */
 static size_t CountFilesWithPattern(const std::string& str_dir, const std::string& str_pattern) {
+#ifdef _WIN32
+    // Windows implementation using FindFirstFile/FindNextFile
+    WIN32_FIND_DATAA find_data;
+    std::string search_path = str_dir + "\\*";
+    HANDLE h_find = FindFirstFileA(search_path.c_str(), &find_data);
+
+    if (h_find == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+
+    size_t n_count = 0;
+    do {
+        std::string str_name = find_data.cFileName;
+        if (str_name.find(str_pattern) != std::string::npos) {
+            n_count++;
+        }
+    } while (FindNextFileA(h_find, &find_data));
+    FindClose(h_find);
+    return n_count;
+#else
+    // POSIX implementation
     DIR* p_dir = opendir(str_dir.c_str());
     if (!p_dir) {
         return 0;
@@ -144,6 +170,7 @@ static size_t CountFilesWithPattern(const std::string& str_dir, const std::strin
     }
     closedir(p_dir);
     return n_count;
+#endif
 }
 
 // ============= Initialization Tests =============
@@ -156,20 +183,22 @@ TEST(LoggerConstructor) {
 TEST(LoggerInitializeCreatesDirectory) {
     std::string str_log_dir = CreateTempLogDirName();
 
-    CLogger logger;
-    bool f_result = logger.Initialize(str_log_dir);
+    {
+        CLogger logger;
+        bool f_result = logger.Initialize(str_log_dir);
 
-    ASSERT_TRUE(f_result, "Initialize should succeed");
-    ASSERT_TRUE(logger.IsInitialized(), "Logger should be initialized");
+        ASSERT_TRUE(f_result, "Initialize should succeed");
+        ASSERT_TRUE(logger.IsInitialized(), "Logger should be initialized");
 
-    // Verify directory was created
-    struct stat st;
-    ASSERT_EQUAL(stat(str_log_dir.c_str(), &st), 0, "Log directory should exist");
-    ASSERT_TRUE(S_ISDIR(st.st_mode), "Path should be a directory");
+        // Verify directory was created
+        struct stat st;
+        ASSERT_EQUAL(stat(str_log_dir.c_str(), &st), 0, "Log directory should exist");
+        ASSERT_TRUE(S_ISDIR(st.st_mode), "Path should be a directory");
 
-    // Verify log file was created
-    std::string str_log_file = GetLogFilePath(str_log_dir);
-    ASSERT_TRUE(FileExists(str_log_file), "Log file should be created");
+        // Verify log file was created
+        std::string str_log_file = GetLogFilePath(str_log_dir);
+        ASSERT_TRUE(FileExists(str_log_file), "Log file should be created");
+    } // Logger destroyed here, closes file
 
     CleanupLogDir(str_log_dir);
 }
@@ -179,18 +208,20 @@ TEST(LoggerInitializeCreatesDirectory) {
 TEST(LoggerTraceMessage) {
     std::string str_log_dir = CreateTempLogDirName();
 
-    CLogger logger;
-    logger.Initialize(str_log_dir, ELogLevel::TRACE);
-    logger.Trace("Test trace message");
-    logger.Flush();
+    {
+        CLogger logger;
+        logger.Initialize(str_log_dir, ELogLevel::TRACE);
+        logger.Trace("Test trace message");
+        logger.Flush();
 
-    std::string str_log_file = GetLogFilePath(str_log_dir);
-    std::string str_content = ReadFile(str_log_file);
+        std::string str_log_file = GetLogFilePath(str_log_dir);
+        std::string str_content = ReadFile(str_log_file);
 
-    ASSERT_TRUE(str_content.find("Test trace message") != std::string::npos,
-                "Log should contain trace message");
-    ASSERT_TRUE(str_content.find("[TRACE]") != std::string::npos,
-                "Log should contain TRACE level");
+        ASSERT_TRUE(str_content.find("Test trace message") != std::string::npos,
+                    "Log should contain trace message");
+        ASSERT_TRUE(str_content.find("[TRACE]") != std::string::npos,
+                    "Log should contain TRACE level");
+    }
 
     CleanupLogDir(str_log_dir);
 }
@@ -198,18 +229,20 @@ TEST(LoggerTraceMessage) {
 TEST(LoggerInfoMessage) {
     std::string str_log_dir = CreateTempLogDirName();
 
-    CLogger logger;
-    logger.Initialize(str_log_dir, ELogLevel::INFO);
-    logger.Info("Test info message");
-    logger.Flush();
+    {
+        CLogger logger;
+        logger.Initialize(str_log_dir, ELogLevel::INFO);
+        logger.Info("Test info message");
+        logger.Flush();
 
-    std::string str_log_file = GetLogFilePath(str_log_dir);
-    std::string str_content = ReadFile(str_log_file);
+        std::string str_log_file = GetLogFilePath(str_log_dir);
+        std::string str_content = ReadFile(str_log_file);
 
-    ASSERT_TRUE(str_content.find("Test info message") != std::string::npos,
-                "Log should contain info message");
-    ASSERT_TRUE(str_content.find("[INFO ]") != std::string::npos,
-                "Log should contain INFO level");
+        ASSERT_TRUE(str_content.find("Test info message") != std::string::npos,
+                    "Log should contain info message");
+        ASSERT_TRUE(str_content.find("[INFO ]") != std::string::npos,
+                    "Log should contain INFO level");
+    } // Logger destroyed here, closes file
 
     CleanupLogDir(str_log_dir);
 }
@@ -217,18 +250,20 @@ TEST(LoggerInfoMessage) {
 TEST(LoggerWarnMessage) {
     std::string str_log_dir = CreateTempLogDirName();
 
-    CLogger logger;
-    logger.Initialize(str_log_dir, ELogLevel::WARN);
-    logger.Warn("Test warning message");
-    logger.Flush();
+    {
+        CLogger logger;
+        logger.Initialize(str_log_dir, ELogLevel::WARN);
+        logger.Warn("Test warning message");
+        logger.Flush();
 
-    std::string str_log_file = GetLogFilePath(str_log_dir);
-    std::string str_content = ReadFile(str_log_file);
+        std::string str_log_file = GetLogFilePath(str_log_dir);
+        std::string str_content = ReadFile(str_log_file);
 
-    ASSERT_TRUE(str_content.find("Test warning message") != std::string::npos,
-                "Log should contain warning message");
-    ASSERT_TRUE(str_content.find("[WARN ]") != std::string::npos,
-                "Log should contain WARN level");
+        ASSERT_TRUE(str_content.find("Test warning message") != std::string::npos,
+                    "Log should contain warning message");
+        ASSERT_TRUE(str_content.find("[WARN ]") != std::string::npos,
+                    "Log should contain WARN level");
+    } // Logger destroyed here, closes file
 
     CleanupLogDir(str_log_dir);
 }
@@ -236,18 +271,20 @@ TEST(LoggerWarnMessage) {
 TEST(LoggerErrorMessage) {
     std::string str_log_dir = CreateTempLogDirName();
 
-    CLogger logger;
-    logger.Initialize(str_log_dir, ELogLevel::ERROR);
-    logger.Error("Test error message");
-    logger.Flush();
+    {
+        CLogger logger;
+        logger.Initialize(str_log_dir, ELogLevel::ERROR);
+        logger.Error("Test error message");
+        logger.Flush();
 
-    std::string str_log_file = GetLogFilePath(str_log_dir);
-    std::string str_content = ReadFile(str_log_file);
+        std::string str_log_file = GetLogFilePath(str_log_dir);
+        std::string str_content = ReadFile(str_log_file);
 
-    ASSERT_TRUE(str_content.find("Test error message") != std::string::npos,
-                "Log should contain error message");
-    ASSERT_TRUE(str_content.find("[ERROR]") != std::string::npos,
-                "Log should contain ERROR level");
+        ASSERT_TRUE(str_content.find("Test error message") != std::string::npos,
+                    "Log should contain error message");
+        ASSERT_TRUE(str_content.find("[ERROR]") != std::string::npos,
+                    "Log should contain ERROR level");
+    } // Logger destroyed here, closes file
 
     CleanupLogDir(str_log_dir);
 }
@@ -255,18 +292,20 @@ TEST(LoggerErrorMessage) {
 TEST(LoggerFatalMessage) {
     std::string str_log_dir = CreateTempLogDirName();
 
-    CLogger logger;
-    logger.Initialize(str_log_dir, ELogLevel::FATAL);
-    logger.Fatal("Test fatal message");
-    logger.Flush();
+    {
+        CLogger logger;
+        logger.Initialize(str_log_dir, ELogLevel::FATAL);
+        logger.Fatal("Test fatal message");
+        logger.Flush();
 
-    std::string str_log_file = GetLogFilePath(str_log_dir);
-    std::string str_content = ReadFile(str_log_file);
+        std::string str_log_file = GetLogFilePath(str_log_dir);
+        std::string str_content = ReadFile(str_log_file);
 
-    ASSERT_TRUE(str_content.find("Test fatal message") != std::string::npos,
-                "Log should contain fatal message");
-    ASSERT_TRUE(str_content.find("[FATAL]") != std::string::npos,
-                "Log should contain FATAL level");
+        ASSERT_TRUE(str_content.find("Test fatal message") != std::string::npos,
+                    "Log should contain fatal message");
+        ASSERT_TRUE(str_content.find("[FATAL]") != std::string::npos,
+                    "Log should contain FATAL level");
+    } // Logger destroyed here, closes file
 
     CleanupLogDir(str_log_dir);
 }
@@ -274,16 +313,18 @@ TEST(LoggerFatalMessage) {
 TEST(LoggerGenericLogMethod) {
     std::string str_log_dir = CreateTempLogDirName();
 
-    CLogger logger;
-    logger.Initialize(str_log_dir, ELogLevel::TRACE);
-    logger.Log(ELogLevel::INFO, "Test generic log");
-    logger.Flush();
+    {
+        CLogger logger;
+        logger.Initialize(str_log_dir, ELogLevel::TRACE);
+        logger.Log(ELogLevel::INFO, "Test generic log");
+        logger.Flush();
 
-    std::string str_log_file = GetLogFilePath(str_log_dir);
-    std::string str_content = ReadFile(str_log_file);
+        std::string str_log_file = GetLogFilePath(str_log_dir);
+        std::string str_content = ReadFile(str_log_file);
 
-    ASSERT_TRUE(str_content.find("Test generic log") != std::string::npos,
-                "Log should contain message");
+        ASSERT_TRUE(str_content.find("Test generic log") != std::string::npos,
+                    "Log should contain message");
+    } // Logger destroyed here, closes file
 
     CleanupLogDir(str_log_dir);
 }
@@ -293,19 +334,21 @@ TEST(LoggerGenericLogMethod) {
 TEST(LoggerLevelFilteringTraceNotLogged) {
     std::string str_log_dir = CreateTempLogDirName();
 
-    CLogger logger;
-    logger.Initialize(str_log_dir, ELogLevel::INFO); // Set min level to INFO
-    logger.Trace("This should not be logged");
-    logger.Info("This should be logged");
-    logger.Flush();
+    {
+        CLogger logger;
+        logger.Initialize(str_log_dir, ELogLevel::INFO); // Set min level to INFO
+        logger.Trace("This should not be logged");
+        logger.Info("This should be logged");
+        logger.Flush();
 
-    std::string str_log_file = GetLogFilePath(str_log_dir);
-    std::string str_content = ReadFile(str_log_file);
+        std::string str_log_file = GetLogFilePath(str_log_dir);
+        std::string str_content = ReadFile(str_log_file);
 
-    ASSERT_FALSE(str_content.find("This should not be logged") != std::string::npos,
-                 "TRACE message should be filtered out");
-    ASSERT_TRUE(str_content.find("This should be logged") != std::string::npos,
-                "INFO message should be logged");
+        ASSERT_FALSE(str_content.find("This should not be logged") != std::string::npos,
+                     "TRACE message should be filtered out");
+        ASSERT_TRUE(str_content.find("This should be logged") != std::string::npos,
+                    "INFO message should be logged");
+    } // Logger destroyed here, closes file
 
     CleanupLogDir(str_log_dir);
 }
@@ -313,22 +356,24 @@ TEST(LoggerLevelFilteringTraceNotLogged) {
 TEST(LoggerLevelFilteringInfoNotLogged) {
     std::string str_log_dir = CreateTempLogDirName();
 
-    CLogger logger;
-    logger.Initialize(str_log_dir, ELogLevel::ERROR); // Set min level to ERROR
-    logger.Info("Info should not appear");
-    logger.Warn("Warning should not appear");
-    logger.Error("Error should appear");
-    logger.Flush();
+    {
+        CLogger logger;
+        logger.Initialize(str_log_dir, ELogLevel::ERROR); // Set min level to ERROR
+        logger.Info("Info should not appear");
+        logger.Warn("Warning should not appear");
+        logger.Error("Error should appear");
+        logger.Flush();
 
-    std::string str_log_file = GetLogFilePath(str_log_dir);
-    std::string str_content = ReadFile(str_log_file);
+        std::string str_log_file = GetLogFilePath(str_log_dir);
+        std::string str_content = ReadFile(str_log_file);
 
-    ASSERT_FALSE(str_content.find("Info should not appear") != std::string::npos,
-                 "INFO message should be filtered out");
-    ASSERT_FALSE(str_content.find("Warning should not appear") != std::string::npos,
-                 "WARN message should be filtered out");
-    ASSERT_TRUE(str_content.find("Error should appear") != std::string::npos,
-                "ERROR message should be logged");
+        ASSERT_FALSE(str_content.find("Info should not appear") != std::string::npos,
+                     "INFO message should be filtered out");
+        ASSERT_FALSE(str_content.find("Warning should not appear") != std::string::npos,
+                     "WARN message should be filtered out");
+        ASSERT_TRUE(str_content.find("Error should appear") != std::string::npos,
+                    "ERROR message should be logged");
+    } // Logger destroyed here, closes file
 
     CleanupLogDir(str_log_dir);
 }
@@ -336,31 +381,33 @@ TEST(LoggerLevelFilteringInfoNotLogged) {
 TEST(LoggerSetMinLogLevel) {
     std::string str_log_dir = CreateTempLogDirName();
 
-    CLogger logger;
-    logger.Initialize(str_log_dir, ELogLevel::TRACE);
+    {
+        CLogger logger;
+        logger.Initialize(str_log_dir, ELogLevel::TRACE);
 
-    // Initially, trace messages should be logged
-    logger.Trace("Trace 1");
-    logger.Flush();
+        // Initially, trace messages should be logged
+        logger.Trace("Trace 1");
+        logger.Flush();
 
-    // Change min level to WARN
-    logger.SetMinLogLevel(ELogLevel::WARN);
-    logger.Trace("Trace 2");
-    logger.Info("Info 2");
-    logger.Warn("Warn 2");
-    logger.Flush();
+        // Change min level to WARN
+        logger.SetMinLogLevel(ELogLevel::WARN);
+        logger.Trace("Trace 2");
+        logger.Info("Info 2");
+        logger.Warn("Warn 2");
+        logger.Flush();
 
-    std::string str_log_file = GetLogFilePath(str_log_dir);
-    std::string str_content = ReadFile(str_log_file);
+        std::string str_log_file = GetLogFilePath(str_log_dir);
+        std::string str_content = ReadFile(str_log_file);
 
-    ASSERT_TRUE(str_content.find("Trace 1") != std::string::npos,
-                "First trace message should be logged");
-    ASSERT_FALSE(str_content.find("Trace 2") != std::string::npos,
-                 "Second trace message should be filtered out");
-    ASSERT_FALSE(str_content.find("Info 2") != std::string::npos,
-                 "Info message should be filtered out");
-    ASSERT_TRUE(str_content.find("Warn 2") != std::string::npos,
-                "Warn message should be logged");
+        ASSERT_TRUE(str_content.find("Trace 1") != std::string::npos,
+                    "First trace message should be logged");
+        ASSERT_FALSE(str_content.find("Trace 2") != std::string::npos,
+                     "Second trace message should be filtered out");
+        ASSERT_FALSE(str_content.find("Info 2") != std::string::npos,
+                     "Info message should be filtered out");
+        ASSERT_TRUE(str_content.find("Warn 2") != std::string::npos,
+                    "Warn message should be logged");
+    } // Logger destroyed here, closes file
 
     CleanupLogDir(str_log_dir);
 }
@@ -370,20 +417,22 @@ TEST(LoggerSetMinLogLevel) {
 TEST(LoggerTimestampFormat) {
     std::string str_log_dir = CreateTempLogDirName();
 
-    CLogger logger;
-    logger.Initialize(str_log_dir, ELogLevel::INFO);
-    logger.Info("Test timestamp");
-    logger.Flush();
+    {
+        CLogger logger;
+        logger.Initialize(str_log_dir, ELogLevel::INFO);
+        logger.Info("Test timestamp");
+        logger.Flush();
 
-    std::string str_log_file = GetLogFilePath(str_log_dir);
-    std::string str_content = ReadFile(str_log_file);
+        std::string str_log_file = GetLogFilePath(str_log_dir);
+        std::string str_content = ReadFile(str_log_file);
 
-    // Timestamp format: [YYYY-MM-DD HH:MM:SS.mmm UTC]
-    // Look for pattern like [2025-10-25 00:12:34.567 UTC]
-    ASSERT_TRUE(str_content.find("UTC]") != std::string::npos,
-                "Log should contain UTC timestamp");
-    ASSERT_TRUE(str_content.find("[20") != std::string::npos,
-                "Log should contain year prefix");
+        // Timestamp format: [YYYY-MM-DD HH:MM:SS.mmm UTC]
+        // Look for pattern like [2025-10-25 00:12:34.567 UTC]
+        ASSERT_TRUE(str_content.find("UTC]") != std::string::npos,
+                    "Log should contain UTC timestamp");
+        ASSERT_TRUE(str_content.find("[20") != std::string::npos,
+                    "Log should contain year prefix");
+    } // Logger destroyed here, closes file
 
     CleanupLogDir(str_log_dir);
 }
@@ -391,17 +440,19 @@ TEST(LoggerTimestampFormat) {
 TEST(LoggerProcessAndThreadName) {
     std::string str_log_dir = CreateTempLogDirName();
 
-    CLogger logger;
-    logger.Initialize(str_log_dir, ELogLevel::INFO);
-    logger.Info("Test process and thread");
-    logger.Flush();
+    {
+        CLogger logger;
+        logger.Initialize(str_log_dir, ELogLevel::INFO);
+        logger.Info("Test process and thread");
+        logger.Flush();
 
-    std::string str_log_file = GetLogFilePath(str_log_dir);
-    std::string str_content = ReadFile(str_log_file);
+        std::string str_log_file = GetLogFilePath(str_log_dir);
+        std::string str_content = ReadFile(str_log_file);
 
-    // Log format includes [process:thread]
-    ASSERT_TRUE(str_content.find(":") != std::string::npos,
-                "Log should contain process:thread separator");
+        // Log format includes [process:thread]
+        ASSERT_TRUE(str_content.find(":") != std::string::npos,
+                    "Log should contain process:thread separator");
+    } // Logger destroyed here, closes file
 
     CleanupLogDir(str_log_dir);
 }
@@ -411,19 +462,21 @@ TEST(LoggerProcessAndThreadName) {
 TEST(LoggerMultipleMessages) {
     std::string str_log_dir = CreateTempLogDirName();
 
-    CLogger logger;
-    logger.Initialize(str_log_dir, ELogLevel::INFO);
+    {
+        CLogger logger;
+        logger.Initialize(str_log_dir, ELogLevel::INFO);
 
-    for (int i = 0; i < 10; i++) {
-        logger.Info("Message " + std::to_string(i));
-    }
-    logger.Flush();
+        for (int i = 0; i < 10; i++) {
+            logger.Info("Message " + std::to_string(i));
+        }
+        logger.Flush();
 
-    std::string str_log_file = GetLogFilePath(str_log_dir);
-    size_t n_lines = CountLines(str_log_file);
+        std::string str_log_file = GetLogFilePath(str_log_dir);
+        size_t n_lines = CountLines(str_log_file);
 
-    // Should have at least 10 messages (plus initialization message)
-    ASSERT_TRUE(n_lines >= 10, "Log should contain at least 10 lines");
+        // Should have at least 10 messages (plus initialization message)
+        ASSERT_TRUE(n_lines >= 10, "Log should contain at least 10 lines");
+    } // Logger destroyed here, closes file
 
     CleanupLogDir(str_log_dir);
 }
@@ -431,16 +484,22 @@ TEST(LoggerMultipleMessages) {
 TEST(LoggerFlushWritesToDisk) {
     std::string str_log_dir = CreateTempLogDirName();
 
-    CLogger logger;
-    logger.Initialize(str_log_dir, ELogLevel::INFO);
-    logger.Info("Before flush");
+    {
+        CLogger logger;
+        logger.Initialize(str_log_dir, ELogLevel::INFO);
+        logger.Info("Before flush");
 
-    // Flush and verify file has content
-    std::string str_log_file = GetLogFilePath(str_log_dir);
-    logger.Flush();
-    size_t n_size_after = GetFileSize(str_log_file);
+        // Flush and verify file has content
+        std::string str_log_file = GetLogFilePath(str_log_dir);
+        logger.Flush();
 
-    ASSERT_TRUE(n_size_after > 0, "File should have content after flush");
+        // Windows may not update file size via stat() while file is open for append
+        // So we read the file content instead of checking size
+        std::string str_content = ReadFile(str_log_file);
+
+        ASSERT_TRUE(str_content.length() > 0, "File should have content after flush");
+        ASSERT_TRUE(str_content.find("Before flush") != std::string::npos, "File should contain logged message");
+    } // Logger destroyed here, closes file
 
     CleanupLogDir(str_log_dir);
 }
@@ -450,21 +509,23 @@ TEST(LoggerFlushWritesToDisk) {
 TEST(LoggerRotationFileNaming) {
     std::string str_log_dir = CreateTempLogDirName();
 
-    CLogger logger;
-    logger.Initialize(str_log_dir, ELogLevel::INFO, 1, 3); // Keep 3 rotated files
+    {
+        CLogger logger;
+        logger.Initialize(str_log_dir, ELogLevel::INFO, 1, 3); // Keep 3 rotated files
 
-    // Write enough to trigger multiple rotations
-    for (int i = 0; i < 200; i++) {
-        logger.Info("Message to trigger rotation: " + std::to_string(i) + " - Adding more text to increase size");
-    }
-    logger.Flush();
+        // Write enough to trigger multiple rotations
+        for (int i = 0; i < 200; i++) {
+            logger.Info("Message to trigger rotation: " + std::to_string(i) + " - Adding more text to increase size");
+        }
+        logger.Flush();
 
-    // Count log files (test_all.log + rotated files)
-    size_t n_log_files = CountFilesWithPattern(str_log_dir, "test_all.log");
+        // Count log files (test_all.log + rotated files)
+        size_t n_log_files = CountFilesWithPattern(str_log_dir, "test_all.log");
 
-    // Should have current log + up to 3 rotated files (1-4 files total)
-    ASSERT_TRUE(n_log_files >= 1, "Should have at least the main log file");
-    ASSERT_TRUE(n_log_files <= 4, "Should not exceed max rotated files + current");
+        // Should have current log + up to 3 rotated files (1-4 files total)
+        ASSERT_TRUE(n_log_files >= 1, "Should have at least the main log file");
+        ASSERT_TRUE(n_log_files <= 4, "Should not exceed max rotated files + current");
+    } // Logger destroyed here, closes file
 
     CleanupLogDir(str_log_dir);
 }
@@ -472,18 +533,20 @@ TEST(LoggerRotationFileNaming) {
 TEST(LoggerRotationDeletesOldFiles) {
     std::string str_log_dir = CreateTempLogDirName();
 
-    CLogger logger;
-    logger.Initialize(str_log_dir, ELogLevel::INFO, 1, 2); // Keep only 2 rotated files
+    {
+        CLogger logger;
+        logger.Initialize(str_log_dir, ELogLevel::INFO, 1, 2); // Keep only 2 rotated files
 
-    // Write enough to trigger many rotations
-    for (int i = 0; i < 300; i++) {
-        logger.Info("Rotation test message: " + std::to_string(i) + " - Filling up log to test rotation limits");
-    }
-    logger.Flush();
+        // Write enough to trigger many rotations
+        for (int i = 0; i < 300; i++) {
+            logger.Info("Rotation test message: " + std::to_string(i) + " - Filling up log to test rotation limits");
+        }
+        logger.Flush();
 
-    // Should not have more than current + 2 rotated files (3 total)
-    size_t n_log_files = CountFilesWithPattern(str_log_dir, "test_all.log");
-    ASSERT_TRUE(n_log_files <= 3, "Should delete old rotated files");
+        // Should not have more than current + 2 rotated files (3 total)
+        size_t n_log_files = CountFilesWithPattern(str_log_dir, "test_all.log");
+        ASSERT_TRUE(n_log_files <= 3, "Should delete old rotated files");
+    } // Logger destroyed here, closes file
 
     CleanupLogDir(str_log_dir);
 }
@@ -493,31 +556,33 @@ TEST(LoggerRotationDeletesOldFiles) {
 TEST(LoggerThreadSafeConcurrentWrites) {
     std::string str_log_dir = CreateTempLogDirName();
 
-    CLogger logger;
-    logger.Initialize(str_log_dir, ELogLevel::INFO);
+    {
+        CLogger logger;
+        logger.Initialize(str_log_dir, ELogLevel::INFO);
 
-    // Spawn multiple threads that log concurrently
-    std::vector<std::thread> threads;
-    for (int i = 0; i < 10; i++) {
-        threads.emplace_back([&logger, i]() {
-            for (int j = 0; j < 10; j++) {
-                logger.Info("Thread " + std::to_string(i) + " message " + std::to_string(j));
-            }
-        });
-    }
+        // Spawn multiple threads that log concurrently
+        std::vector<std::thread> threads;
+        for (int i = 0; i < 10; i++) {
+            threads.emplace_back([&logger, i]() {
+                for (int j = 0; j < 10; j++) {
+                    logger.Info("Thread " + std::to_string(i) + " message " + std::to_string(j));
+                }
+            });
+        }
 
-    // Wait for all threads to finish
-    for (auto& thread : threads) {
-        thread.join();
-    }
+        // Wait for all threads to finish
+        for (auto& thread : threads) {
+            thread.join();
+        }
 
-    logger.Flush();
+        logger.Flush();
 
-    std::string str_log_file = GetLogFilePath(str_log_dir);
-    size_t n_lines = CountLines(str_log_file);
+        std::string str_log_file = GetLogFilePath(str_log_dir);
+        size_t n_lines = CountLines(str_log_file);
 
-    // Should have 10 threads * 10 messages = 100 messages (plus init message)
-    ASSERT_TRUE(n_lines >= 100, "All concurrent messages should be logged");
+        // Should have 10 threads * 10 messages = 100 messages (plus init message)
+        ASSERT_TRUE(n_lines >= 100, "All concurrent messages should be logged");
+    } // Logger destroyed here, closes file
 
     CleanupLogDir(str_log_dir);
 }
@@ -563,13 +628,15 @@ TEST(ParseLogLevelInvalidString) {
 TEST(LoggerEmptyMessage) {
     std::string str_log_dir = CreateTempLogDirName();
 
-    CLogger logger;
-    logger.Initialize(str_log_dir, ELogLevel::INFO);
-    logger.Info(""); // Empty message
-    logger.Flush();
+    {
+        CLogger logger;
+        logger.Initialize(str_log_dir, ELogLevel::INFO);
+        logger.Info(""); // Empty message
+        logger.Flush();
 
-    std::string str_log_file = GetLogFilePath(str_log_dir);
-    ASSERT_TRUE(FileExists(str_log_file), "Log file should exist even with empty message");
+        std::string str_log_file = GetLogFilePath(str_log_dir);
+        ASSERT_TRUE(FileExists(str_log_file), "Log file should exist even with empty message");
+    } // Logger destroyed here, closes file
 
     CleanupLogDir(str_log_dir);
 }
@@ -577,19 +644,21 @@ TEST(LoggerEmptyMessage) {
 TEST(LoggerVeryLongMessage) {
     std::string str_log_dir = CreateTempLogDirName();
 
-    CLogger logger;
-    logger.Initialize(str_log_dir, ELogLevel::INFO);
+    {
+        CLogger logger;
+        logger.Initialize(str_log_dir, ELogLevel::INFO);
 
-    // Create a very long message (10,000 characters)
-    std::string str_long_msg(10000, 'X');
-    logger.Info(str_long_msg);
-    logger.Flush();
+        // Create a very long message (10,000 characters)
+        std::string str_long_msg(10000, 'X');
+        logger.Info(str_long_msg);
+        logger.Flush();
 
-    std::string str_log_file = GetLogFilePath(str_log_dir);
-    std::string str_content = ReadFile(str_log_file);
+        std::string str_log_file = GetLogFilePath(str_log_dir);
+        std::string str_content = ReadFile(str_log_file);
 
-    ASSERT_TRUE(str_content.find(str_long_msg) != std::string::npos,
-                "Log should contain very long message");
+        ASSERT_TRUE(str_content.find(str_long_msg) != std::string::npos,
+                    "Log should contain very long message");
+    } // Logger destroyed here, closes file
 
     CleanupLogDir(str_log_dir);
 }
@@ -597,16 +666,18 @@ TEST(LoggerVeryLongMessage) {
 TEST(LoggerSpecialCharacters) {
     std::string str_log_dir = CreateTempLogDirName();
 
-    CLogger logger;
-    logger.Initialize(str_log_dir, ELogLevel::INFO);
-    logger.Info("Special chars: \n\t\"'\\");
-    logger.Flush();
+    {
+        CLogger logger;
+        logger.Initialize(str_log_dir, ELogLevel::INFO);
+        logger.Info("Special chars: \n\t\"'\\");
+        logger.Flush();
 
-    std::string str_log_file = GetLogFilePath(str_log_dir);
-    std::string str_content = ReadFile(str_log_file);
+        std::string str_log_file = GetLogFilePath(str_log_dir);
+        std::string str_content = ReadFile(str_log_file);
 
-    ASSERT_TRUE(str_content.find("Special chars:") != std::string::npos,
-                "Log should handle special characters");
+        ASSERT_TRUE(str_content.find("Special chars:") != std::string::npos,
+                    "Log should handle special characters");
+    } // Logger destroyed here, closes file
 
     CleanupLogDir(str_log_dir);
 }

@@ -22,6 +22,7 @@
 #include <thread>
 #include <chrono>
 #include <sys/stat.h>
+#include <filesystem>
 
 // ============================================================================
 // Test Helper Functions
@@ -34,7 +35,11 @@
 std::string CreateTempDir() {
     std::string str_dir = "./test_blockfile_" + std::to_string(time(nullptr)) +
                           "_" + std::to_string(rand() % 10000);
+#ifdef _WIN32
+    mkdir(str_dir.c_str());
+#else
     mkdir(str_dir.c_str(), 0755);
+#endif
     return str_dir;
 }
 
@@ -43,7 +48,10 @@ std::string CreateTempDir() {
  * @param str_dir Directory path to remove
  */
 void CleanupDir(const std::string& str_dir) {
-    std::system(("rm -rf " + str_dir).c_str());
+    // Use C++17 filesystem for cross-platform directory removal
+    std::error_code ec;
+    std::filesystem::remove_all(str_dir, ec);
+    // Ignore errors - directory may not exist or already cleaned up
 }
 
 /**

@@ -4,6 +4,7 @@
 #include <thread>
 #include <chrono>
 #include <atomic>
+#include <algorithm>
 
 using namespace UnitTest;
 

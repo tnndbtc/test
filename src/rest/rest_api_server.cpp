@@ -43,6 +43,20 @@
 #include <iomanip>
 #include <sys/stat.h>
 
+// ============= Platform-specific socket helpers =============
+
+/**
+ * @brief Close socket in a platform-independent way
+ * @param socket Socket descriptor to close
+ */
+static inline void CloseSocket(int socket) {
+#ifdef _WIN32
+    closesocket(socket);
+#else
+    close(socket);
+#endif
+}
+
 // ============= Utility Functions =============
 
 /**
@@ -412,7 +426,7 @@ bool CRestApiServer::Start() {
     if (bind(n_server_socket, (sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
         std::cerr << "[REST API] Failed to bind to port " << n_port << "\n";
         LOG_ERROR("Failed to bind REST API server to port " + std::to_string(n_port));
-        close(n_server_socket);
+        CloseSocket(n_server_socket);
         return false;
     }
     LOG_TRACE("REST API server bound to port " + std::to_string(n_port));
@@ -421,7 +435,7 @@ bool CRestApiServer::Start() {
     if (listen(n_server_socket, 10) < 0) {
         std::cerr << "[REST API] Failed to listen\n";
         LOG_ERROR("Failed to listen on REST API server socket");
-        close(n_server_socket);
+        CloseSocket(n_server_socket);
         return false;
     }
 
@@ -472,7 +486,7 @@ void CRestApiServer::Stop() {
     if (n_server_socket >= 0) {
         // Shutdown socket first to wake up blocking accept()
         shutdown(n_server_socket, SHUT_RDWR);
-        close(n_server_socket);
+        CloseSocket(n_server_socket);
         n_server_socket = -1;
     }
 
@@ -522,6 +536,33 @@ void CRestApiServer::ListenerThread() {
     LOG_INFO("REST API listener thread started");
 
     while (!f_stop_requested) {
+        // Use select() with timeout to avoid blocking forever in accept()
+        fd_set read_fds;
+        FD_ZERO(&read_fds);
+        FD_SET(n_server_socket, &read_fds);
+
+        // Timeout of 100ms to check f_stop_requested frequently
+        struct timeval timeout;
+        timeout.tv_sec = 0;
+        timeout.tv_usec = 100000; // 100ms
+
+        int select_result = select(n_server_socket + 1, &read_fds, nullptr, nullptr, &timeout);
+
+        if (select_result < 0) {
+            // Error in select() - likely socket was closed
+            if (!f_stop_requested) {
+                std::cerr << "[REST API] Select failed\n";
+                LOG_ERROR("REST API select() failed");
+            }
+            break;
+        }
+
+        if (select_result == 0) {
+            // Timeout - no connections pending, loop again to check f_stop_requested
+            continue;
+        }
+
+        // Socket is ready for accept()
         sockaddr_in client_addr{};
         socklen_t client_len = sizeof(client_addr);
 
@@ -580,7 +621,7 @@ void CRestApiServer::WorkerThread(int n_worker_id) {
                 if (n_bytes_read <= 0) {
                     // Connection closed or error
                     LOG_ERROR("Failed to read request from client socket");
-                    close(request.n_client_socket);
+                    CloseSocket(request.n_client_socket);
                     break;
                 }
 
@@ -627,7 +668,7 @@ void CRestApiServer::WorkerThread(int n_worker_id) {
                         // Complete request received - parse and process it
                         CHttpRequest parsed_request = ParseHttpRequest(str_request_data, request.n_client_socket);
                         ProcessRequest(parsed_request);
-                        close(request.n_client_socket);
+                        CloseSocket(request.n_client_socket);
                         break;
                     }
                 }
