@@ -739,7 +739,12 @@ void CPeerManager::MonitorInboundSocketThread() {
 
             // If run() returns and we're not stopping, restart it
             if (!f_stop_monitor) {
+#ifdef _WIN32
+                // On Windows, io_context.run() can exit frequently when there are no pending async operations
+                LOG_TRACE("io_context.run() exited unexpectedly, restarting...");
+#else
                 LOG_WARN("io_context.run() exited unexpectedly, restarting...");
+#endif
                 m_io_context.restart();
             }
         }
