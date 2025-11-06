@@ -462,7 +462,7 @@ class P2PTest(TestFramework):
             response = conn.receive_message(timeout=2)
 
             if response is None:
-                self.log_info("✓ Node did not respond to invalid INVENTORY (expected)")
+                self.log_info(" Node did not respond to invalid INVENTORY (expected)")
             elif response.msg_type == MessageType.GETDATA:
                 self.assert_true(False, "Node should NOT send GETDATA for invalid INVENTORY")
             else:
@@ -475,13 +475,13 @@ class P2PTest(TestFramework):
         self.assert_true("Invalid INVENTORY" in new_logs,
                         f"Node should log 'Invalid INVENTORY' error. Log content: {new_logs[:300]}")
 
-        self.log_info("✓ Node logged 'Invalid INVENTORY' error as expected")
+        self.log_info(" Node logged 'Invalid INVENTORY' error as expected")
 
         # Verify error message includes details about expected vs actual bytes
         self.assert_true("expected" in new_logs and "bytes" in new_logs,
                         "Error message should include expected vs actual bytes information")
 
-        self.log_info("✓ Error message includes expected vs actual bytes")
+        self.log_info(" Error message includes expected vs actual bytes")
         self.log_info("Invalid INVENTORY (count mismatch) test completed")
 
     def test_3_send_invalid_type_inventory_message(self):
@@ -533,9 +533,9 @@ class P2PTest(TestFramework):
             response = conn.receive_message(timeout=2)
 
             if response is None:
-                self.log_info("✓ Node did not respond to invalid type (expected)")
+                self.log_info(" Node did not respond to invalid type (expected)")
             elif response.msg_type == MessageType.GETDATA:
-                # self.log_info("⚠ Node sent GETDATA for invalid type (may need validation)")
+                # self.log_info(" Node sent GETDATA for invalid type (may need validation)")
                 self.assert_true(False, "Node should NOT send GETDATA for invalid INVENTORY")
 
             else:
@@ -556,7 +556,7 @@ class P2PTest(TestFramework):
             self.assert_true(True, "Node logged message about invalid/unknown type")
         else:
             # This is acceptable - current implementation might not validate type yet
-            self.log_info("ℹ Node processed message (type validation may not be implemented yet)")
+            self.log_info(" Node processed message (type validation may not be implemented yet)")
             self.assert_true(False, "Node didn't log message about invalid/unknown type")
 
         self.log_info("Invalid type INVENTORY test completed")

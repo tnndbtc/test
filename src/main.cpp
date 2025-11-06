@@ -56,7 +56,7 @@ int main(int argc, char* argv[]) {
     SetThreadName("main_thread");
 
 #ifdef _WIN32
-    // Windows: Handle service installation/uninstallation first
+    // Windows: Handle service installation/uninstallation/starting first
     for (int n_i = 1; n_i < argc; n_i++) {
         std::string str_arg = argv[n_i];
 
@@ -72,18 +72,20 @@ int main(int argc, char* argv[]) {
         else if (str_arg == "--uninstall-service") {
             return UninstallService() ? 0 : 1;
         }
-    }
-
-    // Windows: Check if running as service
-    bool f_running_as_service = IsRunningAsService();
-    if (f_running_as_service) {
-        // Running as Windows service - start service dispatcher
-        if (StartServiceDispatcher(argc, argv)) {
-            return 0;  // Service completed successfully
-        } else {
-            return 1;  // Service failed
+        else if (str_arg == "--service") {
+            // Running as Windows service - start service dispatcher
+            if (StartServiceDispatcher(argc, argv)) {
+                return 0;  // Service completed successfully
+            } else {
+                return 1;  // Service failed
+            }
         }
     }
+
+    // Windows: Removed automatic service detection
+    // Service mode MUST be explicitly requested via --service flag
+    // Automatic detection via IsRunningAsService() is unreliable when
+    // stdout/stderr are redirected (e.g., from Python subprocess, systemd, etc.)
 
     // Windows console mode: Setup console control handler for Ctrl+C
     if (!SetupConsoleCtrlHandler()) {
@@ -109,14 +111,8 @@ int main(int argc, char* argv[]) {
             f_daemon_mode = true;
         }
 #ifdef _WIN32
-        else if (str_arg == "--service") {
-            // Internal flag used by SCM - should not reach here
-            // Service mode is handled above via StartServiceDispatcher
-            std::cerr << "Error: --service flag should only be used by Service Control Manager\n";
-            return 1;
-        }
-        else if (str_arg == "--install-service" || str_arg == "--uninstall-service") {
-            // Already handled above
+        else if (str_arg == "--service" || str_arg == "--install-service" || str_arg == "--uninstall-service") {
+            // Already handled above - skip
             continue;
         }
 #endif

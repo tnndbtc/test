@@ -10,6 +10,8 @@ import logging
 import tempfile
 import shutil
 import unittest
+import platform
+import time
 from pathlib import Path
 
 from .blockweave_node import BlockweaveNode
@@ -34,6 +36,60 @@ class TestFramework(unittest.TestCase):
         self.node_counter = 0
         self.num_nodes = 0  # Number of nodes to create (set by test case)
         self.test_nodes = []  # TestNode wrappers (created in setup_nodes)
+
+    @staticmethod
+    def force_remove_tree(path):
+        """
+        Force remove a directory tree, handling Windows file locking issues.
+
+        On Windows, files may be locked by processes or file handles, preventing
+        deletion. This function retries with delays and sets files to writable.
+
+        Args:
+            path: Path object or string of directory to remove
+        """
+        path = Path(path)
+        if not path.exists():
+            return True
+
+        if platform.system() != "Windows":
+            # On Unix, use standard shutil.rmtree
+            shutil.rmtree(path)
+            return True
+
+        # Windows: Force removal with retries
+        max_retries = 3
+        retry_delay = 0.5  # seconds
+
+        for attempt in range(max_retries):
+            try:
+                # First, make all files writable (remove read-only flag)
+                for root, dirs, files in os.walk(path):
+                    for name in files:
+                        file_path = os.path.join(root, name)
+                        try:
+                            os.chmod(file_path, 0o777)
+                        except:
+                            pass
+
+                # Try to remove the directory
+                shutil.rmtree(path)
+                return True
+
+            except PermissionError as e:
+                if attempt < max_retries - 1:
+                    # Wait and retry
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    # Final attempt failed
+                    print(f"Warning: Failed to remove {path} after {max_retries} attempts: {e}")
+                    return False
+            except Exception as e:
+                print(f"Warning: Unexpected error removing {path}: {e}")
+                return False
+
+        return False
 
     def init_tmpdir(self):
         """Initialize tmpdir from environment or create temporary directory with test file name."""
@@ -224,14 +280,19 @@ class TestFramework(unittest.TestCase):
                 except Exception as e:
                     print(f"Warning: Failed to stop node{node.node_index}: {e}")
 
+            # Close logger handlers to release file locks (Windows)
+            if hasattr(cls, 'logger') and cls.logger:
+                handlers = cls.logger.handlers[:]
+                for handler in handlers:
+                    try:
+                        handler.close()
+                        cls.logger.removeHandler(handler)
+                    except:
+                        pass
+
             # Cleanup tmpdir if not preserving
             if not cls.nocleanup and cls.tmpdir and cls.tmpdir.exists():
-                try:
-                    shutil.rmtree(cls.tmpdir)
-                    if cls.logger:
-                        cls.logger.info(f"Cleaned up tmpdir: {cls.tmpdir}")
-                except Exception as e:
-                    print(f"Warning: Failed to cleanup tmpdir {cls.tmpdir}: {e}")
+                cls.force_remove_tree(cls.tmpdir)
             elif cls.nocleanup:
                 print(f"\nTest data preserved in: {cls.tmpdir}")
 
@@ -300,13 +361,19 @@ class TestFramework(unittest.TestCase):
                     except Exception as e:
                         print(f"Warning: Failed to stop node{node.node_index}: {e}")
 
+                # Close logger handlers to release file locks (Windows)
+                if hasattr(self, 'logger') and self.logger:
+                    handlers = self.logger.handlers[:]
+                    for handler in handlers:
+                        try:
+                            handler.close()
+                            self.logger.removeHandler(handler)
+                        except:
+                            pass
+
                 # Cleanup tmpdir if not preserving
                 if not self.nocleanup and self.tmpdir and self.tmpdir.exists():
-                    try:
-                        shutil.rmtree(self.tmpdir)
-                        self.log_info(f"Cleaned up tmpdir: {self.tmpdir}")
-                    except Exception as e:
-                        print(f"Warning: Failed to cleanup tmpdir {self.tmpdir}: {e}")
+                    self.force_remove_tree(self.tmpdir)
                 elif self.nocleanup:
                     print(f"\nTest data preserved in: {self.tmpdir}")
 

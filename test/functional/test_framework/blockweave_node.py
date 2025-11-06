@@ -11,6 +11,7 @@ import subprocess
 import requests
 import logging
 import tempfile
+import platform
 from pathlib import Path
 
 
@@ -60,11 +61,14 @@ class BlockweaveNode:
         # Config file is copied to build/ during build from src/conf/bweave.conf
         self.config_file = config_file or (self.project_root / "build" / "bweave.conf")
 
-        # Locate bweave executable
-        if (Path.cwd() / "bweave").exists():
-            self.bweave = Path.cwd() / "bweave"
+        # Locate bweave executable (cross-platform)
+        # On Windows, executable is bweave.exe; on Unix, it's bweave
+        exe_name = "bweave.exe" if platform.system() == "Windows" else "bweave"
+
+        if (Path.cwd() / exe_name).exists():
+            self.bweave = Path.cwd() / exe_name
         else:
-            self.bweave = self.project_root / "build" / "bweave"
+            self.bweave = self.project_root / "build" / exe_name
 
         self.base_url = f"http://localhost:{self.port}"
         self.process = None
@@ -104,9 +108,10 @@ class BlockweaveNode:
                 for line in config_lines:
                     # Override log_dir, data_dir, rest_api_port, p2p_port, and daemon settings
                     if line.strip().startswith('log_dir='):
-                        f.write(f"log_dir={log_dir}\n")
+                        # Use forward slashes for cross-platform compatibility (Windows accepts them)
+                        f.write(f"log_dir={log_dir.as_posix()}\n")
                     elif line.strip().startswith('data_dir='):
-                        f.write(f"data_dir={node_dir / 'data'}\n")
+                        f.write(f"data_dir={(node_dir / 'data').as_posix()}\n")
                     elif line.strip().startswith('rest_api_port='):
                         f.write(f"rest_api_port={self.port}\n")
                     elif line.strip().startswith('p2p_port='):
@@ -170,10 +175,17 @@ class BlockweaveNode:
             stdout_log = node_dir / f"node{self.node_index}_stdout.log"
             stderr_log = node_dir / f"node{self.node_index}_stderr.log"
 
+            # On Windows, run from the same directory as the executable to find DLLs
+            # On Unix, can run from project root
+            if platform.system() == "Windows":
+                run_dir = str(self.bweave.parent)  # Run from directory containing bweave.exe
+            else:
+                run_dir = str(self.project_root)  # Run from project root on Unix
+
             with open(stdout_log, 'w') as stdout_f, open(stderr_log, 'w') as stderr_f:
                 self.process = subprocess.Popen(
                     cmd,
-                    cwd=str(self.project_root),
+                    cwd=run_dir,
                     stdout=stdout_f,
                     stderr=stderr_f,
                     start_new_session=True  # Detach from terminal

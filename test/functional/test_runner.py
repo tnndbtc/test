@@ -120,7 +120,7 @@ class TestRunner:
             print(f"Failed:       {len(result.failures) + len(result.errors)}")
 
             if result.wasSuccessful():
-                print(f"\n✓ ALL TESTS PASSED\n")
+                print(f"\n ALL TESTS PASSED\n")
                 return 0
             else:
                 if result.failures:
@@ -131,7 +131,7 @@ class TestRunner:
                     print(f"\nErrors:")
                     for test, _ in result.errors:
                         print(f"  - {test}")
-                print(f"\n✗ SOME TESTS FAILED\n")
+                print(f"\n SOME TESTS FAILED\n")
                 return 1
         finally:
             if self.nocleanup:
@@ -237,7 +237,7 @@ class TestRunner:
             print(f"Failed:       {len(result.failures) + len(result.errors)}")
 
             if result.wasSuccessful():
-                print(f"\n✓ ALL TESTS PASSED\n")
+                print(f"\n ALL TESTS PASSED\n")
                 return 0
             else:
                 if result.failures:
@@ -248,7 +248,7 @@ class TestRunner:
                     print(f"\nErrors:")
                     for test, _ in result.errors:
                         print(f"  - {test}")
-                print(f"\n✗ SOME TESTS FAILED\n")
+                print(f"\n SOME TESTS FAILED\n")
                 return 1
         finally:
             if self.nocleanup:

@@ -216,8 +216,17 @@ bool InstallService(const std::string& str_executable_path) {
         return false;
     }
 
-    // Build service command line (include --service flag)
-    std::string str_service_cmd = "\"" + str_executable_path + "\" --service";
+    // Build service command line (include --service flag and config file path)
+    // Extract directory from executable path
+    std::string str_exe_dir = str_executable_path;
+    size_t n_last_slash = str_exe_dir.find_last_of("\\/");
+    if (n_last_slash != std::string::npos) {
+        str_exe_dir = str_exe_dir.substr(0, n_last_slash);
+    }
+    std::string str_config_path = str_exe_dir + "\\bweave.conf";
+
+    // Service command line: "path\to\bweave.exe" --service --config "path\to\bweave.conf"
+    std::string str_service_cmd = "\"" + str_executable_path + "\" --service --config \"" + str_config_path + "\"";
 
     // Create service
     h_service = CreateService(
