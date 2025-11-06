@@ -17,6 +17,7 @@ import unittest
 import argparse
 import tempfile
 import logging
+import shutil
 from pathlib import Path
 
 
@@ -136,6 +137,13 @@ class TestRunner:
         finally:
             if self.nocleanup:
                 print(f"\nTest data preserved in: {tmpdir_path}")
+            else:
+                # Remove the parent tmpdir when not preserving test data
+                if tmpdir_path and tmpdir_path.exists():
+                    try:
+                        shutil.rmtree(tmpdir_path)
+                    except Exception as e:
+                        print(f"Warning: Failed to remove tmpdir {tmpdir_path}: {e}")
 
     def run_specific_test(self, test_name):
         """
@@ -195,6 +203,13 @@ class TestRunner:
         finally:
             if self.nocleanup:
                 print(f"\nTest data preserved in: {tmpdir_path}")
+            else:
+                # Remove the parent tmpdir when not preserving test data
+                if tmpdir_path and tmpdir_path.exists():
+                    try:
+                        shutil.rmtree(tmpdir_path)
+                    except Exception as e:
+                        print(f"Warning: Failed to remove tmpdir {tmpdir_path}: {e}")
 
     def run_all_tests(self):
         """
@@ -253,6 +268,13 @@ class TestRunner:
         finally:
             if self.nocleanup:
                 print(f"\nTest data preserved in: {tmpdir_path}")
+            else:
+                # Remove the parent tmpdir when not preserving test data
+                if tmpdir_path and tmpdir_path.exists():
+                    try:
+                        shutil.rmtree(tmpdir_path)
+                    except Exception as e:
+                        print(f"Warning: Failed to remove tmpdir {tmpdir_path}: {e}")
 
 
 def main():
