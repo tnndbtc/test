@@ -394,13 +394,41 @@ add_custom_command(TARGET bweave POST_BUILD
 
 # ============================================================
 # Copy bweave.conf to build directory after build
+# Windows: Use bweave_win.conf and replace %APPDATA% with actual value
+# POSIX: Use bweave.conf as-is
 # ============================================================
-add_custom_command(TARGET bweave POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/src/conf/bweave.conf
-        ${CMAKE_BINARY_DIR}/bweave.conf
-    COMMENT "Copying bweave.conf to build directory"
-)
+if(WIN32)
+    # On Windows, copy bweave_win.conf and replace %APPDATA% with actual value
+    # Use CMake's file(GENERATE) to replace %APPDATA% at build time
+    file(READ ${CMAKE_SOURCE_DIR}/src/conf/bweave_win.conf BWEAVE_CONF_CONTENT)
+
+    # Get APPDATA environment variable
+    if(DEFINED ENV{APPDATA})
+        set(APPDATA_PATH "$ENV{APPDATA}")
+    else()
+        # Fallback if APPDATA not set
+        set(APPDATA_PATH "C:/Users/$ENV{USERNAME}/AppData/Roaming")
+    endif()
+
+    # Replace backslashes with forward slashes for consistency
+    string(REPLACE "\\" "/" APPDATA_PATH "${APPDATA_PATH}")
+
+    # Replace %APPDATA% with actual value
+    string(REPLACE "%APPDATA%" "${APPDATA_PATH}" BWEAVE_CONF_CONTENT "${BWEAVE_CONF_CONTENT}")
+
+    # Write to build directory
+    file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/bweave.conf CONTENT "${BWEAVE_CONF_CONTENT}")
+
+    message(STATUS "Windows config: Using bweave_win.conf with APPDATA=${APPDATA_PATH}")
+else()
+    # On POSIX, use bweave.conf as-is
+    add_custom_command(TARGET bweave POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_SOURCE_DIR}/src/conf/bweave.conf
+            ${CMAKE_BINARY_DIR}/bweave.conf
+        COMMENT "Copying bweave.conf to build directory"
+    )
+endif()
 
 # Installation
 install(TARGETS bwthreadname bwlogger bwutils bwpeer bwblockcore bwrest
