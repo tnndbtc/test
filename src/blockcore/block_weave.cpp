@@ -39,10 +39,9 @@ CBlockweave::CBlockweave(const std::string& str_data_dir)
         LOG_INFO("Blockchain state loaded from disk");
     } else {
         // Genesis doesn't exist, create and mine a new one
-        LOG_INFO("No existing blockchain found, creating new genesis block");
+        LOG_INFO("No existing blockchain found, creating genesis block");
 
-        m_genesis_block = std::make_shared<CBlock>(CHash(), 0, "genesis");
-        m_genesis_block->Mine();
+        m_genesis_block = CBlock::CreateGenesisBlock();
 
         if (m_p_blockfile) {
             m_p_blockfile->SaveBlock(m_genesis_block);

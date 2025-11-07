@@ -10,6 +10,8 @@
 #include <cstdint>
 
 class CBlock {
+    friend class CBlockFile;  // Allow CBlockFile to access private members for serialization
+
 private:
     CHash m_hash;
     CHash m_previous_block;
@@ -19,10 +21,21 @@ private:
     std::string m_str_miner;
     uint64_t m_n_difficulty;
     uint64_t m_n_cumulative_data_size;
-    std::string m_str_nonce;
+    uint32_t m_n_nonce;
 
 public:
     CBlock(const CHash& prev_block, int64_t n_height, const std::string& str_miner);
+
+    /**
+     * @brief Create the genesis block (first block in the blockchain)
+     * @return Shared pointer to the genesis block
+     *
+     * Creates a special genesis block with:
+     * - Previous block hash: 0x0000...
+     * - Height: 0
+     * - Miner: "genesis"
+     */
+    static std::shared_ptr<CBlock> CreateGenesisBlock();
 
     // Transaction management
     void AddTransaction(std::shared_ptr<CTransaction> tx);
@@ -39,7 +52,7 @@ public:
     const std::string& GetMiner() const { return m_str_miner; }
     uint64_t GetDifficulty() const { return m_n_difficulty; }
     uint64_t GetCumulativeDataSize() const { return m_n_cumulative_data_size; }
-    const std::string& GetNonce() const { return m_str_nonce; }
+    uint32_t GetNonce() const { return m_n_nonce; }
 
     // Utility
     std::string ToString() const;

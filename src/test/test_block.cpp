@@ -73,7 +73,7 @@ TEST(Block_Mining) {
     block.Mine();
 
     ASSERT_TRUE(block.GetHash().GetData().length() > 0, "Mined block should have hash");
-    ASSERT_TRUE(block.GetNonce().length() > 0, "Mined block should have nonce");
+    ASSERT_TRUE(block.GetNonce() > 0, "Mined block should have nonce");
 }
 
 /**
@@ -189,4 +189,34 @@ TEST(Block_Serialize_Roundtrip_MultipleTransactions) {
                      block_orig.GetTransactions()[i]->m_id.GetData(),
                      "Transaction ID should match");
     }
+}
+
+/**
+ * @brief Test CBlock::CreateGenesisBlock()
+ */
+TEST(Block_CreateGenesisBlock) {
+    // Create genesis block
+    std::shared_ptr<CBlock> p_genesis = CBlock::CreateGenesisBlock();
+
+    // Verify genesis block was created
+    ASSERT_TRUE(p_genesis != nullptr, "Genesis block should be created");
+
+    // Verify height is 0
+    ASSERT_EQUAL(p_genesis->GetHeight(), (int64_t)0, "Genesis block height should be 0");
+
+    // Verify miner is "genesis"
+    ASSERT_EQUAL(p_genesis->GetMiner(), std::string("genesis"), "Genesis block miner should be 'genesis'");
+
+    // Verify previous block hash is all zeros (64 hex characters)
+    std::string expected_zero_hash(64, '0');
+    ASSERT_EQUAL(p_genesis->GetPreviousBlock().GetData(), expected_zero_hash, "Genesis block previous hash should be all zeros");
+
+    // Verify timestamp is set
+    ASSERT_TRUE(p_genesis->GetTimestamp() > 0, "Genesis block timestamp should be set");
+
+    // Verify difficulty is set
+    ASSERT_EQUAL(p_genesis->GetDifficulty(), (uint64_t)1000, "Genesis block difficulty should be 1000");
+
+    // Verify no transactions initially
+    ASSERT_EQUAL(p_genesis->GetTransactions().size(), (size_t)0, "Genesis block should have no transactions initially");
 }

@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <ctime>
 #include <cstring>
+#include <iostream>
 
 // Platform-specific byte order conversion
 #ifdef __APPLE__
@@ -44,9 +45,22 @@ static std::string TimestampToUTC(int64_t n_epoch_ns) {
 
 CBlock::CBlock(const CHash& prev_block, int64_t n_height, const std::string& str_miner)
     : m_previous_block(prev_block), m_n_height(n_height), m_str_miner(str_miner),
-      m_n_difficulty(1000), m_n_cumulative_data_size(0) {
+      m_n_difficulty(1000), m_n_cumulative_data_size(0), m_n_nonce(0) {
     m_n_timestamp = std::chrono::system_clock::now().time_since_epoch().count();
-    m_str_nonce = "0";
+}
+
+std::shared_ptr<CBlock> CBlock::CreateGenesisBlock() {
+    // Create a hash with all zeros for the genesis block's previous hash
+    // Use the binary constructor to set all bytes to zero (32 bytes = 256 bits)
+    unsigned char zero_bytes[32] = {0};
+    CHash zero_hash(zero_bytes, 32);
+
+    // Create genesis block with height 0 and miner "genesis"
+    std::shared_ptr<CBlock> p_genesis_block = std::make_shared<CBlock>(zero_hash, 0, "genesis");
+    p_genesis_block->m_n_timestamp=1762553229520435;
+    p_genesis_block->m_n_nonce=1106191456;
+
+    return p_genesis_block;
 }
 
 void CBlock::AddTransaction(std::shared_ptr<CTransaction> tx) {
@@ -64,11 +78,11 @@ void CBlock::Mine() {
 
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dis(0, 999999);
+    std::uniform_int_distribution<uint32_t> dis(0, UINT32_MAX);
 
     while(true) {
-        m_str_nonce = std::to_string(dis(gen));
-        m_hash = CHash(str_block_data + m_str_nonce);
+        m_n_nonce = dis(gen);
+        m_hash = CHash(str_block_data + std::to_string(m_n_nonce));
 
         if(m_hash.GetData().substr(0, 4) < "0fff") {
             break;
@@ -120,10 +134,9 @@ std::string CBlock::Serialize() const {
     uint64_t n_cumulative_data_size_network = htobe64(m_n_cumulative_data_size);
     str_result.append(reinterpret_cast<const char*>(&n_cumulative_data_size_network), BLOCK_UINT64_SIZE);
 
-    // Write nonce (length + data)
-    uint32_t n_nonce_len = htonl(static_cast<uint32_t>(m_str_nonce.length()));
-    str_result.append(reinterpret_cast<const char*>(&n_nonce_len), BLOCK_UINT32_SIZE);
-    str_result.append(m_str_nonce);
+    // Write nonce (BLOCK_UINT32_SIZE bytes, network byte order)
+    uint32_t n_nonce_network = htonl(m_n_nonce);
+    str_result.append(reinterpret_cast<const char*>(&n_nonce_network), BLOCK_UINT32_SIZE);
 
     // Write transaction count
     uint32_t n_tx_count = htonl(static_cast<uint32_t>(m_transactions.size()));
@@ -143,7 +156,7 @@ std::string CBlock::Serialize() const {
 std::shared_ptr<CBlock> CBlock::Deserialize(const std::string& str_data) {
     size_t n_offset = 0;
 
-    // Minimum size check (hash + prev_hash + height + timestamp + miner_len + difficulty + cumulative + nonce_len + tx_count)
+    // Minimum size check (hash + prev_hash + height + timestamp + miner_len + difficulty + cumulative + nonce + tx_count)
     const size_t min_size = BLOCK_HASH_SIZE + BLOCK_HASH_SIZE + BLOCK_INT64_SIZE + BLOCK_INT64_SIZE +
                             BLOCK_UINT32_SIZE + BLOCK_UINT64_SIZE + BLOCK_UINT64_SIZE + BLOCK_UINT32_SIZE + BLOCK_UINT32_SIZE;
     if (str_data.length() < min_size) {
@@ -199,16 +212,11 @@ std::shared_ptr<CBlock> CBlock::Deserialize(const std::string& str_data) {
         p_block->m_n_cumulative_data_size = be64toh(n_cumulative_data_size_network);
         n_offset += BLOCK_UINT64_SIZE;
 
-        // Read nonce length
-        uint32_t n_nonce_len_network;
-        std::memcpy(&n_nonce_len_network, str_data.data() + n_offset, BLOCK_UINT32_SIZE);
-        uint32_t n_nonce_len = ntohl(n_nonce_len_network);
+        // Read nonce (BLOCK_UINT32_SIZE bytes, network byte order)
+        uint32_t n_nonce_network;
+        std::memcpy(&n_nonce_network, str_data.data() + n_offset, BLOCK_UINT32_SIZE);
+        p_block->m_n_nonce = ntohl(n_nonce_network);
         n_offset += BLOCK_UINT32_SIZE;
-
-        // Read nonce
-        if (n_offset + n_nonce_len > str_data.length()) return nullptr;
-        p_block->m_str_nonce = std::string(str_data.data() + n_offset, n_nonce_len);
-        n_offset += n_nonce_len;
 
         // Read transaction count
         uint32_t n_tx_count_network;

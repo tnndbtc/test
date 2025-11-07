@@ -381,7 +381,10 @@ bool CBlockFile::SaveBlock(const std::shared_ptr<CBlock>& p_block) {
         return false;
     }
 
-    if (!WriteString(ofs, p_block->GetNonce())) {
+    // Write nonce (4 bytes)
+    uint32_t n_nonce = p_block->GetNonce();
+    ofs.write(reinterpret_cast<const char*>(&n_nonce), sizeof(n_nonce));
+    if (!ofs.good()) {
         LOG_ERROR("Failed to write nonce");
         return false;
     }
@@ -473,7 +476,10 @@ std::shared_ptr<CBlock> CBlockFile::LoadBlock(const CHash& hash) {
     ifs.read(reinterpret_cast<char*>(&n_cumulative_data_size), sizeof(n_cumulative_data_size));
 
     std::string str_miner = ReadString(ifs);
-    std::string str_nonce = ReadString(ifs);
+
+    // Read nonce (4 bytes)
+    uint32_t n_nonce = 0;
+    ifs.read(reinterpret_cast<char*>(&n_nonce), sizeof(n_nonce));
 
     uint32_t n_tx_count = 0;
     ifs.read(reinterpret_cast<char*>(&n_tx_count), sizeof(n_tx_count));
@@ -486,11 +492,11 @@ std::shared_ptr<CBlock> CBlockFile::LoadBlock(const CHash& hash) {
     // Create block
     auto p_block = std::make_shared<CBlock>(previous_hash, n_height, str_miner);
 
-    // Restore saved block hash and nonce (these getters return references)
+    // Restore saved block hash and nonce
     // Note: timestamp, difficulty, cumulative_data_size getters return by value
     // so they can't be restored this way, but for block identity the hash is most important
     const_cast<CHash&>(p_block->GetHash()) = block_hash;
-    const_cast<std::string&>(p_block->GetNonce()) = str_nonce;
+    p_block->m_n_nonce = n_nonce;
 
     // Read and add transactions
     for (uint32_t n_i = 0; n_i < n_tx_count; n_i++) {
@@ -579,7 +585,10 @@ std::shared_ptr<CBlock> CBlockFile::GetGenesisBlock() {
             ifs.read(reinterpret_cast<char*>(&n_cumulative_data_size), sizeof(n_cumulative_data_size));
 
             std::string str_miner = ReadString(ifs);
-            std::string str_nonce = ReadString(ifs);
+
+            // Read nonce (4 bytes)
+            uint32_t n_nonce = 0;
+            ifs.read(reinterpret_cast<char*>(&n_nonce), sizeof(n_nonce));
 
             // Read transactions
             uint32_t n_tx_count = 0;
