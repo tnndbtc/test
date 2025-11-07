@@ -16,6 +16,7 @@
     #define be64toh(x) OSSwapBigToHostInt64(x)
 #elif defined(__linux__)
     #include <endian.h>
+    #include <arpa/inet.h>
 #elif defined(_WIN32)
     #include <winsock2.h>
     #define htobe64(x) htonll(x)
