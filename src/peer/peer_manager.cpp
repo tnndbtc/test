@@ -1330,7 +1330,6 @@ void CPeerManager::HandleInventoryMessage(CPeerConnection* p_peer, const CPeerMe
     // Count: MESSAGE_COUNT_SIZE bytes (uint32_t, network byte order)
     // For each item: Type (MESSAGE_TYPE_SIZE bytes, ObjectType::Type) + Hash (MESSAGE_HASH_HEX_SIZE bytes, SHA-256 hex string)
 
-    bool f_continue = false;
     if (str_inventory.length() < MESSAGE_COUNT_SIZE) {
         LOG_ERROR("Invalid INVENTORY message from peer " + p_peer->peer_node->GetAddress() +
                  ": too short (need at least count field)");
