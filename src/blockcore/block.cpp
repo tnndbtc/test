@@ -59,6 +59,9 @@ std::shared_ptr<CBlock> CBlock::CreateGenesisBlock() {
     std::shared_ptr<CBlock> p_genesis_block = std::make_shared<CBlock>(zero_hash, 0, "genesis");
     p_genesis_block->m_n_timestamp=1762553229520435;
     p_genesis_block->m_n_nonce=1106191456;
+    std::string str_block_data = zero_hash.GetData() +
+                                 std::to_string(0) + std::to_string(p_genesis_block->m_n_timestamp);
+    p_genesis_block->m_hash = CHash(str_block_data + std::to_string(p_genesis_block->m_n_nonce));
 
     return p_genesis_block;
 }

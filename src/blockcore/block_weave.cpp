@@ -73,7 +73,8 @@ void CBlockweave::AddTransaction(std::shared_ptr<CTransaction> tx) {
 }
 
 void CBlockweave::MineBlock(const std::string& str_miner_address) {
-    std::vector<std::string> transaction_ids;
+    std::string str_block_hash;
+    std::shared_ptr<CBlock> new_block;
 
     {
         std::lock_guard<std::mutex> lock(cs_blockweave);
@@ -82,7 +83,7 @@ void CBlockweave::MineBlock(const std::string& str_miner_address) {
             return;
         }
 
-        auto new_block = std::make_shared<CBlock>(
+        new_block = std::make_shared<CBlock>(
             m_current_block->GetHash(),
             m_current_block->GetHeight() + 1,
             str_miner_address
@@ -90,10 +91,9 @@ void CBlockweave::MineBlock(const std::string& str_miner_address) {
 
         size_t n_tx_count = std::min(m_mempool.size(), size_t(10));
 
-        // Collect transaction IDs for broadcasting
+        // Add transactions to block
         for(size_t n_i = 0; n_i < n_tx_count; n_i++) {
             new_block->AddTransaction(m_mempool[n_i]);
-            transaction_ids.push_back(m_mempool[n_i]->m_id.GetData());
         }
         m_mempool.erase(m_mempool.begin(), m_mempool.begin() + n_tx_count);
 
@@ -109,22 +109,30 @@ void CBlockweave::MineBlock(const std::string& str_miner_address) {
             m_p_blockfile->SaveBlock(new_block);
         }
 
-        LOG_INFO("Block #" + std::to_string(new_block->GetHeight()) + " mined successfully, hash: " + new_block->GetHash().GetData().substr(0, 16) + "...");
+        str_block_hash = new_block->GetHash().GetData();
+        LOG_INFO("Block #" + std::to_string(new_block->GetHeight()) + " mined successfully, hash: " + str_block_hash.substr(0, 16) + "...");
     }
 
-    // Broadcast transaction IDs to peers (outside lock to avoid deadlock)
-    if (p_peer_manager != nullptr && !transaction_ids.empty()) {
-        // Create TX_IDS message with comma-separated transaction IDs
+    // Broadcast block to peers via INVENTORY message (outside lock to avoid deadlock)
+    if (p_peer_manager != nullptr && !str_block_hash.empty()) {
+        // Build INVENTORY message manually: [count][type][hash]
         std::string str_payload;
-        for (size_t n_i = 0; n_i < transaction_ids.size(); n_i++) {
-            if (n_i > 0) {
-                str_payload += ",";
-            }
-            str_payload += transaction_ids[n_i];
-        }
 
-        CPeerMessage tx_ids_msg(MessageType::TX_IDS, str_payload);
-        p_peer_manager->BroadcastMessage(tx_ids_msg);
+        // Write count (4 bytes, network byte order) - we have 1 block
+        uint32_t n_count = htonl(1);
+        str_payload.append(reinterpret_cast<const char*>(&n_count), 4);
+
+        // Write type (2 bytes)
+        uint16_t n_type = htons(ObjectType::BLOCK);
+        str_payload.append(reinterpret_cast<const char*>(&n_type), 2);
+
+        // Write hash (32 bytes binary)
+        const auto& hash_bytes = new_block->GetHash().GetBytes();
+        str_payload.append(reinterpret_cast<const char*>(hash_bytes.data()), hash_bytes.size());
+
+        // Broadcast INVENTORY message to all peers
+        CPeerMessage inv_msg(MessageType::INVENTORY, str_payload);
+        p_peer_manager->BroadcastMessage(inv_msg);
     }
 }
 

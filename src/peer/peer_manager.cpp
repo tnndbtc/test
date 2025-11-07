@@ -1515,6 +1515,7 @@ void CPeerManager::HandleGetDataMessage(CPeerConnection* p_peer, const CPeerMess
             ObjectType::Type obj_type = item.first;
             const std::string& str_hash = item.second;
             CHash hash(reinterpret_cast<const unsigned char*>(str_hash.data()), str_hash.size());
+            LOG_TRACE("Peer " + peer_addr + " requested object type: " + std::to_string(obj_type) + " via GETDATA");
 
             if (obj_type == ObjectType::TRANSACTION) {
                 // Query transaction from blockweave
@@ -1533,8 +1534,7 @@ void CPeerManager::HandleGetDataMessage(CPeerConnection* p_peer, const CPeerMess
                     std::shared_ptr<CBlock> p_block = p_blockweave->GetBlock(hash);
                     if (p_block) {
                         vec_serialized_blocks.push_back(p_block->Serialize());
-                        LOG_TRACE("Serialized block " + hash.GetData().substr(0, 16) + "... for peer " + peer_addr);
-                    } else {
+                        LOG_TRACE("Serialized block " + hash.GetData().substr(0, 16) + "... for peer " + peer_addr); } else {
                         LOG_TRACE("Block " + hash.GetData().substr(0, 16) + "... not found for peer " + peer_addr);
                     }
                 }
@@ -2124,9 +2124,6 @@ size_t CPeerManager::BroadcastMessage(const CPeerMessage& message) {
         return 0;
     }
 
-    LOG_INFO("Broadcasting " + message.GetTypeString() + " message (" +
-             std::to_string(str_serialized.length()) + " bytes) to all peers");
-
     // Copy socket descriptors and peer info while holding the lock
     // This prevents blocking I/O operations from holding the mutex
     struct PeerInfo {
@@ -2159,6 +2156,21 @@ size_t CPeerManager::BroadcastMessage(const CPeerMessage& message) {
         }
     }
 
+    // Log detailed broadcast information at TRACE level
+    if (!peer_sockets.empty()) {
+        std::string str_peer_list;
+        for (size_t i = 0; i < peer_sockets.size(); ++i) {
+            if (i > 0) str_peer_list += ", ";
+            str_peer_list += peer_sockets[i].str_peer_address;
+        }
+        LOG_TRACE("Broadcasting " + message.GetTypeString() + " message (" +
+                 std::to_string(str_serialized.length()) + " bytes) to " +
+                 std::to_string(peer_sockets.size()) + " peers: " + str_peer_list);
+    } else {
+        LOG_TRACE("Broadcasting " + message.GetTypeString() + " message (" +
+                 std::to_string(str_serialized.length()) + " bytes) to 0 peers");
+    }
+
     // Send to all peers without holding the lock
     // This prevents slow/blocked sockets from blocking other operations
     size_t n_sent_count = 0;
@@ -2167,14 +2179,14 @@ size_t CPeerManager::BroadcastMessage(const CPeerMessage& message) {
         ssize_t n_sent = send(peer_info.n_socket, str_serialized.c_str(), str_serialized.length(), 0);
         if (n_sent > 0) {
             n_sent_count++;
-            LOG_TRACE("Sent " + message.GetTypeString() + " to peer " + peer_info.str_peer_address);
+            LOG_TRACE("Successfully sent " + message.GetTypeString() + " to peer " + peer_info.str_peer_address);
         } else {
             LOG_ERROR("Failed to send " + message.GetTypeString() + " to peer " + peer_info.str_peer_address +
                       " (error: " + std::string(strerror(errno)) + ")");
         }
     }
 
-    LOG_INFO("Broadcast sent to " + std::to_string(n_sent_count) + " of " +
+    LOG_TRACE("Broadcast complete: sent " + message.GetTypeString() + " to " + std::to_string(n_sent_count) + " of " +
              std::to_string(peer_sockets.size()) + " peers");
 
     return n_sent_count;
