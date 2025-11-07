@@ -81,6 +81,12 @@ public:
     virtual size_t GetMempoolSize() const = 0;
 
     /**
+     * @brief Get number of blocks in the blockchain
+     * @return Block count
+     */
+    virtual size_t GetBlockCount() const = 0;
+
+    /**
      * @brief Check if transaction exists in mempool
      * @param str_tx_hash Transaction hash (hex string)
      * @return true if transaction is in mempool

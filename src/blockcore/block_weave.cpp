@@ -204,6 +204,11 @@ size_t CBlockweave::GetMempoolSize() const {
     return m_mempool.size();
 }
 
+size_t CBlockweave::GetBlockCount() const {
+    std::lock_guard<std::mutex> lock(cs_blockweave);
+    return map_blocks.size();
+}
+
 bool CBlockweave::HasTransactionInMempool(const std::string& str_tx_hash) const {
     std::lock_guard<std::mutex> lock(cs_blockweave);
 

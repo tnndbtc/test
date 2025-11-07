@@ -776,10 +776,12 @@ void CRestApiServer::ProcessRequest(const CHttpRequest& request) {
 
 std::tuple<int, std::string> CRestApiServer::HandleGetChain() {
     size_t n_mempool_size = p_blockweave->GetMempoolSize();
+    size_t n_block_count = p_blockweave->GetBlockCount();
     bool f_mining = p_blockweave->IsMiningEnabled();
 
     std::ostringstream oss;
     oss << "{\n";
+    oss << "  \"blocks\": " << n_block_count << ",\n";
     oss << "  \"mempool_size\": " << n_mempool_size << ",\n";
     oss << "  \"mining_enabled\": " << (f_mining ? "true" : "false") << "\n";
     oss << "}";

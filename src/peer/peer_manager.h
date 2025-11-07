@@ -280,6 +280,63 @@ private:
                                 size_t n_bytes_received);
 
     /**
+     * @brief Handle PING message from peer
+     * @param p_peer Peer connection pointer
+     * @param received_msg The received PING message
+     * @param n_socket_fd Socket file descriptor
+     */
+    void HandlePingMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg, int n_socket_fd);
+
+    /**
+     * @brief Handle PONG message from peer
+     * @param p_peer Peer connection pointer
+     * @param received_msg The received PONG message
+     */
+    void HandlePongMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg);
+
+    /**
+     * @brief Handle TX_IDS message from peer
+     * @param p_peer Peer connection pointer
+     * @param received_msg The received TX_IDS message
+     */
+    void HandleTxIdsMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg);
+
+    /**
+     * @brief Handle INVENTORY message from peer
+     * @param p_peer Peer connection pointer
+     * @param received_msg The received INVENTORY message
+     */
+    void HandleInventoryMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg);
+
+    /**
+     * @brief Handle VERSION message from peer
+     * @param p_peer Peer connection pointer
+     * @param received_msg The received VERSION message
+     */
+    void HandleVersionMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg);
+
+    /**
+     * @brief Handle GETDATA message from peer
+     * @param p_peer Peer connection pointer
+     * @param received_msg The received GETDATA message
+     */
+    void HandleGetDataMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg);
+
+    /**
+     * @brief Handle TXS message from peer
+     * @param p_peer Peer connection pointer
+     * @param received_msg The received TXS message
+     */
+    void HandleTxsMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg);
+
+    /**
+     * @brief Handle BLOCKS message from peer
+     * @param p_peer Peer connection pointer
+     * @param received_msg The received BLOCKS message
+     */
+    void HandleBlocksMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg);
+
+    /**
      * @brief Send message asynchronously to inbound peer
      * @param n_socket_fd Socket file descriptor
      * @param message CPeerMessage to send
