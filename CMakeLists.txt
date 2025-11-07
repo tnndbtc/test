@@ -131,10 +131,10 @@ target_link_libraries(bwutils
 # ============================================================
 # Peer Library (libbwpeer.so / .dylib / .dll)
 # P2P networking
+# Note: peer_message.cpp is in bwpeermsg library to break circular dependency
 # ============================================================
 add_library(bwpeer SHARED
     src/peer/peer_manager.cpp
-    src/peer/peer_message.cpp
     src/peer/peer_filter.cpp
     src/peer/peer_node.cpp
 )
@@ -156,13 +156,45 @@ endif()
 
 # Link logger, threadname, and utils to peer
 # Note: Boost.Asio is header-only, no linking required
-# Note: bwpeer uses transaction/block serialization from bwblockcore,
-#       but to avoid circular dependencies, the linking is handled at the
-#       executable level (bweave links both bwpeer and bwblockcore)
 target_link_libraries(bwpeer
     PUBLIC bwutils
     PUBLIC bwlogger
     PUBLIC bwthreadname
+)
+
+# ============================================================
+# Peer Message Library (libbwpeermsg.so / .dylib / .dll)
+# Peer message format (no dependencies on bwpeer or bwblockcore)
+# This breaks the circular dependency between bwpeer and bwblockcore
+# ============================================================
+add_library(bwpeermsg SHARED
+    src/peer/peer_message.cpp
+)
+
+set_target_properties(bwpeermsg PROPERTIES
+    VERSION 1.0.0
+    SOVERSION 1
+    POSITION_INDEPENDENT_CODE ON
+    CXX_VISIBILITY_PRESET default
+)
+
+if(APPLE)
+    set_target_properties(bwpeermsg PROPERTIES
+        INSTALL_NAME_DIR "@rpath"
+        BUILD_WITH_INSTALL_RPATH TRUE
+    )
+endif()
+
+# Link dependencies to bwpeermsg
+target_link_libraries(bwpeermsg
+    PUBLIC bwutils
+    PUBLIC bwlogger
+    PUBLIC bwthreadname
+)
+
+# Now link bwpeermsg to bwpeer
+target_link_libraries(bwpeer
+    PUBLIC bwpeermsg
 )
 
 # ============================================================
@@ -198,7 +230,12 @@ target_link_libraries(bwblockcore
     PUBLIC bwutils
     PUBLIC bwlogger
     PUBLIC bwthreadname
-    PUBLIC bwpeer
+    PUBLIC bwpeermsg
+)
+
+# Now link bwblockcore to bwpeer so it can use CTransaction and CBlock
+target_link_libraries(bwpeer
+    PUBLIC bwblockcore
 )
 
 # ============================================================
@@ -338,6 +375,7 @@ if(WIN32)
     endif()
 
     # Link Windows socket library (ws2_32) and service library (advapi32)
+    target_link_libraries(bwpeermsg PUBLIC ws2_32)
     target_link_libraries(bwpeer PUBLIC ws2_32)
     target_link_libraries(bwblockcore PUBLIC advapi32)  # For Windows Service APIs
     target_link_libraries(bweave PRIVATE ws2_32 advapi32)
@@ -349,6 +387,7 @@ else()
     # Linux/macOS: Use POSIX threads for threading support
     find_package(Threads REQUIRED)
     target_link_libraries(bwthreadname PUBLIC Threads::Threads)
+    target_link_libraries(bwpeermsg PUBLIC Threads::Threads)
     target_link_libraries(bwblockcore PUBLIC Threads::Threads)
     target_link_libraries(bwrest PUBLIC Threads::Threads)
     target_link_libraries(bwpeer PUBLIC Threads::Threads)
@@ -363,6 +402,7 @@ if(MSVC)
     target_compile_options(bwthreadname PRIVATE /W4)
     target_compile_options(bwlogger PRIVATE /W4)
     target_compile_options(bwutils PRIVATE /W4)
+    target_compile_options(bwpeermsg PRIVATE /W4)
     target_compile_options(bwpeer PRIVATE /W4)
     target_compile_options(bwblockcore PRIVATE /W4)
     target_compile_options(bwrest PRIVATE /W4)
@@ -376,6 +416,7 @@ else()
     target_compile_options(bwthreadname PRIVATE -Wall -Wextra -pedantic)
     target_compile_options(bwlogger PRIVATE -Wall -Wextra -pedantic)
     target_compile_options(bwutils PRIVATE -Wall -Wextra -pedantic)
+    target_compile_options(bwpeermsg PRIVATE -Wall -Wextra -pedantic)
     target_compile_options(bwpeer PRIVATE -Wall -Wextra -pedantic)
     target_compile_options(bwblockcore PRIVATE -Wall -Wextra -pedantic)
     target_compile_options(bwrest PRIVATE -Wall -Wextra -pedantic)
@@ -435,7 +476,7 @@ else()
 endif()
 
 # Installation
-install(TARGETS bwthreadname bwlogger bwutils bwpeer bwblockcore bwrest
+install(TARGETS bwthreadname bwlogger bwutils bwpeermsg bwpeer bwblockcore bwrest
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
     RUNTIME DESTINATION bin

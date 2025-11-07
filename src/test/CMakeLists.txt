@@ -62,6 +62,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
     set(REQUIRED_LIBS
         "${BUILD_DIR}/libbwpeer.${LIB_EXT}"
+        "${BUILD_DIR}/libbwpeermsg.${LIB_EXT}"
         "${BUILD_DIR}/libbwlogger.${LIB_EXT}"
         "${BUILD_DIR}/libbwthreadname.${LIB_EXT}"
         "${BUILD_DIR}/libbwblockcore.${LIB_EXT}"
@@ -127,6 +128,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         PRIVATE ${BUILD_DIR}/libbwblockcore.${LIB_EXT}
         PRIVATE ${BUILD_DIR}/libbwutils.${LIB_EXT}
         PRIVATE ${BUILD_DIR}/libbwpeer.${LIB_EXT}
+        PRIVATE ${BUILD_DIR}/libbwpeermsg.${LIB_EXT}
         PRIVATE ${BUILD_DIR}/libbwlogger.${LIB_EXT}
         PRIVATE ${BUILD_DIR}/libbwthreadname.${LIB_EXT}
         PRIVATE Threads::Threads
@@ -180,6 +182,7 @@ else()
         PRIVATE bwblockcore
         PRIVATE bwutils
         PRIVATE bwpeer
+        PRIVATE bwpeermsg
         PRIVATE bwlogger
         PRIVATE bwthreadname
     )
