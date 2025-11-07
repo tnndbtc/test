@@ -113,7 +113,7 @@ if not exist "%BUILD_DIR%" (
 
 REM Check if required libraries exist
 set LIBS_EXIST=1
-set REQUIRED_LIBS=libbwpeer.dll libbwlogger.dll libbwthreadname.dll libbwblockcore.dll libbwrest.dll libbwutils.dll
+set REQUIRED_LIBS=libbwpeer.dll libbwlogger.dll libbwthreadname.dll libbwblockcore.dll libbwrest.dll libbwutils.dll libbwpeermsg.dll
 
 echo Checking for required libraries in: %BUILD_DIR%
 for %%L in (%REQUIRED_LIBS%) do (
@@ -137,10 +137,10 @@ if %LIBS_EXIST% equ 0 (
     REM Build the required libraries
     if defined PARALLEL_JOBS (
         echo Building libraries with %PARALLEL_JOBS% parallel jobs ^(this may take a few minutes^)...
-        cmake --build . --target bwthreadname bwlogger bwpeer bwutils bwblockcore bwrest -j %PARALLEL_JOBS%
+        cmake --build . --target bwthreadname bwlogger bwpeer bwutils bwblockcore bwrest bwpeermsg -j %PARALLEL_JOBS%
     ) else (
         echo Building libraries ^(this may take a few minutes^)...
-        cmake --build . --target bwthreadname bwlogger bwpeer bwutils bwblockcore bwrest
+        cmake --build . --target bwthreadname bwlogger bwpeer bwutils bwblockcore bwrest bwpeermsg
     )
     if %ERRORLEVEL% neq 0 (
         echo.
@@ -325,6 +325,7 @@ if exist "test_all.exe" (
     copy "%BUILD_DIR%\libbwblockcore.dll" . >nul 2>&1
     copy "%BUILD_DIR%\libbwrest.dll" . >nul 2>&1
     copy "%BUILD_DIR%\libbwutils.dll" . >nul 2>&1
+    copy "%BUILD_DIR%\libbwpeermsg.dll" . >nul 2>&1
 
     REM Copy OpenSSL DLLs if they exist in the OpenSSL bin directory
     if defined OPENSSL_ROOT_DIR (
