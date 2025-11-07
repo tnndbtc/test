@@ -392,13 +392,15 @@ private:
     void BroadcastInventory(const std::vector<std::pair<ObjectType::Type, std::string>>& vec_inventory);
 
     /**
-     * @brief Send GETDATA message to request missing inventory items
+     * @brief Schedule GETDATA message to request missing inventory items
      * @param n_socket Socket to send to
      * @param vec_items Vector of (type, hash) pairs to request
      *
      * Format: [count][type][hash][type][hash]... (same as inventory format)
+     * Note: This method schedules the GETDATA message to be sent asynchronously
+     *       via the thread pool to avoid blocking the caller.
      */
-    void SendGetDataMessage(int n_socket, const std::vector<std::pair<ObjectType::Type, std::string>>& vec_items);
+    void ScheduleGetDataMessage(int n_socket, const std::vector<std::pair<ObjectType::Type, std::string>>& vec_items);
 
     /**
      * @brief Rotate outbound peer connections

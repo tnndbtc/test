@@ -66,4 +66,23 @@ constexpr size_t MESSAGE_HASH_SIZE = 32;
 // Size of hexadecimal hash string representation (SHA-256 as hex, 64 characters)
 constexpr size_t MESSAGE_HASH_HEX_SIZE = 64;
 
+// ============================================================
+// Block and Transaction Serialization Field Sizes
+// ============================================================
+
+// Size of hash field in block serialization (SHA-256, 32 bytes)
+constexpr size_t BLOCK_HASH_SIZE = 32;
+
+// Size of int64_t fields (height, timestamp) in network byte order
+constexpr size_t BLOCK_INT64_SIZE = 8;
+
+// Size of uint64_t fields (difficulty, cumulative_data_size, reward) in network byte order
+constexpr size_t BLOCK_UINT64_SIZE = 8;
+
+// Size of uint32_t length fields (string length, count) in network byte order
+constexpr size_t BLOCK_UINT32_SIZE = 4;
+
+// Size of uint8_t fields (transaction type)
+constexpr size_t BLOCK_UINT8_SIZE = 1;
+
 #endif // SETTINGS_H

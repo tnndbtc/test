@@ -217,6 +217,20 @@ bool CBlockweave::HasTransactionInMempool(const std::string& str_tx_hash) const 
     return false;
 }
 
+std::shared_ptr<CTransaction> CBlockweave::GetTransactionFromMempool(const CHash& tx_hash) const {
+    std::lock_guard<std::mutex> lock(cs_blockweave);
+
+    // Search mempool for transaction with matching hash
+    std::string str_tx_hash = tx_hash.GetData();
+    for (const auto& p_tx : m_mempool) {
+        if (p_tx && p_tx->m_id.GetData() == str_tx_hash) {
+            return p_tx;
+        }
+    }
+
+    return nullptr;  // Not found
+}
+
 void CBlockweave::SetPeerManager(IPeerManager* p_mgr) {
     p_peer_manager = p_mgr;
     if (p_peer_manager != nullptr) {

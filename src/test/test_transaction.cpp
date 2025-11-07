@@ -87,3 +87,85 @@ TEST(Transaction_Timestamp) {
 
     ASSERT_TRUE(tx.m_n_timestamp > 0, "Timestamp should be set automatically");
 }
+
+/**
+ * @brief Test CTransaction serialization
+ */
+TEST(Transaction_Serialize) {
+    std::vector<uint8_t> data = {'h', 'e', 'l', 'l', 'o'};
+    CTransaction tx("alice", "bob", data, 100, TransactionType::TRANSFER, "{\"test\":\"data\"}");
+
+    std::string serialized = tx.Serialize();
+
+    // Check that serialized data is not empty
+    ASSERT_TRUE(serialized.length() > 0, "Serialized data should not be empty");
+
+    // Minimum size check: 4 + owner + 4 + target + 4 + data + 8 + 8 + 1 + 4 + metadata
+    size_t expected_min_size = 4 + 5 + 4 + 3 + 4 + 5 + 8 + 8 + 1 + 4 + 15;
+    ASSERT_TRUE(serialized.length() >= expected_min_size, "Serialized size should be at least minimum");
+}
+
+/**
+ * @brief Test CTransaction deserialization
+ */
+TEST(Transaction_Deserialize) {
+    // Create original transaction
+    std::vector<uint8_t> data = {'w', 'o', 'r', 'l', 'd'};
+    CTransaction tx_orig("sender", "receiver", data, 250, TransactionType::STORAGE, "{\"file\":\"test.txt\"}");
+
+    // Serialize
+    std::string serialized = tx_orig.Serialize();
+
+    // Deserialize
+    std::shared_ptr<CTransaction> p_tx = CTransaction::Deserialize(serialized);
+
+    // Verify deserialization succeeded
+    ASSERT_TRUE(p_tx != nullptr, "Deserialization should succeed");
+
+    // Verify all fields match
+    ASSERT_EQUAL(p_tx->m_str_owner, tx_orig.m_str_owner, "Owner should match");
+    ASSERT_EQUAL(p_tx->m_str_target, tx_orig.m_str_target, "Target should match");
+    ASSERT_EQUAL(p_tx->m_data.size(), tx_orig.m_data.size(), "Data size should match");
+    ASSERT_EQUAL(p_tx->m_n_reward, tx_orig.m_n_reward, "Reward should match");
+    ASSERT_EQUAL(p_tx->m_n_timestamp, tx_orig.m_n_timestamp, "Timestamp should match");
+    ASSERT_EQUAL(static_cast<int>(p_tx->m_type), static_cast<int>(tx_orig.m_type), "Type should match");
+    ASSERT_EQUAL(p_tx->m_str_metadata, tx_orig.m_str_metadata, "Metadata should match");
+    ASSERT_EQUAL(p_tx->m_id.GetData(), tx_orig.m_id.GetData(), "Transaction ID should match");
+}
+
+/**
+ * @brief Test CTransaction deserialization with invalid data
+ */
+TEST(Transaction_Deserialize_Invalid) {
+    // Test with empty data
+    std::shared_ptr<CTransaction> p_tx1 = CTransaction::Deserialize("");
+    ASSERT_TRUE(p_tx1 == nullptr, "Empty data should fail deserialization");
+
+    // Test with truncated data
+    std::string short_data = "abc";
+    std::shared_ptr<CTransaction> p_tx2 = CTransaction::Deserialize(short_data);
+    ASSERT_TRUE(p_tx2 == nullptr, "Truncated data should fail deserialization");
+
+    // Test with partial header
+    std::string partial_data(20, 'x');
+    std::shared_ptr<CTransaction> p_tx3 = CTransaction::Deserialize(partial_data);
+    ASSERT_TRUE(p_tx3 == nullptr, "Partial header should fail deserialization");
+}
+
+/**
+ * @brief Test CTransaction serialization roundtrip with large data
+ */
+TEST(Transaction_Serialize_Roundtrip_LargeData) {
+    // Create transaction with large data
+    std::vector<uint8_t> large_data(5000, 'Z');
+    CTransaction tx_orig("from_address", "to_address", large_data, 1000, TransactionType::COMPUTE, "{\"cpu\":4}");
+
+    // Serialize and deserialize
+    std::string serialized = tx_orig.Serialize();
+    std::shared_ptr<CTransaction> p_tx = CTransaction::Deserialize(serialized);
+
+    // Verify
+    ASSERT_TRUE(p_tx != nullptr, "Large data deserialization should succeed");
+    ASSERT_EQUAL(p_tx->m_data.size(), (size_t)5000, "Large data size should be preserved");
+    ASSERT_EQUAL(p_tx->m_id.GetData(), tx_orig.m_id.GetData(), "Large data transaction ID should match");
+}

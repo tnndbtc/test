@@ -150,11 +150,15 @@ if(APPLE)
     set_target_properties(bwpeer PROPERTIES
         INSTALL_NAME_DIR "@rpath"
         BUILD_WITH_INSTALL_RPATH TRUE
+        LINK_FLAGS "-undefined dynamic_lookup"
     )
 endif()
 
 # Link logger, threadname, and utils to peer
 # Note: Boost.Asio is header-only, no linking required
+# Note: bwpeer uses transaction/block serialization from bwblockcore,
+#       but to avoid circular dependencies, the linking is handled at the
+#       executable level (bweave links both bwpeer and bwblockcore)
 target_link_libraries(bwpeer
     PUBLIC bwutils
     PUBLIC bwlogger

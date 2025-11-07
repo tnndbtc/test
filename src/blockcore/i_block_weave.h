@@ -88,6 +88,13 @@ public:
     virtual bool HasTransactionInMempool(const std::string& str_tx_hash) const = 0;
 
     /**
+     * @brief Get transaction from mempool by hash
+     * @param tx_hash Transaction hash
+     * @return Shared pointer to transaction, or nullptr if not found
+     */
+    virtual std::shared_ptr<CTransaction> GetTransactionFromMempool(const CHash& tx_hash) const = 0;
+
+    /**
      * @brief Set peer manager for network broadcasting
      * @param p_mgr Pointer to peer manager
      */

@@ -75,3 +75,118 @@ TEST(Block_Mining) {
     ASSERT_TRUE(block.GetHash().GetData().length() > 0, "Mined block should have hash");
     ASSERT_TRUE(block.GetNonce().length() > 0, "Mined block should have nonce");
 }
+
+/**
+ * @brief Test CBlock serialization
+ */
+TEST(Block_Serialize) {
+    CHash previous_hash("previous_block");
+    CBlock block(previous_hash, 5, "test_miner");
+
+    // Add transactions
+    std::vector<uint8_t> data = {'t', 'e', 's', 't'};
+    auto tx = std::make_shared<CTransaction>("alice", "bob", data, 100);
+    block.AddTransaction(tx);
+
+    // Mine to set hash
+    block.Mine();
+
+    // Serialize
+    std::string serialized = block.Serialize();
+
+    // Check that serialized data is not empty
+    ASSERT_TRUE(serialized.length() > 0, "Serialized block should not be empty");
+
+    // Minimum size: 32 (hash) + 32 (prev) + 8 (height) + 8 (timestamp) + 4 (miner_len) + miner + ...
+    ASSERT_TRUE(serialized.length() > 100, "Serialized block should have reasonable size");
+}
+
+/**
+ * @brief Test CBlock deserialization
+ */
+TEST(Block_Deserialize) {
+    // Create and mine original block
+    CHash previous_hash("prev_block");
+    CBlock block_orig(previous_hash, 10, "miner_address");
+
+    std::vector<uint8_t> data1 = {'d', 'a', 't', 'a', '1'};
+    std::vector<uint8_t> data2 = {'d', 'a', 't', 'a', '2'};
+    auto tx1 = std::make_shared<CTransaction>("from1", "to1", data1, 50);
+    auto tx2 = std::make_shared<CTransaction>("from2", "to2", data2, 75);
+    block_orig.AddTransaction(tx1);
+    block_orig.AddTransaction(tx2);
+
+    block_orig.Mine();
+
+    // Serialize
+    std::string serialized = block_orig.Serialize();
+
+    // Deserialize
+    std::shared_ptr<CBlock> p_block = CBlock::Deserialize(serialized);
+
+    // Verify deserialization succeeded
+    ASSERT_TRUE(p_block != nullptr, "Deserialization should succeed");
+
+    // Verify block fields match
+    ASSERT_EQUAL(p_block->GetHeight(), block_orig.GetHeight(), "Height should match");
+    ASSERT_EQUAL(p_block->GetMiner(), block_orig.GetMiner(), "Miner should match");
+    ASSERT_EQUAL(p_block->GetHash().GetData(), block_orig.GetHash().GetData(), "Hash should match");
+    ASSERT_EQUAL(p_block->GetPreviousBlock().GetData(), block_orig.GetPreviousBlock().GetData(), "Previous hash should match");
+    ASSERT_EQUAL(p_block->GetTransactions().size(), (size_t)2, "Should have 2 transactions");
+    ASSERT_EQUAL(p_block->GetDifficulty(), block_orig.GetDifficulty(), "Difficulty should match");
+    ASSERT_EQUAL(p_block->GetNonce(), block_orig.GetNonce(), "Nonce should match");
+}
+
+/**
+ * @brief Test CBlock deserialization with invalid data
+ */
+TEST(Block_Deserialize_Invalid) {
+    // Test with empty data
+    std::shared_ptr<CBlock> p_block1 = CBlock::Deserialize("");
+    ASSERT_TRUE(p_block1 == nullptr, "Empty data should fail deserialization");
+
+    // Test with truncated data
+    std::string short_data = "short";
+    std::shared_ptr<CBlock> p_block2 = CBlock::Deserialize(short_data);
+    ASSERT_TRUE(p_block2 == nullptr, "Truncated data should fail deserialization");
+
+    // Test with partial header (less than minimum size)
+    std::string partial_data(50, 'x');
+    std::shared_ptr<CBlock> p_block3 = CBlock::Deserialize(partial_data);
+    ASSERT_TRUE(p_block3 == nullptr, "Partial header should fail deserialization");
+}
+
+/**
+ * @brief Test CBlock serialization roundtrip with multiple transactions
+ */
+TEST(Block_Serialize_Roundtrip_MultipleTransactions) {
+    CHash previous_hash("test_prev");
+    CBlock block_orig(previous_hash, 42, "test_miner_addr");
+
+    // Add multiple transactions
+    for (int i = 0; i < 5; ++i) {
+        std::vector<uint8_t> data = {'t', 'x', static_cast<uint8_t>('0' + i)};
+        auto tx = std::make_shared<CTransaction>("sender" + std::to_string(i),
+                                                  "receiver" + std::to_string(i),
+                                                  data, 100 + i);
+        block_orig.AddTransaction(tx);
+    }
+
+    block_orig.Mine();
+
+    // Serialize and deserialize
+    std::string serialized = block_orig.Serialize();
+    std::shared_ptr<CBlock> p_block = CBlock::Deserialize(serialized);
+
+    // Verify
+    ASSERT_TRUE(p_block != nullptr, "Multiple transactions deserialization should succeed");
+    ASSERT_EQUAL(p_block->GetTransactions().size(), (size_t)5, "Should preserve all 5 transactions");
+    ASSERT_EQUAL(p_block->GetHash().GetData(), block_orig.GetHash().GetData(), "Hash should match after roundtrip");
+
+    // Verify each transaction
+    for (size_t i = 0; i < 5; ++i) {
+        ASSERT_EQUAL(p_block->GetTransactions()[i]->m_id.GetData(),
+                     block_orig.GetTransactions()[i]->m_id.GetData(),
+                     "Transaction ID should match");
+    }
+}

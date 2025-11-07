@@ -43,6 +43,19 @@ public:
 
     // Utility
     std::string ToString() const;
+
+    /**
+     * @brief Serialize block to binary format for network transmission
+     * @return Binary string containing serialized block data
+     */
+    std::string Serialize() const;
+
+    /**
+     * @brief Deserialize block from binary format
+     * @param str_data Binary string containing serialized block
+     * @return Shared pointer to deserialized block, or nullptr on error
+     */
+    static std::shared_ptr<CBlock> Deserialize(const std::string& str_data);
 };
 
 #endif

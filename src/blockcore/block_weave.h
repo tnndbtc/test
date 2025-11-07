@@ -50,6 +50,7 @@ public:
     // Additional methods not in interface
     void PrintChain();
     bool ShouldStopMining() const;
+    virtual std::shared_ptr<CTransaction> GetTransactionFromMempool(const CHash& tx_hash) const override;
 };
 
 #endif

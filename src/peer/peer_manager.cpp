@@ -1377,16 +1377,26 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
                                  std::to_string(vec_missing_items.size()) + " missing, " +
                                  std::to_string(n_count - vec_missing_items.size()) + " already have)");
 
-                        // Relay to other peers who don't know about it (called once with full inventory)
+                        // Relay to other peers who don't know about it (scheduled asynchronously)
                         if (!vec_inventory.empty()) {
-                            BroadcastInventory(vec_inventory);
+                            std::vector<std::pair<ObjectType::Type, std::string>> inventory = vec_inventory;
+                            boost::asio::post(*m_thread_pool, [this, inventory]() {
+                                BroadcastInventory(inventory);
+                            });
                         }
 
-                        // Request missing items via GETDATA
+                        // Request missing items via GETDATA (scheduled asynchronously)
                         if (!vec_missing_items.empty()) {
-                            SendGetDataMessage(p_peer->n_socket, vec_missing_items);
-                            LOG_INFO("Sent GETDATA request for " + std::to_string(vec_missing_items.size()) +
-                                     " items to peer " + p_peer->peer_node->GetAddress());
+                            int socket = p_peer->n_socket;
+                            std::vector<std::pair<ObjectType::Type, std::string>> items = vec_missing_items;
+                            size_t item_count = items.size();
+                            std::string peer_addr = p_peer->peer_node->GetAddress();
+
+                            boost::asio::post(*m_thread_pool, [this, socket, items, item_count, peer_addr]() {
+                                ScheduleGetDataMessage(socket, items);
+                                LOG_INFO("Sent GETDATA request for " + std::to_string(item_count) +
+                                         " items to peer " + peer_addr);
+                            });
                         } else {
                             LOG_TRACE("No GETDATA needed - already have all inventory items from peer " +
                                       p_peer->peer_node->GetAddress());
@@ -1406,37 +1416,268 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
 
                 LOG_INFO("Peer " + p_peer->peer_node->GetAddress() + " version handshake received");
             } else if (msg_type == MessageType::GETDATA) {
-                std::string str_requested_hashes = received_msg.GetPayloadString();
+                std::string str_getdata = received_msg.GetPayloadString();
                 LOG_INFO("Received GETDATA from peer " + p_peer->peer_node->GetAddress() + ": " +
-                         str_requested_hashes.substr(0, 64) + "...");
+                         std::to_string(str_getdata.length()) + " bytes");
 
-                // Parse requested hashes (comma-separated)
-                std::vector<std::string> vec_requested_hashes;
-                size_t n_start = 0;
-                size_t n_comma_pos = str_requested_hashes.find(',');
+                // Parse GETDATA message in binary format: [count:4][type:2][hash:32]...
+                // Minimum size: MESSAGE_COUNT_SIZE bytes for count
+                if (str_getdata.length() < MESSAGE_COUNT_SIZE) {
+                    LOG_WARN("Received invalid GETDATA from peer " + p_peer->peer_node->GetAddress() +
+                             ": payload too short (expected at least " + std::to_string(MESSAGE_COUNT_SIZE) +
+                             " bytes, got " + std::to_string(str_getdata.length()) + ")");
+                } else {
+                    // Read count (MESSAGE_COUNT_SIZE bytes, network byte order)
+                    uint32_t n_count_network;
+                    std::memcpy(&n_count_network, str_getdata.data(), MESSAGE_COUNT_SIZE);
+                    uint32_t n_count = ntohl(n_count_network);
 
-                while (n_comma_pos != std::string::npos) {
-                    std::string str_hash = str_requested_hashes.substr(n_start, n_comma_pos - n_start);
-                    if (!str_hash.empty()) {
-                        vec_requested_hashes.push_back(str_hash);
+                    // Validate count and payload size
+                    size_t n_expected_size = MESSAGE_COUNT_SIZE + n_count * (MESSAGE_TYPE_SIZE + MESSAGE_HASH_SIZE);
+                    if (str_getdata.length() != n_expected_size) {
+                        LOG_WARN("Received invalid GETDATA from peer " + p_peer->peer_node->GetAddress() +
+                                 ": size mismatch (expected " + std::to_string(n_expected_size) +
+                                 " bytes for " + std::to_string(n_count) + " items, got " +
+                                 std::to_string(str_getdata.length()) + ")");
+                    } else {
+                        // Parse requested items
+                        std::vector<std::pair<ObjectType::Type, std::string>> vec_requested_items;
+                        size_t n_offset = MESSAGE_COUNT_SIZE;
+
+                        bool f_continue = false;
+                        for (uint32_t i = 0; i < n_count && !f_continue; ++i) {
+                            // Read type (MESSAGE_TYPE_SIZE bytes)
+                            ObjectType::Type obj_type = ReadObjectType(str_getdata.data() + n_offset);
+                            if (obj_type <= ObjectType::OBJ_BEGIN || obj_type >= ObjectType::OBJ_LAST) {
+                                LOG_WARN("Received invalid GETDATA from peer " + p_peer->peer_node->GetAddress() +
+                                         ": unknown object type " + std::to_string(obj_type) + " at item " + std::to_string(i));
+                                f_continue = true;
+                                break;
+                            }
+                            n_offset += MESSAGE_TYPE_SIZE;
+
+                            // Read hash (MESSAGE_HASH_SIZE bytes, binary format)
+                            std::string str_hash(str_getdata.data() + n_offset, MESSAGE_HASH_SIZE);
+                            n_offset += MESSAGE_HASH_SIZE;
+
+                            vec_requested_items.push_back({obj_type, str_hash});
+                        }
+
+                        if (!f_continue) {
+                            LOG_INFO("Peer " + p_peer->peer_node->GetAddress() + " requested " +
+                                     std::to_string(vec_requested_items.size()) + " items via GETDATA");
+
+                            // Schedule response asynchronously to avoid blocking
+                            int socket = p_peer->n_socket;
+                            std::string peer_addr = p_peer->peer_node->GetAddress();
+                            std::vector<std::pair<ObjectType::Type, std::string>> requested_items = vec_requested_items;
+
+                            boost::asio::post(*m_thread_pool, [this, socket, peer_addr, requested_items]() {
+                                // Batch serialize transactions and blocks separately
+                                std::vector<std::string> vec_serialized_txs;
+                                std::vector<std::string> vec_serialized_blocks;
+
+                                // Serialize all requested items
+                                for (const auto& item : requested_items) {
+                                    ObjectType::Type obj_type = item.first;
+                                    const std::string& str_hash = item.second;
+                                    CHash hash(reinterpret_cast<const unsigned char*>(str_hash.data()), str_hash.size());
+
+                                    if (obj_type == ObjectType::TRANSACTION) {
+                                        // Query transaction from blockweave
+                                        if (p_blockweave) {
+                                            std::shared_ptr<CTransaction> p_tx = p_blockweave->GetTransactionFromMempool(hash);
+                                            if (p_tx) {
+                                                vec_serialized_txs.push_back(p_tx->Serialize());
+                                                LOG_TRACE("Serialized transaction " + hash.GetData().substr(0, 16) + "... for peer " + peer_addr);
+                                            } else {
+                                                LOG_TRACE("Transaction " + hash.GetData().substr(0, 16) + "... not found in mempool for peer " + peer_addr);
+                                            }
+                                        }
+                                    } else if (obj_type == ObjectType::BLOCK) {
+                                        // Query block from blockweave
+                                        if (p_blockweave) {
+                                            std::shared_ptr<CBlock> p_block = p_blockweave->GetBlock(hash);
+                                            if (p_block) {
+                                                vec_serialized_blocks.push_back(p_block->Serialize());
+                                                LOG_TRACE("Serialized block " + hash.GetData().substr(0, 16) + "... for peer " + peer_addr);
+                                            } else {
+                                                LOG_TRACE("Block " + hash.GetData().substr(0, 16) + "... not found for peer " + peer_addr);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Send batched TXS message if we have transactions
+                                if (!vec_serialized_txs.empty()) {
+                                    std::string str_batched_txs;
+                                    // Write count
+                                    uint32_t n_tx_count = htonl(static_cast<uint32_t>(vec_serialized_txs.size()));
+                                    str_batched_txs.append(reinterpret_cast<const char*>(&n_tx_count), BLOCK_UINT32_SIZE);
+                                    // Write each transaction (length + data)
+                                    for (const auto& str_tx : vec_serialized_txs) {
+                                        uint32_t n_tx_len = htonl(static_cast<uint32_t>(str_tx.length()));
+                                        str_batched_txs.append(reinterpret_cast<const char*>(&n_tx_len), BLOCK_UINT32_SIZE);
+                                        str_batched_txs.append(str_tx);
+                                    }
+                                    CPeerMessage txs_msg(MessageType::TXS, str_batched_txs);
+                                    SendMessageAsync(socket, txs_msg);
+                                    LOG_TRACE("Sent batched TXS message with " + std::to_string(vec_serialized_txs.size()) + " transactions to peer " + peer_addr);
+                                }
+
+                                // Send batched BLOCKS message if we have blocks
+                                if (!vec_serialized_blocks.empty()) {
+                                    std::string str_batched_blocks;
+                                    // Write count
+                                    uint32_t n_block_count = htonl(static_cast<uint32_t>(vec_serialized_blocks.size()));
+                                    str_batched_blocks.append(reinterpret_cast<const char*>(&n_block_count), BLOCK_UINT32_SIZE);
+                                    // Write each block (length + data)
+                                    for (const auto& str_block : vec_serialized_blocks) {
+                                        uint32_t n_block_len = htonl(static_cast<uint32_t>(str_block.length()));
+                                        str_batched_blocks.append(reinterpret_cast<const char*>(&n_block_len), BLOCK_UINT32_SIZE);
+                                        str_batched_blocks.append(str_block);
+                                    }
+                                    CPeerMessage blocks_msg(MessageType::BLOCKS, str_batched_blocks);
+                                    SendMessageAsync(socket, blocks_msg);
+                                    LOG_TRACE("Sent batched BLOCKS message with " + std::to_string(vec_serialized_blocks.size()) + " blocks to peer " + peer_addr);
+                                }
+                            });
+                        }
                     }
-                    n_start = n_comma_pos + 1;
-                    n_comma_pos = str_requested_hashes.find(',', n_start);
                 }
+            } else if (msg_type == MessageType::TXS) {
+                std::string str_tx_data = received_msg.GetPayloadString();
+                LOG_INFO("Received TXS from peer " + p_peer->peer_node->GetAddress() + ": " +
+                         std::to_string(str_tx_data.length()) + " bytes");
 
-                // Don't forget the last one
-                if (n_start < str_requested_hashes.length()) {
-                    std::string str_hash = str_requested_hashes.substr(n_start);
-                    if (!str_hash.empty()) {
-                        vec_requested_hashes.push_back(str_hash);
+                // Parse batched TXS message: [count:4][tx1_len:4][tx1_data]...[txN_len:4][txN_data]
+                if (str_tx_data.length() < BLOCK_UINT32_SIZE) {
+                    LOG_WARN("Received invalid TXS from peer " + p_peer->peer_node->GetAddress() + ": too short");
+                } else {
+                    size_t n_offset = 0;
+                    // Read transaction count
+                    uint32_t n_tx_count_network;
+                    std::memcpy(&n_tx_count_network, str_tx_data.data() + n_offset, BLOCK_UINT32_SIZE);
+                    uint32_t n_tx_count = ntohl(n_tx_count_network);
+                    n_offset += BLOCK_UINT32_SIZE;
+
+                    LOG_INFO("Batched TXS message contains " + std::to_string(n_tx_count) + " transactions");
+
+                    std::vector<std::pair<ObjectType::Type, std::string>> vec_inventory;
+
+                    // Deserialize each transaction
+                    for (uint32_t i = 0; i < n_tx_count && n_offset < str_tx_data.length(); ++i) {
+                        // Read transaction length
+                        if (n_offset + BLOCK_UINT32_SIZE > str_tx_data.length()) {
+                            LOG_WARN("Invalid TXS message from peer " + p_peer->peer_node->GetAddress() + ": truncated at tx " + std::to_string(i));
+                            break;
+                        }
+                        uint32_t n_tx_len_network;
+                        std::memcpy(&n_tx_len_network, str_tx_data.data() + n_offset, BLOCK_UINT32_SIZE);
+                        uint32_t n_tx_len = ntohl(n_tx_len_network);
+                        n_offset += BLOCK_UINT32_SIZE;
+
+                        // Read transaction data
+                        if (n_offset + n_tx_len > str_tx_data.length()) {
+                            LOG_WARN("Invalid TXS message from peer " + p_peer->peer_node->GetAddress() + ": insufficient data for tx " + std::to_string(i));
+                            break;
+                        }
+                        std::string str_single_tx(str_tx_data.data() + n_offset, n_tx_len);
+                        n_offset += n_tx_len;
+
+                        // Deserialize transaction
+                        std::shared_ptr<CTransaction> p_tx = CTransaction::Deserialize(str_single_tx);
+                        if (!p_tx) {
+                            LOG_WARN("Failed to deserialize transaction " + std::to_string(i) + " from peer " + p_peer->peer_node->GetAddress());
+                        } else {
+                            LOG_INFO("Successfully deserialized transaction " + p_tx->m_id.GetData().substr(0, 16) +
+                                     "... from peer " + p_peer->peer_node->GetAddress());
+
+                            // Add transaction to blockweave mempool
+                            if (p_blockweave) {
+                                p_blockweave->AddTransaction(p_tx);
+                                LOG_INFO("Added transaction " + p_tx->m_id.GetData().substr(0, 16) + "... to mempool");
+
+                                // Collect for inventory broadcast
+                                vec_inventory.push_back({ObjectType::TRANSACTION, p_tx->m_id.GetData()});
+                            }
+                        }
+                    }
+
+                    // Broadcast INVENTORY for all new transactions (scheduled asynchronously)
+                    if (!vec_inventory.empty()) {
+                        boost::asio::post(*m_thread_pool, [this, vec_inventory]() {
+                            BroadcastInventory(vec_inventory);
+                            LOG_TRACE("Broadcasted INVENTORY for " + std::to_string(vec_inventory.size()) + " received transactions");
+                        });
                     }
                 }
+            } else if (msg_type == MessageType::BLOCKS) {
+                std::string str_block_data = received_msg.GetPayloadString();
+                LOG_INFO("Received BLOCKS from peer " + p_peer->peer_node->GetAddress() + ": " +
+                         std::to_string(str_block_data.length()) + " bytes");
 
-                LOG_INFO("Peer " + p_peer->peer_node->GetAddress() + " requested " +
-                         std::to_string(vec_requested_hashes.size()) + " items via GETDATA");
+                // Parse batched BLOCKS message: [count:4][block1_len:4][block1_data]...[blockN_len:4][blockN_data]
+                if (str_block_data.length() < BLOCK_UINT32_SIZE) {
+                    LOG_WARN("Received invalid BLOCKS from peer " + p_peer->peer_node->GetAddress() + ": too short");
+                } else {
+                    size_t n_offset = 0;
+                    // Read block count
+                    uint32_t n_block_count_network;
+                    std::memcpy(&n_block_count_network, str_block_data.data() + n_offset, BLOCK_UINT32_SIZE);
+                    uint32_t n_block_count = ntohl(n_block_count_network);
+                    n_offset += BLOCK_UINT32_SIZE;
 
-                // TODO: Look up transactions/blocks and respond with TXS or BLOCKS messages
-                // For now, just log the request
+                    LOG_INFO("Batched BLOCKS message contains " + std::to_string(n_block_count) + " blocks");
+
+                    // Deserialize each block
+                    for (uint32_t i = 0; i < n_block_count && n_offset < str_block_data.length(); ++i) {
+                        // Read block length
+                        if (n_offset + BLOCK_UINT32_SIZE > str_block_data.length()) {
+                            LOG_WARN("Invalid BLOCKS message from peer " + p_peer->peer_node->GetAddress() + ": truncated at block " + std::to_string(i));
+                            break;
+                        }
+                        uint32_t n_block_len_network;
+                        std::memcpy(&n_block_len_network, str_block_data.data() + n_offset, BLOCK_UINT32_SIZE);
+                        uint32_t n_block_len = ntohl(n_block_len_network);
+                        n_offset += BLOCK_UINT32_SIZE;
+
+                        // Read block data
+                        if (n_offset + n_block_len > str_block_data.length()) {
+                            LOG_WARN("Invalid BLOCKS message from peer " + p_peer->peer_node->GetAddress() + ": insufficient data for block " + std::to_string(i));
+                            break;
+                        }
+                        std::string str_single_block(str_block_data.data() + n_offset, n_block_len);
+                        n_offset += n_block_len;
+
+                        // Deserialize block
+                        std::shared_ptr<CBlock> p_block = CBlock::Deserialize(str_single_block);
+                        if (!p_block) {
+                            LOG_WARN("Failed to deserialize block " + std::to_string(i) + " from peer " + p_peer->peer_node->GetAddress());
+                        } else {
+                            LOG_INFO("Successfully deserialized block #" + std::to_string(p_block->GetHeight()) +
+                                     " (hash: " + p_block->GetHash().GetData().substr(0, 16) + "...) from peer " +
+                                     p_peer->peer_node->GetAddress());
+
+                            // TODO: Add block validation and storage to blockweave
+                            // For now, just log receipt. Full block acceptance logic requires:
+                            // - Validating proof-of-work
+                            // - Checking block height sequencing
+                            // - Verifying transactions
+                            // - Adding to blockchain if valid
+                            // This is beyond the scope of GETDATA implementation
+
+                            LOG_TRACE("Block contains " + std::to_string(p_block->GetTransactions().size()) +
+                                     " transactions");
+
+                            // If block is valid, broadcast INVENTORY to other peers
+                            // Commented out until block validation is implemented:
+                            // std::vector<std::pair<ObjectType::Type, std::string>> vec_inventory;
+                            // vec_inventory.push_back({ObjectType::BLOCK, p_block->GetHash().GetData()});
+                            // BroadcastInventory(vec_inventory);
+                        }
+                    }
+                }
             } else {
                 LOG_TRACE("Received unknown message type '" + msg_type + "' from peer " + p_peer->peer_node->GetAddress());
             }
@@ -2088,7 +2329,7 @@ void CPeerManager::BroadcastInventory(const std::vector<std::pair<ObjectType::Ty
              " items to " + std::to_string(n_total_sent) + " peers");
 }
 
-void CPeerManager::SendGetDataMessage(int n_socket, const std::vector<std::pair<ObjectType::Type, std::string>>& vec_items) {
+void CPeerManager::ScheduleGetDataMessage(int n_socket, const std::vector<std::pair<ObjectType::Type, std::string>>& vec_items) {
     if (vec_items.empty()) {
         return;  // Nothing to request
     }

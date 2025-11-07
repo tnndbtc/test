@@ -81,6 +81,22 @@ struct CTransaction {
     CTransaction(const std::string& str_owner, const std::string& str_target,
                  const std::vector<uint8_t>& data, uint64_t n_reward,
                  TransactionType type, const std::string& str_meta = "");
+
+    /**
+     * @brief Serialize transaction to binary format for network transmission
+     * @return Binary string containing serialized transaction data
+     *
+     * Format: [owner_len:4][owner][target_len:4][target][data_size:4][data]
+     *         [reward:8][timestamp:8][type:1][metadata_len:4][metadata]
+     */
+    std::string Serialize() const;
+
+    /**
+     * @brief Deserialize transaction from binary format
+     * @param str_data Binary string containing serialized transaction
+     * @return Shared pointer to deserialized transaction, or nullptr on error
+     */
+    static std::shared_ptr<CTransaction> Deserialize(const std::string& str_data);
 };
 
 #endif
