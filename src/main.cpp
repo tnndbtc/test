@@ -258,7 +258,7 @@ int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode) {
 
     // Create blockweave with data/blocks subdirectory for block storage
     std::string str_blocks_dir = str_data_dir + "/blocks";
-    CBlockweave weave(str_blocks_dir);
+    auto p_weave = std::make_shared<CBlockweave>(str_blocks_dir);
     LOG_INFO("Blockweave instance created with block storage at: " + str_blocks_dir);
 
     // Create peer manager (before REST API so we can pass it to REST API)
@@ -271,7 +271,7 @@ int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode) {
 
     // Start REST API server (1 listener thread + N worker threads)
     LOG_INFO("Starting REST API server on port " + std::to_string(n_rest_port));
-    CRestApiServer rest_api(&weave, &peer_manager, &config, str_miner_address, n_rest_port);
+    CRestApiServer rest_api(p_weave.get(), &peer_manager, &config, str_miner_address, n_rest_port);
     if (!rest_api.Start()) {
         LOG_ERROR("Failed to start REST API server on port " + std::to_string(n_rest_port));
         return 1;
@@ -288,12 +288,15 @@ int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode) {
     LOG_INFO("Peer manager started successfully");
 
     // Connect peer manager to blockweave for transaction broadcasting
-    weave.SetPeerManager(&peer_manager);
+    p_weave->SetPeerManager(&peer_manager);
+
+    // Connect blockweave to peer manager for blockchain queries
+    peer_manager.SetBlockweave(p_weave);
 
     // Start mining manager
     LOG_INFO("Starting mining manager");
-    CMiningManager mining_manager(&weave, str_miner_address);
-    weave.StartMining();
+    CMiningManager mining_manager(p_weave.get(), str_miner_address);
+    p_weave->StartMining();
     if (!mining_manager.Start()) {
         LOG_ERROR("Failed to start mining manager");
         peer_manager.Stop();
@@ -322,7 +325,7 @@ int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode) {
     rest_api.Stop();
 
     // Print final state
-    weave.PrintChain();
+    p_weave->PrintChain();
 
     // Cleanup PID file if in daemon mode
     if (config.IsDaemonMode()) {
