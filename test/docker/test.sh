@@ -25,17 +25,32 @@ docker rmi "$IMAGE_NAME"
 echo "docker build -f test/docker/dockerfile.dev -t $IMAGE_TAG ."
 docker build -f test/docker/dockerfile.dev -t "$IMAGE_TAG" .
 
-echo "docker network create --subnet=172.18.0.0/16 net172"
-docker network create --subnet=172.18.0.0/16 net172
+echo "docker run -dit --name $CONTAINER_NAME $IMAGE_NAME"
+docker run -dit --name "$CONTAINER_NAME" "$IMAGE_NAME"
 
 echo "docker network create --subnet=10.10.0.0/16 net10"
+docker network rm net10
 docker network create --subnet=10.10.0.0/16 net10
-
-echo "docker run -dit --name $CONTAINER_NAME --network net172 $IMAGE_NAME"
-docker run -dit --name "$CONTAINER_NAME" --network net172 "$IMAGE_NAME"
-
 echo "docker network connect net10 $CONTAINER_NAME"
 docker network connect net10 "$CONTAINER_NAME"
+
+echo "docker network create --subnet=203.10.0.0/16 net203"
+docker network rm net203
+docker network create --subnet=203.10.0.0/16 net203
+echo "docker network connect net203 $CONTAINER_NAME"
+docker network connect net203 "$CONTAINER_NAME"
+
+echo "docker network create --subnet=81.10.0.0/16 net81"
+docker network rm net81
+docker network create --subnet=81.10.0.0/16 net81
+echo "docker network connect net81 $CONTAINER_NAME"
+docker network connect net81 "$CONTAINER_NAME"
+
+echo "docker network create --subnet=8.8.0.0/16 net8"
+docker network rm net8
+docker network create --subnet=8.8.0.0/16 net8
+echo "docker network connect net8 $CONTAINER_NAME"
+docker network connect net8 "$CONTAINER_NAME"
 
 echo "docker exec $CONTAINER_NAME bash -c \"rm -rf build/ && ./configure --generator=\"Unix Makefiles\" && cd build && make -j8\""
 docker exec "$CONTAINER_NAME" bash -c "rm -rf build/ && ./configure --generator=\"Unix Makefiles\" && cd build && make -j8"
