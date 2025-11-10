@@ -26,6 +26,8 @@ echo "docker build -f test/docker/dockerfile.dev -t $IMAGE_TAG ."
 docker build -f test/docker/dockerfile.dev -t "$IMAGE_TAG" .
 
 echo "docker run -dit --name $CONTAINER_NAME $IMAGE_NAME"
+# if needs to do port forwarding -p <local_port>:<container_port>
+# docker run -dit --name "$CONTAINER_NAME" -p 28443:28443 "$IMAGE_NAME"
 docker run -dit --name "$CONTAINER_NAME" "$IMAGE_NAME"
 
 echo "docker network create --subnet=10.10.0.0/16 net10"
