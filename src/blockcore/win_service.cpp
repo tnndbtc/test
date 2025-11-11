@@ -7,6 +7,8 @@
 #include <iostream>
 #include <windows.h>
 #include <tchar.h>
+#include <shellapi.h>  // For CommandLineToArgvW
+#include <vector>
 
 // Global service status handle (set by RegisterServiceCtrlHandlerEx)
 SERVICE_STATUS_HANDLE g_service_status_handle = NULL;
@@ -24,6 +26,9 @@ extern volatile int g_f_shutdown_requested;
  * @brief Service main entry point called by SCM
  */
 VOID WINAPI ServiceMain(DWORD dw_argc, LPTSTR* lpsz_argv) {
+    (void)dw_argc;     // Unused - dw_argc is often empty when service starts
+    (void)lpsz_argv;   // Unused - use GetCommandLineW() instead
+
     // Register service control handler
     g_service_status_handle = RegisterServiceCtrlHandlerEx(
         TEXT(SERVICE_NAME),
@@ -47,27 +52,35 @@ VOID WINAPI ServiceMain(DWORD dw_argc, LPTSTR* lpsz_argv) {
     // Log service startup
     LOG_INFO("Windows service starting...");
 
-    // Perform service initialization
-    // Convert arguments for RunApplication
-    char** argv = new char*[dw_argc];
-    for (DWORD i = 0; i < dw_argc; i++) {
-        // Convert TCHAR to char (simplified - assumes ASCII)
-        size_t len = _tcslen(lpsz_argv[i]);
-        argv[i] = new char[len + 1];
-        for (size_t j = 0; j <= len; j++) {
-            argv[i][j] = (char)lpsz_argv[i][j];
-        }
+    // Get command line arguments using GetCommandLineW() and CommandLineToArgvW()
+    // Note: dw_argc/lpsz_argv are often empty when service starts, so we use GetCommandLineW() instead
+    int argc = 0;
+    LPWSTR* argvW = CommandLineToArgvW(GetCommandLineW(), &argc);
+
+    if (argvW == NULL) {
+        LOG_ERROR("CommandLineToArgvW failed");
+        SetServiceStatusWrapper(SERVICE_STOPPED, ERROR_INVALID_PARAMETER, 0);
+        return;
     }
 
-    // Report status: running
-    SetServiceStatusWrapper(SERVICE_RUNNING, NO_ERROR, 0);
-    LOG_INFO("Windows service started successfully");
+    // Convert wide strings to char** for RunApplication
+    char** argv = new char*[argc];
+    for (int i = 0; i < argc; i++) {
+        // Get length of wide string when converted to multibyte
+        int len = WideCharToMultiByte(CP_UTF8, 0, argvW[i], -1, NULL, 0, NULL, NULL);
+        argv[i] = new char[len];
+        WideCharToMultiByte(CP_UTF8, 0, argvW[i], -1, argv[i], len, NULL, NULL);
+    }
+
+    // Free the wide string array
+    LocalFree(argvW);
 
     // Run the main application (this blocks until shutdown)
-    int exit_code = RunApplication(dw_argc, argv);
+    // Note: SERVICE_RUNNING status will be reported from within RunApplicationMain
+    int exit_code = RunApplication(argc, argv);
 
     // Cleanup arguments
-    for (DWORD i = 0; i < dw_argc; i++) {
+    for (int i = 0; i < argc; i++) {
         delete[] argv[i];
     }
     delete[] argv;
@@ -217,13 +230,24 @@ bool InstallService(const std::string& str_executable_path) {
     }
 
     // Build service command line (include --service flag and config file path)
-    // Extract directory from executable path
-    std::string str_exe_dir = str_executable_path;
-    size_t n_last_slash = str_exe_dir.find_last_of("\\/");
-    if (n_last_slash != std::string::npos) {
-        str_exe_dir = str_exe_dir.substr(0, n_last_slash);
+    // Use %APPDATA%\bweave\bweave.conf for config file location
+    // Services run with different working directory, so use known user-writable location
+    char sz_appdata[MAX_PATH];
+    if (GetEnvironmentVariableA("APPDATA", sz_appdata, MAX_PATH) == 0) {
+        std::cerr << "[Service] Error: Could not get APPDATA environment variable\n";
+        std::cerr << "[Service] Cannot determine config file location\n";
+        CloseServiceHandle(h_sc_manager);
+        return false;
     }
-    std::string str_config_path = str_exe_dir + "\\bweave.conf";
+    std::string str_config_path = std::string(sz_appdata) + "\\bweave\\bweave.conf";
+    // Check if config file exists and warn if not
+    DWORD dw_attribs = GetFileAttributesA(str_config_path.c_str());
+    if (dw_attribs == INVALID_FILE_ATTRIBUTES) {
+        std::cerr << "[Service] Warning: Config file not found at: " << str_config_path << "\n";
+        std::cerr << "[Service] The service may fail to start. Please ensure bweave.conf exists in %APPDATA%\\bweave\\\n";
+        std::cerr << "[Service] You can copy it from the build directory or run 'cmake --build build' to regenerate it.\n";
+        // Don't fail installation - just warn
+    }
 
     // Service command line: "path\to\bweave.exe" --service --config "path\to\bweave.conf"
     std::string str_service_cmd = "\"" + str_executable_path + "\" --service --config \"" + str_config_path + "\"";

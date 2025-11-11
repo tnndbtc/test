@@ -464,7 +464,18 @@ if(WIN32)
     # Write to build directory
     file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/bweave.conf CONTENT "${BWEAVE_CONF_CONTENT}")
 
+    # Also copy to %APPDATA%\bweave for Windows service access
+    # Services run with different working directory and need config in known location
+    add_custom_command(TARGET bweave POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${APPDATA_PATH}/bweave"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_BINARY_DIR}/bweave.conf
+            "${APPDATA_PATH}/bweave/bweave.conf"
+        COMMENT "Copying bweave.conf to ${APPDATA_PATH}/bweave for Windows service"
+    )
+
     message(STATUS "Windows config: Using bweave_win.conf with APPDATA=${APPDATA_PATH}")
+    message(STATUS "Windows config: Will copy to ${APPDATA_PATH}/bweave/bweave.conf for service")
 else()
     # On POSIX, use bweave.conf as-is
     add_custom_command(TARGET bweave POST_BUILD

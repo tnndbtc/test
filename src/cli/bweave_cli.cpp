@@ -182,32 +182,42 @@ bool IsServiceInstalled() {
     return f_installed;
 }
 
-// Windows: Check if service is running
-bool IsServiceRunning() {
+// Windows: Get service status
+// Returns the service state (SERVICE_STOPPED, SERVICE_RUNNING, SERVICE_START_PENDING, etc.)
+// Returns 0 if service is not installed or error occurred
+// Optionally returns the process ID in p_pid if not NULL
+DWORD GetServiceStatus(DWORD* p_pid = NULL) {
     SC_HANDLE h_sc_manager = OpenSCManagerA(NULL, NULL, SC_MANAGER_CONNECT);
     if (h_sc_manager == NULL) {
-        return false;
+        return 0;
     }
 
     SC_HANDLE h_service = OpenServiceA(h_sc_manager, "bweave", SERVICE_QUERY_STATUS);
     if (h_service == NULL) {
         CloseServiceHandle(h_sc_manager);
-        return false;
+        return 0;
     }
 
-    SERVICE_STATUS status;
-    bool f_running = false;
-    if (QueryServiceStatus(h_service, &status)) {
-        f_running = (status.dwCurrentState == SERVICE_RUNNING);
+    SERVICE_STATUS_PROCESS status_process;
+    DWORD dw_bytes_needed;
+    DWORD dw_state = 0;
+
+    if (QueryServiceStatusEx(h_service, SC_STATUS_PROCESS_INFO,
+                             (LPBYTE)&status_process, sizeof(SERVICE_STATUS_PROCESS),
+                             &dw_bytes_needed)) {
+        dw_state = status_process.dwCurrentState;
+        if (p_pid != NULL) {
+            *p_pid = status_process.dwProcessId;
+        }
     }
 
     CloseServiceHandle(h_service);
     CloseServiceHandle(h_sc_manager);
 
-    return f_running;
+    return dw_state;
 }
 
-// Windows: Check if console daemon is running (PID file method)
+// Windows: Check if console service is running (PID file method)
 bool IsDaemonRunning() {
     int n_pid;
     if (!ReadPidFile(n_pid)) {
@@ -267,11 +277,16 @@ int StartDaemon(const std::string& str_config_file, const char* argv0) {
             return 1;
         }
 
-        // Check if already running
+        // Check if already running or starting
         SERVICE_STATUS status;
         if (QueryServiceStatus(h_service, &status)) {
             if (status.dwCurrentState == SERVICE_RUNNING) {
                 std::cout << "[CLI] Service is already running\n";
+                CloseServiceHandle(h_service);
+                CloseServiceHandle(h_sc_manager);
+                return 0;
+            } else if (status.dwCurrentState == SERVICE_START_PENDING) {
+                std::cout << "[CLI] Service is already starting\n";
                 CloseServiceHandle(h_service);
                 CloseServiceHandle(h_sc_manager);
                 return 0;
@@ -297,7 +312,7 @@ int StartDaemon(const std::string& str_config_file, const char* argv0) {
         for (int i = 0; i < 10; i++) {
             Sleep(500);
             if (QueryServiceStatus(h_service, &status)) {
-                if (status.dwCurrentState == SERVICE_RUNNING) {
+                if (status.dwCurrentState == SERVICE_RUNNING || status.dwCurrentState == SERVICE_START_PENDING) {
                     std::cout << "[CLI] Service started successfully\n";
                     CloseServiceHandle(h_service);
                     CloseServiceHandle(h_sc_manager);
@@ -311,12 +326,12 @@ int StartDaemon(const std::string& str_config_file, const char* argv0) {
         CloseServiceHandle(h_sc_manager);
         return 1;
     } else {
-        // Not installed as service - run as console daemon
-        std::cout << "[CLI] Service not installed, starting as console daemon...\n";
+        // Not installed as service - run as console service
+        std::cout << "[CLI] Service not installed, starting as console service...\n";
 
         // Check if already running
         if (IsDaemonRunning()) {
-            std::cout << "[CLI] Daemon is already running\n";
+            std::cout << "[CLI] Console service is already running\n";
             int n_pid;
             if (ReadPidFile(n_pid)) {
                 std::cout << "[CLI] PID: " << n_pid << "\n";
@@ -336,7 +351,7 @@ int StartDaemon(const std::string& str_config_file, const char* argv0) {
         }
 
         std::cout << "[CLI] Found bweave at: " << str_daemon_path << "\n";
-        std::cout << "[CLI] Starting blockweave daemon...\n";
+        std::cout << "[CLI] Starting blockweave service...\n";
 
         // Build command line
         std::string cmd_line = "\"" + str_daemon_path + "\" -d";
@@ -362,22 +377,22 @@ int StartDaemon(const std::string& str_config_file, const char* argv0) {
                 NULL,
                 &si,
                 &pi)) {
-            std::cerr << "[CLI] Failed to start daemon\n";
+            std::cerr << "[CLI] Failed to start service\n";
             std::cerr << "[CLI] Error code: " << GetLastError() << "\n";
             return 1;
         }
 
-        // Wait a moment for daemon to initialize
-        std::cout << "[CLI] Waiting for daemon to initialize...\n";
+        // Wait a moment for service to initialize
+        std::cout << "[CLI] Waiting for service to initialize...\n";
         for (int n_i = 0; n_i < 10; n_i++) {
             Sleep(500);
 
             if (IsDaemonRunning()) {
                 int n_pid;
                 if (ReadPidFile(n_pid)) {
-                    std::cout << "[CLI] Daemon started successfully (PID: " << n_pid << ")\n";
+                    std::cout << "[CLI] Service started successfully (PID: " << n_pid << ")\n";
                 } else {
-                    std::cout << "[CLI] Daemon started successfully\n";
+                    std::cout << "[CLI] Service started successfully\n";
                 }
                 CloseHandle(pi.hProcess);
                 CloseHandle(pi.hThread);
@@ -388,13 +403,13 @@ int StartDaemon(const std::string& str_config_file, const char* argv0) {
         // Check if process exited with error
         DWORD exit_code;
         if (GetExitCodeProcess(pi.hProcess, &exit_code) && exit_code != STILL_ACTIVE) {
-            std::cerr << "[CLI] Daemon process exited with code " << exit_code << "\n";
+            std::cerr << "[CLI] Service process exited with code " << exit_code << "\n";
             CloseHandle(pi.hProcess);
             CloseHandle(pi.hThread);
             return 1;
         }
 
-        std::cerr << "[CLI] Failed to start daemon - PID file not created within timeout\n";
+        std::cerr << "[CLI] Failed to start service - PID file not created within timeout\n";
         std::cerr << "[CLI] Check log files for errors\n";
 
         CloseHandle(pi.hProcess);
@@ -545,9 +560,9 @@ int StopDaemon() {
         CloseServiceHandle(h_sc_manager);
         return 1;
     } else {
-        // Console daemon mode
+        // Console service mode
         if (!IsDaemonRunning()) {
-            std::cout << "[CLI] Daemon is not running\n";
+            std::cout << "[CLI] Console service is not running\n";
             return 0;
         }
 
@@ -557,7 +572,7 @@ int StopDaemon() {
             return 1;
         }
 
-        std::cout << "[CLI] Stopping blockweave daemon (PID: " << n_pid << ")...\n";
+        std::cout << "[CLI] Stopping blockweave service (PID: " << n_pid << ")...\n";
 
         // Try to send console Ctrl+C event (only works if same console)
         // Otherwise, terminate the process
@@ -580,10 +595,10 @@ int StopDaemon() {
 
         if (result == WAIT_OBJECT_0) {
             RemovePidFile(STR_PID_FILE);
-            std::cout << "[CLI] Daemon stopped successfully\n";
+            std::cout << "[CLI] Service stopped successfully\n";
             return 0;
         } else {
-            std::cerr << "[CLI] Daemon did not stop within timeout\n";
+            std::cerr << "[CLI] Service did not stop within timeout\n";
             return 1;
         }
     }
@@ -627,24 +642,78 @@ int ShowStatus() {
 #ifdef _WIN32
     // Windows: Check service first
     if (IsServiceInstalled()) {
-        if (IsServiceRunning()) {
-            std::cout << "[CLI] Service is running\n";
-        } else {
-            std::cout << "[CLI] Service is installed but not running\n";
+        DWORD dw_pid = 0;
+        DWORD dw_status = GetServiceStatus(&dw_pid);
+
+        switch (dw_status) {
+            case SERVICE_RUNNING:
+                std::cout << "[CLI] Service is running";
+                if (dw_pid != 0) {
+                    std::cout << " (PID: " << dw_pid << ")";
+                }
+                std::cout << "\n";
+                return 0;
+
+            case SERVICE_START_PENDING:
+                std::cout << "[CLI] Service is starting";
+                if (dw_pid != 0) {
+                    std::cout << " (PID: " << dw_pid << ")";
+                }
+                std::cout << "\n";
+                return 0;
+
+            case SERVICE_STOP_PENDING:
+                std::cout << "[CLI] Service is stopping";
+                if (dw_pid != 0) {
+                    std::cout << " (PID: " << dw_pid << ")";
+                }
+                std::cout << "\n";
+                return 0;
+
+            case SERVICE_STOPPED:
+                std::cout << "[CLI] Service is stopped\n";
+                return 1;
+
+            case SERVICE_PAUSED:
+                std::cout << "[CLI] Service is paused";
+                if (dw_pid != 0) {
+                    std::cout << " (PID: " << dw_pid << ")";
+                }
+                std::cout << "\n";
+                return 0;
+
+            case SERVICE_PAUSE_PENDING:
+                std::cout << "[CLI] Service is pausing";
+                if (dw_pid != 0) {
+                    std::cout << " (PID: " << dw_pid << ")";
+                }
+                std::cout << "\n";
+                return 0;
+
+            case SERVICE_CONTINUE_PENDING:
+                std::cout << "[CLI] Service is resuming";
+                if (dw_pid != 0) {
+                    std::cout << " (PID: " << dw_pid << ")";
+                }
+                std::cout << "\n";
+                return 0;
+
+            default:
+                std::cout << "[CLI] Service status unknown\n";
+                return 1;
         }
-        return 0;
     } else {
-        // Console daemon
+        // Console service
         if (IsDaemonRunning()) {
             int n_pid;
             if (ReadPidFile(n_pid)) {
-                std::cout << "[CLI] Daemon is running (PID: " << n_pid << ")\n";
+                std::cout << "[CLI] Console service is running (PID: " << n_pid << ")\n";
             } else {
-                std::cout << "[CLI] Daemon is running\n";
+                std::cout << "[CLI] Console service is running\n";
             }
             return 0;
         } else {
-            std::cout << "[CLI] Daemon is not running\n";
+            std::cout << "[CLI] Console service is not running\n";
             return 1;
         }
     }
@@ -666,13 +735,27 @@ int ShowStatus() {
 }
 
 int RestartDaemon(const std::string& str_config_file, const char* argv0) {
+#ifdef _WIN32
+    std::cout << "[CLI] Restarting service...\n";
+
+    if (IsServiceInstalled()) {
+        DWORD dw_status = GetServiceStatus();
+        // Check if service is in any running/active state
+        if (dw_status == SERVICE_RUNNING || dw_status == SERVICE_START_PENDING ||
+            dw_status == SERVICE_STOP_PENDING || dw_status == SERVICE_PAUSE_PENDING ||
+            dw_status == SERVICE_CONTINUE_PENDING) {
+            std::cout << "[CLI] Stopping current service...\n";
+            if (StopDaemon() != 0) {
+                std::cerr << "[CLI] Failed to stop service\n";
+                return 1;
+            }
+            sleep(1);
+        }
+    }
+#else
     std::cout << "[CLI] Restarting daemon...\n";
 
-#ifdef _WIN32
-    if (IsServiceInstalled() && IsServiceRunning()) {
-#else
     if (IsDaemonRunning()) {
-#endif
         std::cout << "[CLI] Stopping current daemon...\n";
         if (StopDaemon() != 0) {
             std::cerr << "[CLI] Failed to stop daemon\n";
@@ -680,6 +763,7 @@ int RestartDaemon(const std::string& str_config_file, const char* argv0) {
         }
         sleep(1);
     }
+#endif
 
     return StartDaemon(str_config_file, argv0);
 }

@@ -305,15 +305,34 @@ int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode) {
     }
     LOG_INFO("Mining manager started successfully");
 
+#ifdef _WIN32
+    // Report SERVICE_RUNNING status to SCM (Windows service mode only)
+    if (IsRunningAsService()) {
+        SetServiceStatusWrapper(SERVICE_RUNNING, NO_ERROR, 0);
+        LOG_INFO("Windows service status: RUNNING");
+    }
+#endif
+
     LOG_INFO("REST daemon is running and ready to accept requests");
+    LOG_INFO("Status: Starting main loop");
 
     // Main loop - wait for shutdown signal
     while (!g_f_shutdown_requested) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 
+    LOG_INFO("Status: Stopping - exited main loop");
+
     LOG_INFO("Shutdown signal received. Cleaning up...");
     LOG_INFO("Shutdown signal received, initiating graceful shutdown");
+
+#ifdef _WIN32
+    // Report SERVICE_STOP_PENDING to SCM (Windows service mode only)
+    if (IsRunningAsService()) {
+        SetServiceStatusWrapper(SERVICE_STOP_PENDING, NO_ERROR, 5000);
+        LOG_INFO("Windows service status: STOP_PENDING");
+    }
+#endif
 
     // Stop mining manager
     mining_manager.Stop();

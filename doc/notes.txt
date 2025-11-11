@@ -1,4 +1,18 @@
 --------------------------
+install docker on CentOS
+sudo dnf install -y yum-utils
+sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+yum repolist | grep docker
+sudo yum install -y docker-ce docker-ce-cli containerd.io
+sudo systemctl enable docker
+sudo systemctl start docker
+sudo yum install git
+
+# add current user to docker group
+sudo usermod -aG docker $USER
+# make it effective
+newgrp docker
+--------------------------
 Ubuntu setup:
 sudo apt update
 # libboost-all-dev has more
