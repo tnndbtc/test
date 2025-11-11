@@ -51,6 +51,16 @@ constexpr int LOG_FILE_SIZE_MB = 10;
 constexpr int LOG_FILE_KEEP = 5;
 
 // ============================================================
+// Mining Configuration
+// ============================================================
+
+// Mining interval in seconds when mempool has transactions
+constexpr int MINING_INTERVAL_SECONDS = 1;
+
+// Mining interval in seconds when mempool is empty (24 hours)
+constexpr int MINING_EMPTY_BLOCK_INTERVAL_SECONDS = 86400;
+
+// ============================================================
 // P2P Message Format Constants
 // ============================================================
 

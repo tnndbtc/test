@@ -9,6 +9,7 @@
 
 #include "mining.h"
 #include "utils/threadname.h"
+#include "utils/settings.h"
 #include "logger/logger.h"
 #include <chrono>
 
@@ -93,9 +94,9 @@ bool CMiningManager::IsRunning() const {
  *
  * Main mining loop that:
  * 1. Checks if mining is enabled via blockweave->IsMiningEnabled()
- * 2. Checks if transactions available via blockweave->GetMempoolSize()
- * 3. Mines a block if conditions are met
- * 4. Sleeps between attempts (500ms after mining, 100ms when idle)
+ * 2. If mempool has transactions, mines every MINING_INTERVAL_SECONDS (30 seconds)
+ * 3. If mempool is empty, mines an empty block every MINING_EMPTY_BLOCK_INTERVAL_SECONDS (24 hours)
+ * 4. Both intervals are configurable in settings.h
  *
  * Thread is named "mining_thread" for visibility in logs and debuggers.
  * Exits when blockweave->ShouldStopMining() returns true.
@@ -106,17 +107,41 @@ void CMiningManager::MiningThread() {
 
     LOG_INFO("Mining thread started");
 
-    while (!p_blockweave->ShouldStopMining()) {
-        if (p_blockweave->IsMiningEnabled() && p_blockweave->GetMempoolSize() > 0) {
-            // Mine a new block with miner address for rewards
-            p_blockweave->MineBlock(str_miner_address);
+    // Track last empty block mining time
+    auto last_empty_block_time = std::chrono::steady_clock::now();
+    auto last_mining_time = std::chrono::steady_clock::now();
 
-            // Sleep after mining to prevent CPU saturation
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        } else {
-            // Mining disabled or no transactions - sleep and check again
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    while (!p_blockweave->ShouldStopMining()) {
+        if (p_blockweave->IsMiningEnabled()) {
+            auto now = std::chrono::steady_clock::now();
+            size_t n_mempool_size = p_blockweave->GetMempoolSize();
+
+            if (n_mempool_size > 0) {
+                // Mempool has transactions - mine every MINING_INTERVAL_SECONDS
+                auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - last_mining_time).count();
+
+                if (elapsed >= MINING_INTERVAL_SECONDS) {
+                    LOG_INFO("Mining block with " + std::to_string(n_mempool_size) + " transactions in mempool");
+                    p_blockweave->MineBlock(str_miner_address);
+                    last_mining_time = now;
+                    last_empty_block_time = now; // Reset empty block timer
+                }
+            } else {
+                // Mempool is empty - mine empty block every MINING_EMPTY_BLOCK_INTERVAL_SECONDS
+                auto elapsed_empty = std::chrono::duration_cast<std::chrono::seconds>(now - last_empty_block_time).count();
+
+                if (elapsed_empty >= MINING_EMPTY_BLOCK_INTERVAL_SECONDS) {
+                    LOG_INFO("Mining empty block (mempool is empty, interval: " +
+                             std::to_string(MINING_EMPTY_BLOCK_INTERVAL_SECONDS) + " seconds)");
+                    p_blockweave->MineBlock(str_miner_address);
+                    last_empty_block_time = now;
+                    last_mining_time = now;
+                }
+            }
         }
+
+        // Sleep for a short interval to check conditions
+        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 
     LOG_INFO("Mining thread stopped");

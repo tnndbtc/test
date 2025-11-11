@@ -1209,10 +1209,10 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
                 HandleVersionMessage(p_peer, received_msg);
             } else if (msg_type == MessageType::GETDATA) {
                 HandleGetDataMessage(p_peer, received_msg);
-            } else if (msg_type == MessageType::TXS) {
-                HandleTxsMessage(p_peer, received_msg);
-            } else if (msg_type == MessageType::BLOCKS) {
-                HandleBlocksMessage(p_peer, received_msg);
+            } else if (msg_type == MessageType::TX) {
+                HandleTxMessage(p_peer, received_msg);
+            } else if (msg_type == MessageType::BLOCK) {
+                HandleBlockMessage(p_peer, received_msg);
             } else {
                 LOG_TRACE("Received unknown message type '" + msg_type + "' from peer " + p_peer->peer_node->GetIdentifier());
             }
@@ -1506,11 +1506,7 @@ void CPeerManager::HandleGetDataMessage(CPeerConnection* p_peer, const CPeerMess
     std::vector<std::pair<ObjectType::Type, std::string>> requested_items = vec_requested_items;
 
     boost::asio::post(*m_thread_pool, [this, socket, peer_addr, requested_items]() {
-        // Batch serialize transactions and blocks separately
-        std::vector<std::string> vec_serialized_txs;
-        std::vector<std::string> vec_serialized_blocks;
-
-        // Serialize all requested items
+        // Send each block and transaction individually in the loop
         for (const auto& item : requested_items) {
             ObjectType::Type obj_type = item.first;
             const std::string& str_hash = item.second;
@@ -1522,8 +1518,11 @@ void CPeerManager::HandleGetDataMessage(CPeerConnection* p_peer, const CPeerMess
                 if (p_blockweave) {
                     std::shared_ptr<CTransaction> p_tx = p_blockweave->GetTransactionFromMempool(hash);
                     if (p_tx) {
-                        vec_serialized_txs.push_back(p_tx->Serialize());
-                        LOG_TRACE("Serialized transaction " + hash.GetData().substr(0, 16) + "... for peer " + peer_addr);
+                        std::string str_serialized_tx = p_tx->Serialize();
+                        // Send individual TX message
+                        CPeerMessage tx_msg(MessageType::TX, str_serialized_tx);
+                        SendMessageAsync(socket, tx_msg);
+                        LOG_TRACE("Sent TX message with transaction " + hash.GetData().substr(0, 16) + "... to peer " + peer_addr);
                     } else {
                         LOG_TRACE("Transaction " + hash.GetData().substr(0, 16) + "... not found in mempool for peer " + peer_addr);
                     }
@@ -1533,187 +1532,83 @@ void CPeerManager::HandleGetDataMessage(CPeerConnection* p_peer, const CPeerMess
                 if (p_blockweave) {
                     std::shared_ptr<CBlock> p_block = p_blockweave->GetBlock(hash);
                     if (p_block) {
-                        vec_serialized_blocks.push_back(p_block->Serialize());
-                        LOG_TRACE("Serialized block " + hash.GetData().substr(0, 16) + "... for peer " + peer_addr); } else {
+                        std::string str_serialized_block = p_block->Serialize();
+                        // Send individual BLOCK message
+                        CPeerMessage block_msg(MessageType::BLOCK, str_serialized_block);
+                        SendMessageAsync(socket, block_msg);
+                        LOG_TRACE("Sent BLOCK message with block " + hash.GetData().substr(0, 16) + "... to peer " + peer_addr);
+                    } else {
                         LOG_TRACE("Block " + hash.GetData().substr(0, 16) + "... not found for peer " + peer_addr);
                     }
                 }
             }
         }
-
-        // Send batched TXS message if we have transactions
-        if (!vec_serialized_txs.empty()) {
-            std::string str_batched_txs;
-            // Write count
-            uint32_t n_tx_count = htonl(static_cast<uint32_t>(vec_serialized_txs.size()));
-            str_batched_txs.append(reinterpret_cast<const char*>(&n_tx_count), BLOCK_UINT32_SIZE);
-            // Write each transaction (length + data)
-            for (const auto& str_tx : vec_serialized_txs) {
-                uint32_t n_tx_len = htonl(static_cast<uint32_t>(str_tx.length()));
-                str_batched_txs.append(reinterpret_cast<const char*>(&n_tx_len), BLOCK_UINT32_SIZE);
-                str_batched_txs.append(str_tx);
-            }
-            CPeerMessage txs_msg(MessageType::TXS, str_batched_txs);
-            SendMessageAsync(socket, txs_msg);
-            LOG_TRACE("Sent batched TXS message with " + std::to_string(vec_serialized_txs.size()) + " transactions to peer " + peer_addr);
-        }
-
-        // Send batched BLOCKS message if we have blocks
-        if (!vec_serialized_blocks.empty()) {
-            std::string str_batched_blocks;
-            // Write count
-            uint32_t n_block_count = htonl(static_cast<uint32_t>(vec_serialized_blocks.size()));
-            str_batched_blocks.append(reinterpret_cast<const char*>(&n_block_count), BLOCK_UINT32_SIZE);
-            // Write each block (length + data)
-            for (const auto& str_block : vec_serialized_blocks) {
-                uint32_t n_block_len = htonl(static_cast<uint32_t>(str_block.length()));
-                str_batched_blocks.append(reinterpret_cast<const char*>(&n_block_len), BLOCK_UINT32_SIZE);
-                str_batched_blocks.append(str_block);
-            }
-            CPeerMessage blocks_msg(MessageType::BLOCKS, str_batched_blocks);
-            SendMessageAsync(socket, blocks_msg);
-            LOG_TRACE("Sent batched BLOCKS message with " + std::to_string(vec_serialized_blocks.size()) + " blocks to peer " + peer_addr);
-        }
     });
 }
 
-void CPeerManager::HandleTxsMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg) {
+void CPeerManager::HandleTxMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg) {
     std::string str_tx_data = received_msg.GetPayloadString();
-    LOG_INFO("Received TXS from peer " + p_peer->peer_node->GetIdentifier() + ": " +
+    LOG_INFO("Received TX from peer " + p_peer->peer_node->GetIdentifier() + ": " +
              std::to_string(str_tx_data.length()) + " bytes");
 
-    // Parse batched TXS message: [count:4][tx1_len:4][tx1_data]...[txN_len:4][txN_data]
-    if (str_tx_data.length() < BLOCK_UINT32_SIZE) {
-        LOG_WARN("Received invalid TXS from peer " + p_peer->peer_node->GetIdentifier() + ": too short");
+    // Deserialize single transaction
+    std::shared_ptr<CTransaction> p_tx = CTransaction::Deserialize(str_tx_data);
+    if (!p_tx) {
+        LOG_WARN("Failed to deserialize transaction from peer " + p_peer->peer_node->GetIdentifier());
         return;
     }
 
-    size_t n_offset = 0;
-    // Read transaction count
-    uint32_t n_tx_count_network;
-    std::memcpy(&n_tx_count_network, str_tx_data.data() + n_offset, BLOCK_UINT32_SIZE);
-    uint32_t n_tx_count = ntohl(n_tx_count_network);
-    n_offset += BLOCK_UINT32_SIZE;
+    LOG_INFO("Successfully deserialized transaction " + p_tx->m_id.GetData().substr(0, 16) +
+             "... from peer " + p_peer->peer_node->GetIdentifier());
 
-    LOG_INFO("Batched TXS message contains " + std::to_string(n_tx_count) + " transactions");
+    // Add transaction to blockweave mempool
+    if (p_blockweave) {
+        p_blockweave->AddTransaction(p_tx);
+        LOG_INFO("Added transaction " + p_tx->m_id.GetData().substr(0, 16) + "... to mempool");
 
-    std::vector<std::pair<ObjectType::Type, std::string>> vec_inventory;
+        // Broadcast INVENTORY for the new transaction (scheduled asynchronously)
+        std::vector<std::pair<ObjectType::Type, std::string>> vec_inventory;
+        vec_inventory.push_back({ObjectType::TRANSACTION, p_tx->m_id.GetData()});
 
-    // Deserialize each transaction
-    for (uint32_t i = 0; i < n_tx_count && n_offset < str_tx_data.length(); ++i) {
-        // Read transaction length
-        if (n_offset + BLOCK_UINT32_SIZE > str_tx_data.length()) {
-            LOG_WARN("Invalid TXS message from peer " + p_peer->peer_node->GetIdentifier() + ": truncated at tx " + std::to_string(i));
-            break;
-        }
-        uint32_t n_tx_len_network;
-        std::memcpy(&n_tx_len_network, str_tx_data.data() + n_offset, BLOCK_UINT32_SIZE);
-        uint32_t n_tx_len = ntohl(n_tx_len_network);
-        n_offset += BLOCK_UINT32_SIZE;
-
-        // Read transaction data
-        if (n_offset + n_tx_len > str_tx_data.length()) {
-            LOG_WARN("Invalid TXS message from peer " + p_peer->peer_node->GetIdentifier() + ": insufficient data for tx " + std::to_string(i));
-            break;
-        }
-        std::string str_single_tx(str_tx_data.data() + n_offset, n_tx_len);
-        n_offset += n_tx_len;
-
-        // Deserialize transaction
-        std::shared_ptr<CTransaction> p_tx = CTransaction::Deserialize(str_single_tx);
-        if (!p_tx) {
-            LOG_WARN("Failed to deserialize transaction " + std::to_string(i) + " from peer " + p_peer->peer_node->GetIdentifier());
-        } else {
-            LOG_INFO("Successfully deserialized transaction " + p_tx->m_id.GetData().substr(0, 16) +
-                     "... from peer " + p_peer->peer_node->GetIdentifier());
-
-            // Add transaction to blockweave mempool
-            if (p_blockweave) {
-                p_blockweave->AddTransaction(p_tx);
-                LOG_INFO("Added transaction " + p_tx->m_id.GetData().substr(0, 16) + "... to mempool");
-
-                // Collect for inventory broadcast
-                vec_inventory.push_back({ObjectType::TRANSACTION, p_tx->m_id.GetData()});
-            }
-        }
-    }
-
-    // Broadcast INVENTORY for all new transactions (scheduled asynchronously)
-    if (!vec_inventory.empty()) {
         boost::asio::post(*m_thread_pool, [this, vec_inventory]() {
             BroadcastInventory(vec_inventory);
-            LOG_TRACE("Broadcasted INVENTORY for " + std::to_string(vec_inventory.size()) + " received transactions");
+            LOG_TRACE("Broadcasted INVENTORY for received transaction");
         });
     }
 }
 
-void CPeerManager::HandleBlocksMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg) {
+void CPeerManager::HandleBlockMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg) {
     std::string str_block_data = received_msg.GetPayloadString();
-    LOG_INFO("Received BLOCKS from peer " + p_peer->peer_node->GetIdentifier() + ": " +
+    LOG_INFO("Received BLOCK from peer " + p_peer->peer_node->GetIdentifier() + ": " +
              std::to_string(str_block_data.length()) + " bytes");
 
-    // Parse batched BLOCKS message: [count:4][block1_len:4][block1_data]...[blockN_len:4][blockN_data]
-    if (str_block_data.length() < BLOCK_UINT32_SIZE) {
-        LOG_WARN("Received invalid BLOCKS from peer " + p_peer->peer_node->GetIdentifier() + ": too short");
+    // Deserialize single block
+    std::shared_ptr<CBlock> p_block = CBlock::Deserialize(str_block_data);
+    if (!p_block) {
+        LOG_WARN("Failed to deserialize block from peer " + p_peer->peer_node->GetIdentifier());
         return;
     }
 
-    size_t n_offset = 0;
-    // Read block count
-    uint32_t n_block_count_network;
-    std::memcpy(&n_block_count_network, str_block_data.data() + n_offset, BLOCK_UINT32_SIZE);
-    uint32_t n_block_count = ntohl(n_block_count_network);
-    n_offset += BLOCK_UINT32_SIZE;
+    LOG_INFO("Successfully deserialized block #" + std::to_string(p_block->GetHeight()) +
+             " (hash: " + p_block->GetHash().GetData().substr(0, 16) + "...) from peer " +
+             p_peer->peer_node->GetIdentifier());
 
-    LOG_INFO("Batched BLOCKS message contains " + std::to_string(n_block_count) + " blocks");
+    // TODO: Add block validation and storage to blockweave
+    // For now, just log receipt. Full block acceptance logic requires:
+    // - Validating proof-of-work
+    // - Checking block height sequencing
+    // - Verifying transactions
+    // - Adding to blockchain if valid
+    // This is beyond the scope of GETDATA implementation
 
-    // Deserialize each block
-    for (uint32_t i = 0; i < n_block_count && n_offset < str_block_data.length(); ++i) {
-        // Read block length
-        if (n_offset + BLOCK_UINT32_SIZE > str_block_data.length()) {
-            LOG_WARN("Invalid BLOCKS message from peer " + p_peer->peer_node->GetIdentifier() + ": truncated at block " + std::to_string(i));
-            break;
-        }
-        uint32_t n_block_len_network;
-        std::memcpy(&n_block_len_network, str_block_data.data() + n_offset, BLOCK_UINT32_SIZE);
-        uint32_t n_block_len = ntohl(n_block_len_network);
-        n_offset += BLOCK_UINT32_SIZE;
+    LOG_TRACE("Block contains " + std::to_string(p_block->GetTransactions().size()) +
+             " transactions");
 
-        // Read block data
-        if (n_offset + n_block_len > str_block_data.length()) {
-            LOG_WARN("Invalid BLOCKS message from peer " + p_peer->peer_node->GetIdentifier() + ": insufficient data for block " + std::to_string(i));
-            break;
-        }
-        std::string str_single_block(str_block_data.data() + n_offset, n_block_len);
-        n_offset += n_block_len;
-
-        // Deserialize block
-        std::shared_ptr<CBlock> p_block = CBlock::Deserialize(str_single_block);
-        if (!p_block) {
-            LOG_WARN("Failed to deserialize block " + std::to_string(i) + " from peer " + p_peer->peer_node->GetIdentifier());
-        } else {
-            LOG_INFO("Successfully deserialized block #" + std::to_string(p_block->GetHeight()) +
-                     " (hash: " + p_block->GetHash().GetData().substr(0, 16) + "...) from peer " +
-                     p_peer->peer_node->GetIdentifier());
-
-            // TODO: Add block validation and storage to blockweave
-            // For now, just log receipt. Full block acceptance logic requires:
-            // - Validating proof-of-work
-            // - Checking block height sequencing
-            // - Verifying transactions
-            // - Adding to blockchain if valid
-            // This is beyond the scope of GETDATA implementation
-
-            LOG_TRACE("Block contains " + std::to_string(p_block->GetTransactions().size()) +
-                     " transactions");
-
-            // If block is valid, broadcast INVENTORY to other peers
-            // Commented out until block validation is implemented:
-            // std::vector<std::pair<ObjectType::Type, std::string>> vec_inventory;
-            // vec_inventory.push_back({ObjectType::BLOCK, p_block->GetHash().GetData()});
-            // BroadcastInventory(vec_inventory);
-        }
-    }
+    // If block is valid, broadcast INVENTORY to other peers
+    // Commented out until block validation is implemented:
+    // std::vector<std::pair<ObjectType::Type, std::string>> vec_inventory;
+    // vec_inventory.push_back({ObjectType::BLOCK, p_block->GetHash().GetData()});
+    // BroadcastInventory(vec_inventory);
 }
 
 /**

@@ -14,8 +14,8 @@ bool MessageType::IsValid(const std::string& str_type) {
            str_type == GET_PEERS ||
            str_type == PEERS ||
            str_type == TX_IDS ||
-           str_type == TXS ||
-           str_type == BLOCKS ||
+           str_type == TX ||
+           str_type == BLOCK ||
            str_type == GET_CHAIN ||
            str_type == CHAIN_INFO ||
            str_type == INVENTORY ||

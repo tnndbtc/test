@@ -323,18 +323,18 @@ private:
     void HandleGetDataMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg);
 
     /**
-     * @brief Handle TXS message from peer
+     * @brief Handle TX message from peer
      * @param p_peer Peer connection pointer
-     * @param received_msg The received TXS message
+     * @param received_msg The received TX message
      */
-    void HandleTxsMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg);
+    void HandleTxMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg);
 
     /**
-     * @brief Handle BLOCKS message from peer
+     * @brief Handle BLOCK message from peer
      * @param p_peer Peer connection pointer
-     * @param received_msg The received BLOCKS message
+     * @param received_msg The received BLOCK message
      */
-    void HandleBlocksMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg);
+    void HandleBlockMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg);
 
     /**
      * @brief Send message asynchronously to inbound peer
