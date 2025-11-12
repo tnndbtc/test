@@ -295,13 +295,6 @@ private:
     void HandlePongMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg);
 
     /**
-     * @brief Handle TX_IDS message from peer
-     * @param p_peer Peer connection pointer
-     * @param received_msg The received TX_IDS message
-     */
-    void HandleTxIdsMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg);
-
-    /**
      * @brief Handle INVENTORY message from peer
      * @param p_peer Peer connection pointer
      * @param received_msg The received INVENTORY message
@@ -446,7 +439,7 @@ private:
      * Sends full inventory list to peers, filtering per-peer based on what they already know.
      * New format: [count][type][hash][type][hash]... with multiple items per message.
      */
-    void BroadcastInventoryByPeerKnowledge(const std::vector<std::pair<ObjectType::Type, std::string>>& vec_inventory);
+    void BroadcastInventoryByPeerKnowledge(const std::vector<std::pair<ObjectType::Type, std::string>>& vec_inventory) override;
 
     /**
      * @brief Schedule GETDATA message to request missing inventory items

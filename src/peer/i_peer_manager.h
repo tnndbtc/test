@@ -4,6 +4,8 @@
 
 #include <string>
 #include <vector>
+#include <utility>
+#include "blockcore/object_type.h"
 
 // Forward declarations to avoid circular dependency
 class CPeerMessage;
@@ -128,6 +130,24 @@ public:
      * Failed sends are logged but don't affect the return count.
      */
     virtual size_t BroadcastMessage(const CPeerMessage& message) = 0;
+
+    /**
+     * @brief Broadcast inventory items to peers based on their knowledge
+     * @param vec_inventory Vector of (ObjectType, hash) pairs to broadcast
+     *
+     * Broadcasts INVENTORY messages containing transactions and blocks.
+     * Uses peer filter to only send items to peers that don't already know about them.
+     * Each peer receives a custom INVENTORY message filtered for items they haven't seen.
+     *
+     * Format: [count:4bytes][type:2bytes][hash:32bytes][type:2bytes][hash:32bytes]...
+     * - count: uint32_t network byte order
+     * - type: ObjectType::Type (uint16_t) network byte order
+     * - hash: 32-byte binary SHA-256 hash
+     *
+     * Thread-safe operation with mutex protection.
+     * Marks all broadcast items as known by each peer to prevent duplicate sends.
+     */
+    virtual void BroadcastInventoryByPeerKnowledge(const std::vector<std::pair<ObjectType::Type, std::string>>& vec_inventory) = 0;
 
     /**
      * @brief Send PING message to all connected peers immediately

@@ -160,27 +160,36 @@ TEST(PeerManager_ThreadSafe_GetConnectedPeers) {
 TEST(PeerManager_BroadcastMessage_EmptyPayload) {
     CPeerManager manager(8337);
 
-    // Create TX_IDS message with empty payload
-    CPeerMessage tx_ids_msg(MessageType::TX_IDS, "");
+    // Create INVENTORY message with empty payload
+    CPeerMessage inv_msg(MessageType::INVENTORY, "");
 
     // Should not crash with empty payload
-    size_t sent_count = manager.BroadcastMessage(tx_ids_msg);
+    size_t sent_count = manager.BroadcastMessage(inv_msg);
 
     ASSERT_EQUAL(sent_count, (size_t)0, "Should send to 0 peers when none connected");
 }
 
 /**
- * @brief Test BroadcastMessage with TX_IDS payload
+ * @brief Test BroadcastMessage with INVENTORY payload
  */
-TEST(PeerManager_BroadcastMessage_TxIdsPayload) {
+TEST(PeerManager_BroadcastMessage_InventoryPayload) {
     CPeerManager manager(8338);
 
-    // Create TX_IDS message with comma-separated transaction IDs
-    std::string tx_ids_payload = "tx1_abcdef1234567890,tx2_1234567890abcdef";
-    CPeerMessage tx_ids_msg(MessageType::TX_IDS, tx_ids_payload);
+    // Create INVENTORY message with binary payload
+    std::string inv_payload;
+    // Count (4 bytes)
+    uint32_t count = htonl(1);
+    inv_payload.append(reinterpret_cast<const char*>(&count), 4);
+    // Type (2 bytes)
+    uint16_t type = htons(2);  // TRANSACTION
+    inv_payload.append(reinterpret_cast<const char*>(&type), 2);
+    // Hash (32 bytes)
+    inv_payload.append(32, '\0');
+
+    CPeerMessage inv_msg(MessageType::INVENTORY, inv_payload);
 
     // Should not crash with no peers
-    size_t sent_count = manager.BroadcastMessage(tx_ids_msg);
+    size_t sent_count = manager.BroadcastMessage(inv_msg);
 
     ASSERT_EQUAL(sent_count, (size_t)0, "Should send to 0 peers when none connected");
 }
@@ -414,13 +423,13 @@ TEST(PeerManager_BroadcastMessage_DifferentTypes) {
     CPeerMessage ping(MessageType::PING);
     CPeerMessage pong(MessageType::PONG);
     CPeerMessage get_peers(MessageType::GET_PEERS);
-    CPeerMessage tx_ids(MessageType::TX_IDS, "tx1,tx2,tx3");
+    CPeerMessage inventory(MessageType::INVENTORY);
 
     // All should return 0 with no peers
     ASSERT_EQUAL(manager.BroadcastMessage(ping), (size_t)0, "PING should send to 0 peers");
     ASSERT_EQUAL(manager.BroadcastMessage(pong), (size_t)0, "PONG should send to 0 peers");
     ASSERT_EQUAL(manager.BroadcastMessage(get_peers), (size_t)0, "GET_PEERS should send to 0 peers");
-    ASSERT_EQUAL(manager.BroadcastMessage(tx_ids), (size_t)0, "TX_IDS should send to 0 peers");
+    ASSERT_EQUAL(manager.BroadcastMessage(inventory), (size_t)0, "INVENTORY should send to 0 peers");
 }
 
 /**

@@ -60,7 +60,6 @@ namespace MessageType {
     const std::string PONG = "pong";               ///< Pong response to ping
     const std::string GET_PEERS = "get_peers";     ///< Request list of known peers
     const std::string PEERS = "peers";             ///< Response with peer list
-    const std::string TX_IDS = "tx_ids";           ///< Announce transaction IDs
     const std::string TX = "tx";                   ///< Response with transaction data
     const std::string BLOCK = "block";             ///< Response with block data
     const std::string GET_CHAIN = "get_chain";     ///< Request blockchain info

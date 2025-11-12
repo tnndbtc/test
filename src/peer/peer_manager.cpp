@@ -1201,8 +1201,6 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
                 HandlePingMessage(p_peer, received_msg, n_socket_fd);
             } else if (msg_type == MessageType::PONG) {
                 HandlePongMessage(p_peer, received_msg);
-            } else if (msg_type == MessageType::TX_IDS) {
-                HandleTxIdsMessage(p_peer, received_msg);
             } else if (msg_type == MessageType::INVENTORY) {
                 HandleInventoryMessage(p_peer, received_msg);
             } else if (msg_type == MessageType::VERSION) {
@@ -1288,39 +1286,6 @@ void CPeerManager::HandlePongMessage(CPeerConnection* p_peer, const CPeerMessage
     }
 }
 
-void CPeerManager::HandleTxIdsMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg) {
-    std::string str_tx_ids = received_msg.GetPayloadString();
-    LOG_INFO("Received transaction IDs from peer " + p_peer->peer_node->GetIdentifier() + ": " + str_tx_ids.substr(0, 64) + "...");
-
-    // Parse comma-separated transaction IDs
-    std::vector<std::string> vec_tx_ids;
-    size_t n_start = 0;
-    size_t n_comma_pos = str_tx_ids.find(',');
-
-    while (n_comma_pos != std::string::npos) {
-        std::string str_tx_id = str_tx_ids.substr(n_start, n_comma_pos - n_start);
-        if (!str_tx_id.empty()) {
-            vec_tx_ids.push_back(str_tx_id);
-        }
-        n_start = n_comma_pos + 1;
-        n_comma_pos = str_tx_ids.find(',', n_start);
-    }
-
-    // Don't forget the last one
-    if (n_start < str_tx_ids.length()) {
-        std::string str_tx_id = str_tx_ids.substr(n_start);
-        if (!str_tx_id.empty()) {
-            vec_tx_ids.push_back(str_tx_id);
-        }
-    }
-
-    LOG_INFO("Parsed " + std::to_string(vec_tx_ids.size()) + " transaction IDs from peer " +
-             p_peer->peer_node->GetIdentifier());
-
-    // TODO: In Phase 2.1, we'll implement GETDATA message to request missing transactions
-    // For now, we just log the received transaction IDs
-}
-
 void CPeerManager::HandleInventoryMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg) {
     std::string str_inventory = received_msg.GetPayloadString();
     LOG_INFO("Received INVENTORY from peer " + p_peer->peer_node->GetIdentifier() + ": " +
@@ -1379,7 +1344,7 @@ void CPeerManager::HandleInventoryMessage(CPeerConnection* p_peer, const CPeerMe
 
         // Add to inventory list for relay
         CHash hash_trace(reinterpret_cast<const unsigned char*>(str_hash.data()), str_hash.size());
-        LOG_TRACE("HandleInventoryMessage: received notification for object type: " + std::to_string(obj_type) + " hash: " + hash_trace.GetData());
+        LOG_TRACE("HandleInventoryMessage: received notification for object type: " + std::to_string(obj_type) + " hash: " + hash_trace.GetData()+ " from peer: " + p_peer->peer_node->GetIdentifier());
 
         // Mark this peer as knowing about this inventory
         MarkInventoryKnown(p_peer->peer_node, obj_type, str_hash);
@@ -2051,7 +2016,7 @@ size_t CPeerManager::BroadcastMessage(const CPeerMessage& message) {
             if (i > 0) str_peer_list += ", ";
             str_peer_list += vec_peers[i]->peer_node->GetIdentifier();
         }
-        LOG_TRACE("Broadcasting " + message.GetTypeString() + " message to " +
+        LOG_TRACE("BroadcastMessage: Broadcasting " + message.GetTypeString() + " message to " +
                  std::to_string(vec_peers.size()) + " peers: " + str_peer_list);
     } else {
         LOG_TRACE("Broadcasting " + message.GetTypeString() + " message to 0 peers");
@@ -2152,6 +2117,8 @@ void CPeerManager::MarkInventoryKnown(std::shared_ptr<IPeerNode> p_peer_node, Ob
     if (!p_peer_node) {
         return;  // Ignore null peer nodes
     }
+    CHash hash_trace(reinterpret_cast<const unsigned char*>(str_inventory_hash.data()), str_inventory_hash.size());
+    LOG_TRACE("MarkInventoryKnown: peer: " + p_peer_node->GetIdentifier() + " know object type: " + std::to_string(obj_type) + " hash: " + hash_trace.GetData());
 
     std::lock_guard<std::mutex> lock(cs_inventory);
     map_inventory_known[p_peer_node][obj_type].insert(str_inventory_hash);
@@ -2230,17 +2197,20 @@ void CPeerManager::BroadcastInventoryByPeerKnowledge(const std::vector<std::pair
             // Write hash (MESSAGE_HASH_SIZE bytes, binary format)
             str_payload.append(item.second);
             CHash hash_trace(reinterpret_cast<const unsigned char*>(item.second.data()), item.second.size());
-            LOG_TRACE("BroadcastInventoryByPeerKnowledge: broadcasting object type: " + std::to_string(item.first) + " hash: " + hash_trace.GetData());
+            LOG_TRACE("BroadcastInventoryByPeerKnowledge: broadcasting object type: " + std::to_string(item.first) + " hash: " + hash_trace.GetData() + " to peer: " + p_peer->peer_node->GetIdentifier());
+            MarkInventoryKnown(p_peer->peer_node, item.first, item.second);
         }
 
         // Send message
         CPeerMessage inv_message(MessageType::INVENTORY, str_payload);
         SendMessageAsync(p_peer->n_socket, inv_message);
 
+        /*
         // Mark all items as known by this peer
         for (const auto& item : peer_inventory) {
             MarkInventoryKnown(p_peer->peer_node, item.first, item.second);
         }
+        */
 
         n_total_sent++;
     }

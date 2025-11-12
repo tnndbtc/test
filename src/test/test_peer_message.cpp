@@ -279,7 +279,6 @@ TEST(PeerMessage_TypeStrings) {
     ASSERT_EQUAL(MessageType::PONG, std::string("pong"), "PONG string");
     ASSERT_EQUAL(MessageType::GET_PEERS, std::string("get_peers"), "GET_PEERS string");
     ASSERT_EQUAL(MessageType::PEERS, std::string("peers"), "PEERS string");
-    ASSERT_EQUAL(MessageType::TX_IDS, std::string("tx_ids"), "TX_IDS string");
     ASSERT_EQUAL(MessageType::TX, std::string("tx"), "TX string");
     ASSERT_EQUAL(MessageType::BLOCK, std::string("block"), "BLOCK string");
     ASSERT_EQUAL(MessageType::GET_CHAIN, std::string("get_chain"), "GET_CHAIN string");
@@ -330,7 +329,6 @@ TEST(PeerMessage_MessageTypeValidity) {
     CPeerMessage pong(MessageType::PONG);
     CPeerMessage get_peers(MessageType::GET_PEERS);
     CPeerMessage peers(MessageType::PEERS);
-    CPeerMessage tx_ids(MessageType::TX_IDS);
     CPeerMessage tx(MessageType::TX);
     CPeerMessage block(MessageType::BLOCK);
     CPeerMessage get_chain(MessageType::GET_CHAIN);
@@ -341,7 +339,6 @@ TEST(PeerMessage_MessageTypeValidity) {
     ASSERT_TRUE(pong.IsValid(), "PONG should be valid");
     ASSERT_TRUE(get_peers.IsValid(), "GET_PEERS should be valid");
     ASSERT_TRUE(peers.IsValid(), "PEERS should be valid");
-    ASSERT_TRUE(tx_ids.IsValid(), "TX_IDS should be valid");
     ASSERT_TRUE(tx.IsValid(), "TX should be valid");
     ASSERT_TRUE(block.IsValid(), "BLOCK should be valid");
     ASSERT_TRUE(get_chain.IsValid(), "GET_CHAIN should be valid");
