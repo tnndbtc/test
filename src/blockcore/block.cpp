@@ -1,6 +1,7 @@
 // ============= block.cpp =============
 #include "block.h"
 #include "utils/settings.h"
+#include "logger/logger.h"
 #include <chrono>
 #include <random>
 #include <sstream>
@@ -91,6 +92,8 @@ void CBlock::Mine() {
             break;
         }
     }
+
+    LOG_INFO("Block mined: hash=" + m_hash.GetData());
 }
 
 std::string CBlock::ToString() const {

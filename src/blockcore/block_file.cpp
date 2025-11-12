@@ -312,7 +312,7 @@ std::shared_ptr<CTransaction> CBlockFile::ReadTransaction(std::ifstream& ifs) co
 }
 
 bool CBlockFile::SaveBlock(const std::shared_ptr<CBlock>& p_block) {
-    std::lock_guard<std::mutex> lock(cs_blockfile);
+    std::unique_lock<std::shared_mutex> lock(cs_rw_blockfile);
 
     // Check if block already exists in index (prevent duplicates)
     std::string str_hash = p_block->GetHash().GetData();
@@ -434,7 +434,7 @@ bool CBlockFile::SaveBlock(const std::shared_ptr<CBlock>& p_block) {
 }
 
 std::shared_ptr<CBlock> CBlockFile::LoadBlock(const CHash& hash) {
-    std::lock_guard<std::mutex> lock(cs_blockfile);
+    std::shared_lock<std::shared_mutex> lock(cs_rw_blockfile);
 
     // Find block in index
     auto it = map_block_index.find(hash.GetData());
@@ -516,14 +516,14 @@ std::shared_ptr<CBlock> CBlockFile::LoadBlock(const CHash& hash) {
 }
 
 bool CBlockFile::BlockExists(const CHash& hash) const {
-    std::lock_guard<std::mutex> lock(cs_blockfile);
+    std::shared_lock<std::shared_mutex> lock(cs_rw_blockfile);
     return map_block_index.find(hash.GetData()) != map_block_index.end();
 }
 
 std::shared_ptr<CBlock> CBlockFile::GetGenesisBlock() {
     // Scan index for all blocks, load each one, and find the one with height 0
     // This is a linear scan but should be fine since this is only called once on startup
-    std::lock_guard<std::mutex> lock(cs_blockfile);
+    std::shared_lock<std::shared_mutex> lock(cs_rw_blockfile);
 
     for (const auto& pair : map_block_index) {
         const CBlockIndex& index = pair.second;

@@ -105,6 +105,17 @@ public:
      * @param p_mgr Pointer to peer manager
      */
     virtual void SetPeerManager(IPeerManager* p_mgr) = 0;
+
+    /**
+     * @brief Verify and add block to blockchain
+     * @param p_block Block to verify and add
+     * @return pair<bool, vector<shared_ptr<CBlock>>> - success flag and vector of blocks to broadcast via INVENTORY
+     *
+     * Verifies the block (proof-of-work, height sequencing, etc.) and adds it to the blockchain.
+     * If the block's parent is missing, adds to orphan pool.
+     * Returns list of all blocks that were accepted (input block + any processed orphans).
+     */
+    virtual std::pair<bool, std::vector<std::shared_ptr<CBlock>>> VerifyBlock(std::shared_ptr<CBlock> p_block) = 0;
 };
 
 #endif // I_BLOCK_WEAVE_H

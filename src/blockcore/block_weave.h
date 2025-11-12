@@ -13,17 +13,23 @@
 #include <memory>
 #include <string>
 #include <mutex>
+#include <shared_mutex>
 #include <atomic>
 
 class CBlockweave : public IBlockweave {
 private:
     std::unordered_map<std::string, std::shared_ptr<CBlock>> map_blocks;
+    std::unordered_map<std::string, std::shared_ptr<CBlock>> map_orphan_blocks;  ///< Blocks waiting for parent
     std::vector<CHash> m_block_hashes;
     std::shared_ptr<CBlock> m_genesis_block;
     std::shared_ptr<CBlock> m_current_block;
     std::vector<std::shared_ptr<CTransaction>> m_mempool;
 
-    mutable std::mutex cs_blockweave;
+    mutable std::shared_mutex cs_rw_map_blocks;              ///< Read/Write lock for map_blocks
+    mutable std::shared_mutex cs_rw_map_orphan_blocks;       ///< Read/Write lock for map_orphan_blocks
+    mutable std::shared_mutex cs_rw_m_block_hashes;          ///< Read/Write lock for m_block_hashes
+    mutable std::shared_mutex cs_rw_m_mempool;               ///< Read/Write lock for m_mempool
+
     std::atomic<bool> f_mining_enabled;
     std::atomic<bool> f_stop_mining;
 
@@ -52,6 +58,7 @@ public:
     void PrintChain();
     bool ShouldStopMining() const;
     virtual std::shared_ptr<CTransaction> GetTransactionFromMempool(const CHash& tx_hash) const override;
+    virtual std::pair<bool, std::vector<std::shared_ptr<CBlock>>> VerifyBlock(std::shared_ptr<CBlock> p_block) override;
 };
 
 #endif

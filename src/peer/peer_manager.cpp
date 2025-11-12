@@ -1378,7 +1378,9 @@ void CPeerManager::HandleInventoryMessage(CPeerConnection* p_peer, const CPeerMe
         n_offset += MESSAGE_HASH_SIZE;
 
         // Add to inventory list for relay
-        vec_inventory.push_back({obj_type, str_hash});
+        // vec_inventory.push_back({obj_type, str_hash});
+        CHash debug_hash(reinterpret_cast<const unsigned char*>(str_hash.data()), str_hash.size());
+        LOG_TRACE("HandleInventoryMessage: received notification for object type: " + std::to_string(obj_type) + " hash: " + debug_hash.GetData());
 
         // Mark this peer as knowing about this inventory
         MarkInventoryKnown(p_peer->peer_node, obj_type, str_hash);
@@ -1410,6 +1412,7 @@ void CPeerManager::HandleInventoryMessage(CPeerConnection* p_peer, const CPeerMe
              std::to_string(vec_missing_items.size()) + " missing, " +
              std::to_string(n_count - vec_missing_items.size()) + " already have)");
 
+    /*
     // Relay to other peers who don't know about it (scheduled asynchronously)
     if (!vec_inventory.empty()) {
         std::vector<std::pair<ObjectType::Type, std::string>> inventory = vec_inventory;
@@ -1417,6 +1420,7 @@ void CPeerManager::HandleInventoryMessage(CPeerConnection* p_peer, const CPeerMe
             BroadcastInventory(inventory);
         });
     }
+    */
 
     // Request missing items via GETDATA (scheduled asynchronously)
     if (!vec_missing_items.empty()) {
@@ -1493,6 +1497,8 @@ void CPeerManager::HandleGetDataMessage(CPeerConnection* p_peer, const CPeerMess
         // Read hash (MESSAGE_HASH_SIZE bytes, binary format)
         std::string str_hash(str_getdata.data() + n_offset, MESSAGE_HASH_SIZE);
         n_offset += MESSAGE_HASH_SIZE;
+        CHash hash_trace(reinterpret_cast<const unsigned char*>(str_hash.data()), str_hash.size());
+        LOG_TRACE("HandleGetDataMessage: received request for object type: " + std::to_string(obj_type) + " hash: " + hash_trace.GetData());
 
         vec_requested_items.push_back({obj_type, str_hash});
     }
@@ -1568,11 +1574,12 @@ void CPeerManager::HandleTxMessage(CPeerConnection* p_peer, const CPeerMessage& 
 
         // Broadcast INVENTORY for the new transaction (scheduled asynchronously)
         std::vector<std::pair<ObjectType::Type, std::string>> vec_inventory;
-        vec_inventory.push_back({ObjectType::TRANSACTION, p_tx->m_id.GetData()});
+        vec_inventory.push_back({ObjectType::TRANSACTION,
+            std::string(reinterpret_cast<const char*>(p_tx->m_id.GetBytes().data()), 32)});
 
         boost::asio::post(*m_thread_pool, [this, vec_inventory]() {
-            BroadcastInventory(vec_inventory);
             LOG_TRACE("Broadcasted INVENTORY for received transaction");
+            BroadcastInventory(vec_inventory);
         });
     }
 }
@@ -1593,22 +1600,36 @@ void CPeerManager::HandleBlockMessage(CPeerConnection* p_peer, const CPeerMessag
              " (hash: " + p_block->GetHash().GetData().substr(0, 16) + "...) from peer " +
              p_peer->peer_node->GetIdentifier());
 
-    // TODO: Add block validation and storage to blockweave
-    // For now, just log receipt. Full block acceptance logic requires:
-    // - Validating proof-of-work
-    // - Checking block height sequencing
-    // - Verifying transactions
-    // - Adding to blockchain if valid
-    // This is beyond the scope of GETDATA implementation
-
     LOG_TRACE("Block contains " + std::to_string(p_block->GetTransactions().size()) +
              " transactions");
 
-    // If block is valid, broadcast INVENTORY to other peers
-    // Commented out until block validation is implemented:
-    // std::vector<std::pair<ObjectType::Type, std::string>> vec_inventory;
-    // vec_inventory.push_back({ObjectType::BLOCK, p_block->GetHash().GetData()});
-    // BroadcastInventory(vec_inventory);
+    // Verify and add block to blockchain
+    if (p_blockweave) {
+        auto [f_success, vec_blocks_to_broadcast] = p_blockweave->VerifyBlock(p_block);
+
+        if (f_success) {
+            LOG_INFO("Block #" + std::to_string(p_block->GetHeight()) + " accepted into blockchain");
+
+            // Broadcast INVENTORY for all accepted blocks (original + processed orphans)
+            if (!vec_blocks_to_broadcast.empty()) {
+                std::vector<std::pair<ObjectType::Type, std::string>> vec_inventory;
+                for (const auto& p_broadcast_block : vec_blocks_to_broadcast) {
+                    vec_inventory.push_back({ObjectType::BLOCK,
+                        std::string(reinterpret_cast<const char*>(p_broadcast_block->GetHash().GetBytes().data()), 32)});
+                }
+
+                boost::asio::post(*m_thread_pool, [this, vec_inventory]() {
+                    BroadcastInventory(vec_inventory);
+                    LOG_TRACE("Broadcasted INVENTORY for " + std::to_string(vec_inventory.size()) + " accepted blocks");
+                });
+            }
+        } else {
+            LOG_INFO("Block #" + std::to_string(p_block->GetHeight()) +
+                     " verification failed or added to orphan pool");
+        }
+    } else {
+        LOG_WARN("Cannot verify block: blockweave not initialized");
+    }
 }
 
 /**
@@ -2244,6 +2265,8 @@ void CPeerManager::BroadcastInventory(const std::vector<std::pair<ObjectType::Ty
 
             // Write hash (MESSAGE_HASH_SIZE bytes, binary format)
             str_payload.append(item.second);
+            CHash hash_trace(reinterpret_cast<const unsigned char*>(item.second.data()), item.second.size());
+            LOG_TRACE("BroadcastInventory: broadcasting object type: " + std::to_string(item.first) + " hash: " + hash_trace.GetData());
         }
 
         // Send message
@@ -2284,6 +2307,8 @@ void CPeerManager::ScheduleGetDataMessage(int n_socket, const std::vector<std::p
 
         // Write hash (MESSAGE_HASH_SIZE bytes, binary format)
         str_payload.append(item.second);
+        CHash debug_hash(reinterpret_cast<const unsigned char*>(item.second.data()), item.second.size());
+        LOG_TRACE("ScheduleGetDataMessage: requesting object type: " + std::to_string(item.first) + " hash: " + debug_hash.GetData());
     }
 
     // Send message

@@ -61,6 +61,13 @@ constexpr int MINING_INTERVAL_SECONDS = 1;
 constexpr int MINING_EMPTY_BLOCK_INTERVAL_SECONDS = 86400;
 
 // ============================================================
+// Blockchain Configuration
+// ============================================================
+
+// Maximum number of orphan blocks to store (blocks missing parent)
+constexpr int MAX_ORPHAN_BLOCKS = 200;
+
+// ============================================================
 // P2P Message Format Constants
 // ============================================================
 

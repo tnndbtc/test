@@ -9,6 +9,7 @@
 #include <fstream>
 #include <unordered_map>
 #include <mutex>
+#include <shared_mutex>
 
 /**
  * @class CBlockFile
@@ -79,7 +80,7 @@ private:
     };
 
     std::unordered_map<std::string, CBlockIndex> map_block_index;  ///< In-memory block index
-    mutable std::mutex cs_blockfile;  ///< Mutex for thread-safe file operations
+    mutable std::shared_mutex cs_rw_blockfile;  ///< Read/Write lock for thread-safe file operations
 
     /**
      * @brief Write a hash to output stream
