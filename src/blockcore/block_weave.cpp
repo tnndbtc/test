@@ -327,203 +327,217 @@ std::pair<bool, std::vector<std::shared_ptr<CBlock>>> CBlockweave::VerifyBlock(s
         return {false, vec_blocks_to_broadcast};
     }
 
-    std::unique_lock<std::shared_mutex> lock_blocks(cs_rw_map_blocks);
-    std::unique_lock<std::shared_mutex> lock_orphans(cs_rw_map_orphan_blocks);
-    std::unique_lock<std::shared_mutex> lock_hashes(cs_rw_m_block_hashes);
-    std::unique_lock<std::shared_mutex> lock_mempool(cs_rw_m_mempool);
-
     std::string str_block_hash = p_block->GetHash().GetData();
     std::string str_parent_hash = p_block->GetPreviousBlock().GetData();
-
-    // 1. Check if block already exists in map_blocks
-    if (map_blocks.find(str_block_hash) != map_blocks.end()) {
-        LOG_TRACE("Block already exists, ignoring: " + str_block_hash.substr(0, 16) + "...");
-        return {false, vec_blocks_to_broadcast};
-    }
-
-    // 2. Check block height sequencing - parent must exist
-    auto it_parent = map_blocks.find(str_parent_hash);
-    if (it_parent == map_blocks.end()) {
-        // Parent not found, add to orphan blocks
-        LOG_INFO("Parent block not found for block #" + std::to_string(p_block->GetHeight()) +
-                 ", adding to orphan pool");
-
-        // Enforce max orphan blocks limit
-        if (map_orphan_blocks.size() >= MAX_ORPHAN_BLOCKS) {
-            LOG_WARN("Orphan blocks limit reached (" + std::to_string(MAX_ORPHAN_BLOCKS) +
-                     "), removing oldest orphan");
-            // Remove first orphan (simple eviction policy)
-            map_orphan_blocks.erase(map_orphan_blocks.begin());
+    
+    {
+        std::unique_lock<std::shared_mutex> lock_blocks(cs_rw_map_blocks);
+        std::unique_lock<std::shared_mutex> lock_orphans(cs_rw_map_orphan_blocks);
+        std::unique_lock<std::shared_mutex> lock_hashes(cs_rw_m_block_hashes);
+        std::unique_lock<std::shared_mutex> lock_mempool(cs_rw_m_mempool);
+    
+        // 1. Check if block already exists in map_blocks
+        if (map_blocks.find(str_block_hash) != map_blocks.end()) {
+            LOG_TRACE("Block already exists, ignoring: " + str_block_hash.substr(0, 16) + "...");
+            return {false, vec_blocks_to_broadcast};
         }
-
-        map_orphan_blocks[str_block_hash] = p_block;
-        LOG_INFO("Block added to orphan pool (total orphans: " +
-                 std::to_string(map_orphan_blocks.size()) + ")");
-        return {false, vec_blocks_to_broadcast};
-    }
-
-    std::shared_ptr<CBlock> p_parent = it_parent->second;
-
-    // Validate height sequencing
-    if (p_block->GetHeight() != p_parent->GetHeight() + 1) {
-        LOG_WARN("Invalid block height: expected " + std::to_string(p_parent->GetHeight() + 1) +
-                 ", got " + std::to_string(p_block->GetHeight()));
-        return {false, vec_blocks_to_broadcast};
-    }
-
-    // 3. Validate proof-of-work
-    // Recalculate the hash from block data and verify it matches the stored hash
-    // This matches the logic in CBlock::Mine() which computes:
-    //   m_hash = CHash(str_block_data + std::to_string(m_n_nonce));
-    std::string str_block_data = p_block->GetPreviousBlock().GetData() +
-                                 std::to_string(p_block->GetHeight()) +
-                                 std::to_string(p_block->GetTimestamp());
-
-    // Add all transaction IDs to the block data
-    const auto& transactions = p_block->GetTransactions();
-    for (const auto& p_tx : transactions) {
-        str_block_data += p_tx->m_id.GetData();
-    }
-
-    // Recalculate hash with the nonce
-    CHash calculated_hash(str_block_data + std::to_string(p_block->GetNonce()));
-
-    // Verify the calculated hash matches the stored hash
-    if (!(calculated_hash == p_block->GetHash())) {
-        LOG_WARN("Invalid proof-of-work: recalculated hash does not match stored hash");
-        return {false, vec_blocks_to_broadcast};
-    }
-
-    // Verify the hash meets the difficulty requirement (first 4 hex chars < "0fff")
-    const std::string& str_hash = calculated_hash.GetData();
-    if (str_hash.length() < 4 || str_hash.substr(0, 4) >= "0fff") {
-        LOG_WARN("Invalid proof-of-work: block hash " + str_hash.substr(0, 16) +
-                 "... does not meet difficulty requirement (first 4 hex chars must be < 0fff)");
-        return {false, vec_blocks_to_broadcast};
-    }
-
-    LOG_INFO("Block #" + std::to_string(p_block->GetHeight()) + " passed proof-of-work validation");
-
-    // TODO: Validate transactions in the block
-    // - Check transaction signatures
-    // - Verify transaction data integrity
-    // - Validate spend conditions
-    // This will be implemented in future updates
-
-    // 4. Remove duplicate transactions from mempool
-    const auto& block_txs = p_block->GetTransactions();
-    size_t n_removed = 0;
-    for (const auto& p_block_tx : block_txs) {
-        auto it = std::find_if(m_mempool.begin(), m_mempool.end(),
-            [&p_block_tx](const std::shared_ptr<CTransaction>& p_mempool_tx) {
-                return p_mempool_tx->m_id == p_block_tx->m_id;
-            });
-
-        if (it != m_mempool.end()) {
-            m_mempool.erase(it);
-            n_removed++;
+    
+        // 2. Validate proof-of-work
+        // Recalculate the hash from block data and verify it matches the stored hash
+        // This matches the logic in CBlock::Mine() which computes:
+        //   m_hash = CHash(str_block_data + std::to_string(m_n_nonce));
+        std::string str_block_data = p_block->GetPreviousBlock().GetData() +
+                                     std::to_string(p_block->GetHeight()) +
+                                     std::to_string(p_block->GetTimestamp());
+    
+        // Add all transaction IDs to the block data
+        const auto& transactions = p_block->GetTransactions();
+        for (const auto& p_tx : transactions) {
+            str_block_data += p_tx->m_id.GetData();
         }
+    
+        // Recalculate hash with the nonce
+        CHash calculated_hash(str_block_data + std::to_string(p_block->GetNonce()));
+    
+        // Verify the calculated hash matches the stored hash
+        if (!(calculated_hash == p_block->GetHash())) {
+            LOG_WARN("Invalid proof-of-work: recalculated hash does not match stored hash");
+            return {false, vec_blocks_to_broadcast};
+        }
+    
+        // Verify the hash meets the difficulty requirement (first 4 hex chars < "0fff")
+        const std::string& str_hash = calculated_hash.GetData();
+        if (str_hash.length() < 4 || str_hash.substr(0, 4) >= "0fff") {
+            LOG_WARN("Invalid proof-of-work: block hash " + str_hash.substr(0, 16) +
+                     "... does not meet difficulty requirement (first 4 hex chars must be < 0fff)");
+            return {false, vec_blocks_to_broadcast};
+        }
+    
+        LOG_INFO("Block #" + std::to_string(p_block->GetHeight()) + " passed proof-of-work validation");
+    
+        // TODO: Validate transactions in the block
+        // - Check transaction signatures
+        // - Verify transaction data integrity
+        // - Validate spend conditions
+        // This will be implemented in future updates
+    
+        // 3. Check block height sequencing - parent must exist
+        auto it_parent = map_blocks.find(str_parent_hash);
+        if (it_parent == map_blocks.end()) {
+            // Parent not found, add to orphan blocks
+            LOG_INFO("Parent block not found for block #" + std::to_string(p_block->GetHeight()) +
+                     ", adding to orphan pool");
+    
+            // Enforce max orphan blocks limit
+            if (map_orphan_blocks.size() >= MAX_ORPHAN_BLOCKS) {
+                LOG_WARN("Orphan blocks limit reached (" + std::to_string(MAX_ORPHAN_BLOCKS) +
+                         "), removing oldest orphan");
+                // Remove first orphan (simple eviction policy)
+                map_orphan_blocks.erase(map_orphan_blocks.begin());
+            }
+    
+            map_orphan_blocks[str_block_hash] = p_block;
+            LOG_INFO("Block added to orphan pool (total orphans: " +
+                     std::to_string(map_orphan_blocks.size()) + ")");
+            return {false, vec_blocks_to_broadcast};
+        }
+    
+        std::shared_ptr<CBlock> p_parent = it_parent->second;
+    
+        // Validate height sequencing
+        if (p_block->GetHeight() != p_parent->GetHeight() + 1) {
+            LOG_WARN("Invalid block height: expected " + std::to_string(p_parent->GetHeight() + 1) +
+                     ", got " + std::to_string(p_block->GetHeight()));
+            return {false, vec_blocks_to_broadcast};
+        }
+    
+        // 4. Remove duplicate transactions from mempool
+        const auto& block_txs = p_block->GetTransactions();
+        size_t n_removed = 0;
+        for (const auto& p_block_tx : block_txs) {
+            auto it = std::find_if(m_mempool.begin(), m_mempool.end(),
+                [&p_block_tx](const std::shared_ptr<CTransaction>& p_mempool_tx) {
+                    return p_mempool_tx->m_id == p_block_tx->m_id;
+                });
+    
+            if (it != m_mempool.end()) {
+                m_mempool.erase(it);
+                n_removed++;
+            }
+        }
+    
+        if (n_removed > 0) {
+            LOG_INFO("Removed " + std::to_string(n_removed) + " duplicate transactions from mempool");
+        }
+    
+        // 5. Add block to map_blocks
+        map_blocks[str_block_hash] = p_block;
+        m_block_hashes.push_back(p_block->GetHash());
+    
+        // Update current block if this block has higher height
+        if (p_block->GetHeight() > m_current_block->GetHeight()) {
+            m_current_block = p_block;
+            LOG_INFO("Updated current block to height " + std::to_string(m_current_block->GetHeight()));
+        }
+    
+        // Add to broadcast list
+        vec_blocks_to_broadcast.push_back(p_block);
     }
-
-    if (n_removed > 0) {
-        LOG_INFO("Removed " + std::to_string(n_removed) + " duplicate transactions from mempool");
-    }
-
-    // 5. Add block to map_blocks
-    map_blocks[str_block_hash] = p_block;
-    m_block_hashes.push_back(p_block->GetHash());
-
-    // Update current block if this block has higher height
-    if (p_block->GetHeight() > m_current_block->GetHeight()) {
-        m_current_block = p_block;
-        LOG_INFO("Updated current block to height " + std::to_string(m_current_block->GetHeight()));
-    }
-
-    // Add to broadcast list
-    vec_blocks_to_broadcast.push_back(p_block);
 
     // Save block to disk (unlock other locks first, blockfile has its own locking)
+    /*
     lock_blocks.unlock();
     lock_orphans.unlock();
     lock_hashes.unlock();
     lock_mempool.unlock();
+    */
 
     if (m_p_blockfile) {
         m_p_blockfile->SaveBlock(p_block);
     }
 
-    // Re-acquire locks for orphan processing
-    lock_blocks.lock();
-    lock_orphans.lock();
-    lock_hashes.lock();
+    std::vector<std::shared_ptr<CBlock>> vec_verified_orphan_blocks;
+    {
+        std::unique_lock<std::shared_mutex> lock_blocks(cs_rw_map_blocks);
+        std::unique_lock<std::shared_mutex> lock_orphans(cs_rw_map_orphan_blocks);
+        std::unique_lock<std::shared_mutex> lock_hashes(cs_rw_m_block_hashes);
 
-    LOG_INFO("Block #" + std::to_string(p_block->GetHeight()) + " verified and added to blockchain");
-
-    // 6. Scan orphan blocks to see if any need this parent
-    // TODO: in a loop to detect block forks that more than one orphan is pointing to parent block
-    std::vector<std::string> vec_orphans_to_process;
-    for (const auto& orphan_pair : map_orphan_blocks) {
-        const auto& p_orphan = orphan_pair.second;
-        if (p_orphan->GetPreviousBlock().GetData() == str_block_hash) {
-            vec_orphans_to_process.push_back(orphan_pair.first);
+        LOG_INFO("Block #" + std::to_string(p_block->GetHeight()) + " verified and added to blockchain");
+    
+        // 6. Scan orphan blocks to see if any need this parent
+        // TODO: in a loop to detect block forks that more than one orphan is pointing to parent block
+        std::vector<std::string> vec_orphans_to_process;
+        for (const auto& orphan_pair : map_orphan_blocks) {
+            const auto& p_orphan = orphan_pair.second;
+            if (p_orphan->GetPreviousBlock().GetData() == str_block_hash) {
+                vec_orphans_to_process.push_back(orphan_pair.first);
+            }
+        }
+    
+        // Process orphans - collect them and verify after releasing lock to avoid deadlock
+        std::vector<std::shared_ptr<CBlock>> vec_orphan_blocks;
+        for (const auto& str_orphan_hash : vec_orphans_to_process) {
+            auto it_orphan = map_orphan_blocks.find(str_orphan_hash);
+            if (it_orphan != map_orphan_blocks.end()) {
+                vec_orphan_blocks.push_back(it_orphan->second);
+                map_orphan_blocks.erase(it_orphan);
+                LOG_INFO("Removed orphan block from pool, will verify now");
+            }
+        }
+    
+        // Note: We're still holding the lock, so we need to inline the verification
+        // to avoid recursive mutex locking. We'll process orphans iteratively.
+        for (const auto& p_orphan : vec_orphan_blocks) {
+            LOG_INFO("Processing orphan block #" + std::to_string(p_orphan->GetHeight()) +
+                     " (parent now available)");
+    
+            std::string str_orphan_hash = p_orphan->GetHash().GetData();
+            std::string str_orphan_parent = p_orphan->GetPreviousBlock().GetData();
+    
+            // Inline verification (already holding lock)
+            // Check if parent exists now
+            auto it_orphan_parent = map_blocks.find(str_orphan_parent);
+            if (it_orphan_parent != map_blocks.end()) {
+                // Add to blockchain
+                map_blocks[str_orphan_hash] = p_orphan;
+                m_block_hashes.push_back(p_orphan->GetHash());
+    
+                // Update current block if needed
+                if (p_orphan->GetHeight() > m_current_block->GetHeight()) {
+                    m_current_block = p_orphan;
+                }
+    
+                // Add to broadcast list
+                vec_blocks_to_broadcast.push_back(p_orphan);
+    
+                vec_verified_orphan_blocks.push_back(p_orphan);
+    
+                LOG_INFO("Orphan block #" + std::to_string(p_orphan->GetHeight()) + " verified and added");
+            } else {
+                // Parent still missing, re-add to orphan pool
+                LOG_INFO("Orphan block parent still missing, re-adding to orphan pool");
+                map_orphan_blocks[str_orphan_hash] = p_orphan;
+            }
         }
     }
 
-    // Process orphans - collect them and verify after releasing lock to avoid deadlock
-    std::vector<std::shared_ptr<CBlock>> vec_orphan_blocks;
-    for (const auto& str_orphan_hash : vec_orphans_to_process) {
-        auto it_orphan = map_orphan_blocks.find(str_orphan_hash);
-        if (it_orphan != map_orphan_blocks.end()) {
-            vec_orphan_blocks.push_back(it_orphan->second);
-            map_orphan_blocks.erase(it_orphan);
-            LOG_INFO("Removed orphan block from pool, will verify now");
+    // Save to disk and recursively process orphans that depend on these blocks
+    for (const auto& p_orphan : vec_verified_orphan_blocks) {
+        if (m_p_blockfile) {
+            m_p_blockfile->SaveBlock(p_orphan);
         }
-    }
 
-    // Note: We're still holding the lock, so we need to inline the verification
-    // to avoid recursive mutex locking. We'll process orphans iteratively.
-    for (const auto& p_orphan : vec_orphan_blocks) {
-        LOG_INFO("Processing orphan block #" + std::to_string(p_orphan->GetHeight()) +
-                 " (parent now available)");
-
-        std::string str_orphan_hash = p_orphan->GetHash().GetData();
-        std::string str_orphan_parent = p_orphan->GetPreviousBlock().GetData();
-
-        // Inline verification (already holding lock)
-        // Check if parent exists now
-        auto it_orphan_parent = map_blocks.find(str_orphan_parent);
-        if (it_orphan_parent != map_blocks.end()) {
-            // Add to blockchain
-            map_blocks[str_orphan_hash] = p_orphan;
-            m_block_hashes.push_back(p_orphan->GetHash());
-
-            // Update current block if needed
-            if (p_orphan->GetHeight() > m_current_block->GetHeight()) {
-                m_current_block = p_orphan;
+        // Recursively verify this orphan to process any orphans that depend on it
+        // This handles chains of orphans (orphan2 -> orphan1 -> parent)
+        auto [f_recursive_success, vec_recursive_blocks] = VerifyBlock(p_orphan);
+        if (f_recursive_success && !vec_recursive_blocks.empty()) {
+            // Add recursively verified blocks to broadcast list
+            for (const auto& p_recursive_block : vec_recursive_blocks) {
+                // Skip the orphan itself as it's already in vec_blocks_to_broadcast
+                if (p_recursive_block != p_orphan) {
+                    vec_blocks_to_broadcast.push_back(p_recursive_block);
+                }
             }
-
-            // Add to broadcast list
-            vec_blocks_to_broadcast.push_back(p_orphan);
-
-            // Save to disk (blockfile has its own locking - unlock first to avoid holding locks during I/O)
-            lock_blocks.unlock();
-            lock_orphans.unlock();
-            lock_hashes.unlock();
-
-            if (m_p_blockfile) {
-                m_p_blockfile->SaveBlock(p_orphan);
-            }
-
-            // Re-acquire locks
-            lock_blocks.lock();
-            lock_orphans.lock();
-            lock_hashes.lock();
-
-            LOG_INFO("Orphan block #" + std::to_string(p_orphan->GetHeight()) + " verified and added");
-        } else {
-            // Parent still missing, re-add to orphan pool
-            LOG_INFO("Orphan block parent still missing, re-adding to orphan pool");
-            map_orphan_blocks[str_orphan_hash] = p_orphan;
         }
     }
 

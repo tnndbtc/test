@@ -181,6 +181,137 @@ class P2PRelayTest(TestFramework):
 
         self.log_info("test_1_mine_block_broadcast: Block relay test completed successfully!")
 
+    @unittest.skip("Temporarily disabling this test")
+    def test_2_block_transaction_broadcast(self):
+        """
+        Test block and transaction broadcast through relay network.
+
+        Steps:
+        1. Send one transaction to node0
+        2. Node0 mines it into a block
+        3. Node0 stops mining
+        4. Send another transaction to node0 (stays in mempool)
+        5. Node0 broadcasts INVENTORY for the new block and transaction to node1
+        6. Node1 responds with GETDATA
+        7. Node0 responds with BLOCK and TX
+        8. Node1 broadcasts INVENTORY to node2
+        9. Node2 responds with GETDATA
+        10. Node1 responds with BLOCK
+        11. Verify all nodes have blocks: 2 and mempool size: 1
+        """
+        self.log_info("test_2_block_transaction_broadcast: Starting block+tx relay test...")
+
+        node0 = self.test_nodes[0]
+        node1 = self.test_nodes[1]
+        node2 = self.test_nodes[2]
+
+        # Step 1: Send first transaction to node0
+        self.log_info("Step 1: Sending first transaction to node0...")
+        tx1_data = {
+            "from": "wallet_node0_tx1",
+            "to": "wallet_receiver_tx1",
+            "data": "test_block_tx_data_1"
+        }
+
+        response = node0.post("/transaction", json_data=tx1_data)
+        self.assert_equal(response.status_code, 200, "First transaction submission should succeed")
+        self.log_info(f"First transaction submitted: {response.json()}")
+        time.sleep(1)
+
+        # Step 2: Wait for Node0 to mine the first transaction
+        self.log_info("Step 2: Waiting for Node0 to mine first transaction...")
+        max_wait = 60
+        start_time = time.time()
+        block_mined = False
+
+        while time.time() - start_time < max_wait:
+            chain_info = node0.get_chain_info()
+            blocks = chain_info.get('blocks', 0)
+
+            if blocks >= 2:
+                self.log_info(f"Node0 mined block! blocks={blocks}")
+                block_mined = True
+                break
+
+            time.sleep(1)
+
+        self.assert_true(block_mined, "Node0 should have mined first transaction within 60 seconds")
+
+        # Step 3: Stop mining on node0
+        self.log_info("Step 3: Stopping mining on node0...")
+        response = node0.post("/mine/stop")
+        self.assert_equal(response.status_code, 200, "Mining stop should succeed")
+        time.sleep(1)
+
+        # Step 4: Send second transaction to node0 (will stay in mempool)
+        self.log_info("Step 4: Sending second transaction to node0 (will stay in mempool)...")
+        tx2_data = {
+            "from": "wallet_node0_tx2",
+            "to": "wallet_receiver_tx2",
+            "data": "test_block_tx_data_2"
+        }
+
+        response = node0.post("/transaction", json_data=tx2_data)
+        self.assert_equal(response.status_code, 200, "Second transaction submission should succeed")
+        self.log_info(f"Second transaction submitted: {response.json()}")
+        time.sleep(2)
+
+        # Verify node0 has transaction in mempool
+        chain_info = node0.get_chain_info()
+        mempool_size = chain_info.get('mempool_size', 0)
+        self.log_info(f"Node0 mempool size: {mempool_size}")
+        self.assert_equal(mempool_size, 1, "Node0 should have 1 transaction in mempool")
+
+        # Steps 5-10: Wait for block and transaction relay through the network
+        # The P2P protocol should automatically:
+        # - Node0 broadcasts INVENTORY (block + tx) to node1
+        # - Node1 sends GETDATA to node0
+        # - Node0 responds with BLOCK and TX to node1
+        # - Node1 broadcasts INVENTORY to node2
+        # - Node2 sends GETDATA to node1
+        # - Node1 responds with BLOCK to node2
+
+        self.log_info("Steps 5-10: Waiting for automatic block+tx relay through P2P network...")
+        self.log_info("  (Node0 -> Node1 -> Node2 via INVENTORY/GETDATA/BLOCK/TX)")
+
+        # Wait for blocks and transactions to propagate
+        max_relay_wait = 30
+        relay_start = time.time()
+        all_synced = False
+
+        while time.time() - relay_start < max_relay_wait:
+            node1_chain = node1.get_chain_info()
+            node2_chain = node2.get_chain_info()
+
+            node1_blocks = node1_chain.get('blocks', 0)
+            node1_mempool = node1_chain.get('mempool_size', 0)
+            node2_blocks = node2_chain.get('blocks', 0)
+            node2_mempool = node2_chain.get('mempool_size', 0)
+
+            self.log_info(f"Relay progress: Node1 blocks={node1_blocks} mempool={node1_mempool}, "
+                         f"Node2 blocks={node2_blocks} mempool={node2_mempool}")
+
+            if node1_blocks >= 2 and node2_blocks >= 2 and node1_mempool >= 1 and node2_mempool >= 1:
+                self.log_info("Block and transaction successfully relayed to all nodes!")
+                all_synced = True
+                break
+
+            time.sleep(2)
+
+        # Step 11: Verify all nodes have blocks: 2 and mempool_size: 1
+        self.log_info("Step 11: Verifying final block counts and mempool sizes...")
+
+        for i, node in enumerate(self.test_nodes):
+            chain_info = node.get_chain_info()
+            blocks = chain_info.get('blocks', -1)
+            mempool_size = chain_info.get('mempool_size', -1)
+
+            self.log_info(f"Node{i} final state: blocks={blocks}, mempool_size={mempool_size}")
+            self.assert_equal(blocks, 2, f"Node{i} should have 2 blocks (genesis + mined block)")
+            self.assert_equal(mempool_size, 1, f"Node{i} should have 1 transaction in mempool")
+
+        self.log_info("test_2_block_transaction_broadcast: Block+tx relay test completed successfully!")
+
 
 if __name__ == "__main__":
     unittest.main()
