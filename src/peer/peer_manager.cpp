@@ -2033,13 +2033,6 @@ bool CPeerManager::SendMessageToPeer(const std::string& str_address, int n_port,
  * sends to other peers.
  */
 size_t CPeerManager::BroadcastMessage(const CPeerMessage& message) {
-    // Serialize the message once
-    std::string str_serialized = message.Serialize();
-    if (str_serialized.empty()) {
-        LOG_ERROR("Failed to serialize message of type " + message.GetTypeString() + " for broadcast");
-        return 0;
-    }
-
     // Copy socket descriptors and peer info while holding the lock
     // This prevents blocking I/O operations from holding the mutex
     struct PeerInfo {
@@ -2079,33 +2072,23 @@ size_t CPeerManager::BroadcastMessage(const CPeerMessage& message) {
             if (i > 0) str_peer_list += ", ";
             str_peer_list += peer_sockets[i].str_peer_address;
         }
-        LOG_TRACE("Broadcasting " + message.GetTypeString() + " message (" +
-                 std::to_string(str_serialized.length()) + " bytes) to " +
+        LOG_TRACE("Broadcasting " + message.GetTypeString() + " message to " +
                  std::to_string(peer_sockets.size()) + " peers: " + str_peer_list);
     } else {
-        LOG_TRACE("Broadcasting " + message.GetTypeString() + " message (" +
-                 std::to_string(str_serialized.length()) + " bytes) to 0 peers");
+        LOG_TRACE("Broadcasting " + message.GetTypeString() + " message to 0 peers");
     }
 
-    // Send to all peers without holding the lock
+    // Send to all peers using SendMessageAsync for consistent async I/O
     // This prevents slow/blocked sockets from blocking other operations
-    size_t n_sent_count = 0;
-
     for (const auto& peer_info : peer_sockets) {
-        ssize_t n_sent = send(peer_info.n_socket, str_serialized.c_str(), str_serialized.length(), 0);
-        if (n_sent > 0) {
-            n_sent_count++;
-            LOG_TRACE("Successfully sent " + message.GetTypeString() + " to peer " + peer_info.str_peer_address);
-        } else {
-            LOG_ERROR("Failed to send " + message.GetTypeString() + " to peer " + peer_info.str_peer_address +
-                      " (error: " + std::string(strerror(errno)) + ")");
-        }
+        SendMessageAsync(peer_info.n_socket, message);
+        LOG_TRACE("Queued " + message.GetTypeString() + " for async send to peer " + peer_info.str_peer_address);
     }
 
-    LOG_TRACE("Broadcast complete: sent " + message.GetTypeString() + " to " + std::to_string(n_sent_count) + " of " +
+    LOG_TRACE("Broadcast complete: queued " + message.GetTypeString() + " for " +
              std::to_string(peer_sockets.size()) + " peers");
 
-    return n_sent_count;
+    return peer_sockets.size();
 }
 
 /**
