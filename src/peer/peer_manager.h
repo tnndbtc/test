@@ -446,7 +446,7 @@ private:
      * Sends full inventory list to peers, filtering per-peer based on what they already know.
      * New format: [count][type][hash][type][hash]... with multiple items per message.
      */
-    void BroadcastInventory(const std::vector<std::pair<ObjectType::Type, std::string>>& vec_inventory);
+    void BroadcastInventoryByPeerKnowledge(const std::vector<std::pair<ObjectType::Type, std::string>>& vec_inventory);
 
     /**
      * @brief Schedule GETDATA message to request missing inventory items

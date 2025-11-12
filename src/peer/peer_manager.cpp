@@ -1378,9 +1378,8 @@ void CPeerManager::HandleInventoryMessage(CPeerConnection* p_peer, const CPeerMe
         n_offset += MESSAGE_HASH_SIZE;
 
         // Add to inventory list for relay
-        // vec_inventory.push_back({obj_type, str_hash});
-        CHash debug_hash(reinterpret_cast<const unsigned char*>(str_hash.data()), str_hash.size());
-        LOG_TRACE("HandleInventoryMessage: received notification for object type: " + std::to_string(obj_type) + " hash: " + debug_hash.GetData());
+        CHash hash_trace(reinterpret_cast<const unsigned char*>(str_hash.data()), str_hash.size());
+        LOG_TRACE("HandleInventoryMessage: received notification for object type: " + std::to_string(obj_type) + " hash: " + hash_trace.GetData());
 
         // Mark this peer as knowing about this inventory
         MarkInventoryKnown(p_peer->peer_node, obj_type, str_hash);
@@ -1411,16 +1410,6 @@ void CPeerManager::HandleInventoryMessage(CPeerConnection* p_peer, const CPeerMe
              p_peer->peer_node->GetIdentifier() + " (" +
              std::to_string(vec_missing_items.size()) + " missing, " +
              std::to_string(n_count - vec_missing_items.size()) + " already have)");
-
-    /*
-    // Relay to other peers who don't know about it (scheduled asynchronously)
-    if (!vec_inventory.empty()) {
-        std::vector<std::pair<ObjectType::Type, std::string>> inventory = vec_inventory;
-        boost::asio::post(*m_thread_pool, [this, inventory]() {
-            BroadcastInventory(inventory);
-        });
-    }
-    */
 
     // Request missing items via GETDATA (scheduled asynchronously)
     if (!vec_missing_items.empty()) {
@@ -1579,7 +1568,7 @@ void CPeerManager::HandleTxMessage(CPeerConnection* p_peer, const CPeerMessage& 
 
         boost::asio::post(*m_thread_pool, [this, vec_inventory]() {
             LOG_TRACE("Broadcasted INVENTORY for received transaction");
-            BroadcastInventory(vec_inventory);
+            BroadcastInventoryByPeerKnowledge(vec_inventory);
         });
     }
 }
@@ -1619,7 +1608,7 @@ void CPeerManager::HandleBlockMessage(CPeerConnection* p_peer, const CPeerMessag
                 }
 
                 boost::asio::post(*m_thread_pool, [this, vec_inventory]() {
-                    BroadcastInventory(vec_inventory);
+                    BroadcastInventoryByPeerKnowledge(vec_inventory);
                     LOG_TRACE("Broadcasted INVENTORY for " + std::to_string(vec_inventory.size()) + " accepted blocks");
                 });
             }
@@ -2033,13 +2022,9 @@ bool CPeerManager::SendMessageToPeer(const std::string& str_address, int n_port,
  * sends to other peers.
  */
 size_t CPeerManager::BroadcastMessage(const CPeerMessage& message) {
-    // Copy socket descriptors and peer info while holding the lock
+    // Collect peer connections while holding the lock
     // This prevents blocking I/O operations from holding the mutex
-    struct PeerInfo {
-        int n_socket;
-        std::string str_peer_address;
-    };
-    std::vector<PeerInfo> peer_sockets;
+    std::vector<CPeerConnection*> vec_peers;
 
     {
         std::lock_guard<std::mutex> lock(cs_peers);
@@ -2047,48 +2032,44 @@ size_t CPeerManager::BroadcastMessage(const CPeerMessage& message) {
         // Add all connected outbound peers
         for (const auto& p_peer : m_outbound_peers) {
             if (p_peer && p_peer->f_connected && p_peer->n_socket >= 0) {
-                peer_sockets.push_back({
-                    p_peer->n_socket,
-                    p_peer->peer_node->GetIdentifier()
-                });
+                vec_peers.push_back(p_peer.get());
             }
         }
 
         // Add all connected inbound peers
         for (const auto& p_peer : m_inbound_peers) {
             if (p_peer && p_peer->f_connected && p_peer->n_socket >= 0) {
-                peer_sockets.push_back({
-                    p_peer->n_socket,
-                    p_peer->peer_node->GetIdentifier()
-                });
+                vec_peers.push_back(p_peer.get());
             }
         }
     }
 
     // Log detailed broadcast information at TRACE level
-    if (!peer_sockets.empty()) {
+    if (!vec_peers.empty()) {
         std::string str_peer_list;
-        for (size_t i = 0; i < peer_sockets.size(); ++i) {
+        for (size_t i = 0; i < vec_peers.size(); ++i) {
             if (i > 0) str_peer_list += ", ";
-            str_peer_list += peer_sockets[i].str_peer_address;
+            str_peer_list += vec_peers[i]->peer_node->GetIdentifier();
         }
         LOG_TRACE("Broadcasting " + message.GetTypeString() + " message to " +
-                 std::to_string(peer_sockets.size()) + " peers: " + str_peer_list);
+                 std::to_string(vec_peers.size()) + " peers: " + str_peer_list);
     } else {
         LOG_TRACE("Broadcasting " + message.GetTypeString() + " message to 0 peers");
+        return 0;
     }
 
     // Send to all peers using SendMessageAsync for consistent async I/O
     // This prevents slow/blocked sockets from blocking other operations
-    for (const auto& peer_info : peer_sockets) {
-        SendMessageAsync(peer_info.n_socket, message);
-        LOG_TRACE("Queued " + message.GetTypeString() + " for async send to peer " + peer_info.str_peer_address);
+    for (const auto& p_peer : vec_peers) {
+        SendMessageAsync(p_peer->n_socket, message);
+        LOG_TRACE("Queued " + message.GetTypeString() + " for async send to peer " +
+                 p_peer->peer_node->GetIdentifier());
     }
 
     LOG_TRACE("Broadcast complete: queued " + message.GetTypeString() + " for " +
-             std::to_string(peer_sockets.size()) + " peers");
+             std::to_string(vec_peers.size()) + " peers");
 
-    return peer_sockets.size();
+    return vec_peers.size();
 }
 
 /**
@@ -2195,7 +2176,7 @@ bool CPeerManager::PeerKnowsInventory(std::shared_ptr<IPeerNode> p_peer_node, Ob
     return it_type->second.find(str_inventory_hash) != it_type->second.end();
 }
 
-void CPeerManager::BroadcastInventory(const std::vector<std::pair<ObjectType::Type, std::string>>& vec_inventory) {
+void CPeerManager::BroadcastInventoryByPeerKnowledge(const std::vector<std::pair<ObjectType::Type, std::string>>& vec_inventory) {
     if (vec_inventory.empty()) {
         return;  // Nothing to broadcast
     }
@@ -2249,7 +2230,7 @@ void CPeerManager::BroadcastInventory(const std::vector<std::pair<ObjectType::Ty
             // Write hash (MESSAGE_HASH_SIZE bytes, binary format)
             str_payload.append(item.second);
             CHash hash_trace(reinterpret_cast<const unsigned char*>(item.second.data()), item.second.size());
-            LOG_TRACE("BroadcastInventory: broadcasting object type: " + std::to_string(item.first) + " hash: " + hash_trace.GetData());
+            LOG_TRACE("BroadcastInventoryByPeerKnowledge: broadcasting object type: " + std::to_string(item.first) + " hash: " + hash_trace.GetData());
         }
 
         // Send message
@@ -2290,8 +2271,8 @@ void CPeerManager::ScheduleGetDataMessage(int n_socket, const std::vector<std::p
 
         // Write hash (MESSAGE_HASH_SIZE bytes, binary format)
         str_payload.append(item.second);
-        CHash debug_hash(reinterpret_cast<const unsigned char*>(item.second.data()), item.second.size());
-        LOG_TRACE("ScheduleGetDataMessage: requesting object type: " + std::to_string(item.first) + " hash: " + debug_hash.GetData());
+        CHash hash_trace(reinterpret_cast<const unsigned char*>(item.second.data()), item.second.size());
+        LOG_TRACE("ScheduleGetDataMessage: requesting object type: " + std::to_string(item.first) + " hash: " + hash_trace.GetData());
     }
 
     // Send message
