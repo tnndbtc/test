@@ -102,4 +102,11 @@ constexpr size_t BLOCK_UINT32_SIZE = 4;
 // Size of uint8_t fields (transaction type)
 constexpr size_t BLOCK_UINT8_SIZE = 1;
 
+// ============================================================
+// Network Configuration
+// ============================================================
+
+// Default network type (mainnet, testnet, or localnet)
+const std::string DEFAULT_NETWORK = "mainnet";
+
 #endif // SETTINGS_H

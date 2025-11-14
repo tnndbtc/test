@@ -99,8 +99,8 @@ void CBlock::Mine() {
 std::string CBlock::ToString() const {
     std::stringstream ss;
     ss << "Block #" << m_n_height << "\n"
-       << "  Hash: " << m_hash.GetData().substr(0, 16) << "...\n"
-       << "  Previous: " << m_previous_block.GetData().substr(0, 16) << "...\n"
+       << "  Hash: " << m_hash.GetData() << "...\n"
+       << "  Previous: " << m_previous_block.GetData() << "...\n"
        << "  Miner: " << m_str_miner << "\n"
        << "  Transactions: " << m_transactions.size() << "\n"
        << "  Data Size: " << m_n_cumulative_data_size << " bytes\n"

@@ -30,10 +30,10 @@ class P2PTest(TestFramework):
     def setup(self):
         """Setup test environment - configure to start 4 local nodes and establish connections."""
         # Nodes will be created as:
-        # Node 0: REST API port 28443, P2P port 28333
-        # Node 1: REST API port 28444, P2P port 28334
-        # Node 2: REST API port 28445, P2P port 28335
-        # Node 3: REST API port 28446, P2P port 28336
+        # Node 0: REST API port 48443, P2P port 48333
+        # Node 1: REST API port 48444, P2P port 48334
+        # Node 2: REST API port 48445, P2P port 48335
+        # Node 3: REST API port 48446, P2P port 48336
         #
         # Node0 will connect to nodes 1, 2, 3 during setup
         self.log_info("setup: Establishing peer connections...")
@@ -91,7 +91,7 @@ class P2PTest(TestFramework):
         self.log_info("test_02_port_isolation: Verifying port isolation...")
 
         ports_used = set()
-        base_port = 28443
+        base_port = 48443
 
         for test_node in self.test_nodes:
             expected_port = base_port + test_node.index
@@ -300,7 +300,7 @@ class P2PTest(TestFramework):
             )
 
             # Find the connection to Node0 (127.0.0.1:port)
-            # note that port is not 28333 because it's a peer port, not listner port
+            # note that port is not 48333 because it's a peer port, not listner port
             node0_peer = peers_list[0]
 
             self.assert_true(

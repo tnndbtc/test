@@ -128,6 +128,9 @@ TEST(BlockFileSaveAndLoadEmptyBlock) {
     ASSERT_EQUAL(p_loaded->GetMiner(), "genesis_miner", "Values should match");
     ASSERT_EQUAL(p_loaded->GetTransactions().size(), 0, "Values should match");
 
+    // Verify hash is preserved after save/load cycle
+    ASSERT_EQUAL(p_loaded->GetHash().GetData(), hash.GetData(), "Hash should be preserved");
+
     CleanupDir(str_test_dir);
 }
 
@@ -149,6 +152,9 @@ TEST(BlockFileSaveAndLoadWithTransactions) {
     ASSERT_EQUAL(p_loaded->GetHeight(), 5, "Values should match");
     ASSERT_EQUAL(p_loaded->GetMiner(), "miner_address", "Values should match");
     ASSERT_EQUAL(p_loaded->GetTransactions().size(), 3, "Values should match");
+
+    // Verify hash is preserved after save/load cycle
+    ASSERT_EQUAL(p_loaded->GetHash().GetData(), hash.GetData(), "Hash should be preserved");
 
     // Verify transaction data
     const auto& transactions = p_loaded->GetTransactions();
@@ -182,6 +188,18 @@ TEST(BlockFileSaveMultipleBlocks) {
     for (size_t i = 0; i < hashes.size(); i++) {
         auto p_loaded = blockfile.LoadBlock(hashes[i]);
         ASSERT_NOT_NULL(p_loaded, "Should not be null");
+
+        // Verify loaded block's hash is in the original hashes vector
+        CHash loaded_hash = p_loaded->GetHash();
+        bool f_found = false;
+        for (const auto& hash : hashes) {
+            if (loaded_hash.GetData() == hash.GetData()) {
+                f_found = true;
+                break;
+            }
+        }
+        ASSERT_TRUE(f_found, "Loaded block hash should be in original hashes vector");
+
         ASSERT_EQUAL(p_loaded->GetHeight(), static_cast<int64_t>(i), "Values should match");
         ASSERT_EQUAL(p_loaded->GetMiner(), "miner_" + std::to_string(i), "Miner should match");
         ASSERT_EQUAL(p_loaded->GetTransactions().size(), 2, "Values should match");
@@ -247,8 +265,28 @@ TEST(BlockFileDuplicateSave) {
     ASSERT_TRUE(blockfile.SaveBlock(p_block), "Assertion should be true");
     ASSERT_TRUE(blockfile.BlockExists(hash), "Assertion should be true");
 
+    // Get the block file size after first save
+    std::string str_block_file = str_test_dir + "/block_" +
+                                 std::to_string(p_block->GetHeight()).insert(0, 10 - std::to_string(p_block->GetHeight()).length(), '0') +
+                                 ".dat";
+    std::ifstream ifs(str_block_file, std::ios::binary | std::ios::ate);
+    size_t n_size_before = 0;
+    if (ifs.is_open()) {
+        n_size_before = ifs.tellg();
+        ifs.close();
+    }
+
     // Try to save same block again (should succeed but not duplicate)
     ASSERT_TRUE(blockfile.SaveBlock(p_block), "Assertion should be true");
+
+    // Verify file size has not changed (no duplicate data written)
+    std::ifstream ifs2(str_block_file, std::ios::binary | std::ios::ate);
+    size_t n_size_after = 0;
+    if (ifs2.is_open()) {
+        n_size_after = ifs2.tellg();
+        ifs2.close();
+    }
+    ASSERT_EQUAL(n_size_after, n_size_before, "Block file size should not change on duplicate save");
 
     // Should still be able to load it
     auto p_loaded = blockfile.LoadBlock(hash);

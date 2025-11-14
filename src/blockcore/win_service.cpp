@@ -451,12 +451,16 @@ extern int RunApplicationMain(const std::string& str_config_file, bool f_daemon_
  * Calls into the main application function defined in main.cpp.
  */
 int RunApplication(int argc, char* argv[]) {
-    // Parse arguments for config file (if provided by SCM)
+    // Parse arguments for config file and network (if provided by SCM)
     std::string str_config_file = "bweave.conf";
+    std::string str_network = "";  // Empty means use config file value
     for (int n_i = 1; n_i < argc; n_i++) {
         std::string str_arg = argv[n_i];
         if ((str_arg == "-c" || str_arg == "--config") && n_i + 1 < argc) {
             str_config_file = argv[++n_i];
+        }
+        else if (str_arg == "--network" && n_i + 1 < argc) {
+            str_network = argv[++n_i];
         }
     }
 
@@ -464,7 +468,7 @@ int RunApplication(int argc, char* argv[]) {
     bool f_daemon_mode = false;
 
     // Call main application logic
-    return RunApplicationMain(str_config_file, f_daemon_mode);
+    return RunApplicationMain(str_config_file, f_daemon_mode, str_network);
 }
 
 #endif // _WIN32

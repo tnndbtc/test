@@ -43,31 +43,47 @@ uint32_t CPeerMessage::NetworkToHost(uint32_t n_value) {
 /**
  * @brief Default constructor - creates UNKNOWN message
  */
-CPeerMessage::CPeerMessage() : m_str_type(MessageType::UNKNOWN) {
+CPeerMessage::CPeerMessage(uint32_t n_magic)
+    : m_n_magic(n_magic), m_str_type(MessageType::UNKNOWN) {
 }
 
 /**
  * @brief Construct message with specific type
  */
-CPeerMessage::CPeerMessage(const std::string& str_type) : m_str_type(str_type) {
+CPeerMessage::CPeerMessage(const std::string& str_type, uint32_t n_magic)
+    : m_n_magic(n_magic), m_str_type(str_type) {
 }
 
 /**
  * @brief Construct message with type and string payload
  */
-CPeerMessage::CPeerMessage(const std::string& str_type, const std::string& str_payload)
-    : m_str_type(str_type) {
+CPeerMessage::CPeerMessage(const std::string& str_type, const std::string& str_payload, uint32_t n_magic)
+    : m_n_magic(n_magic), m_str_type(str_type) {
     SetPayload(str_payload);
 }
 
 /**
  * @brief Construct message with type and binary payload
  */
-CPeerMessage::CPeerMessage(const std::string& str_type, const std::vector<uint8_t>& payload)
-    : m_str_type(str_type), m_payload(payload) {
+CPeerMessage::CPeerMessage(const std::string& str_type, const std::vector<uint8_t>& payload, uint32_t n_magic)
+    : m_n_magic(n_magic), m_str_type(str_type), m_payload(payload) {
 }
 
 // ============= Getters and Setters =============
+
+/**
+ * @brief Get network magic bytes
+ */
+uint32_t CPeerMessage::GetMagic() const {
+    return m_n_magic;
+}
+
+/**
+ * @brief Set network magic bytes
+ */
+void CPeerMessage::SetMagic(uint32_t n_magic) {
+    m_n_magic = n_magic;
+}
 
 /**
  * @brief Get message type
@@ -122,7 +138,7 @@ size_t CPeerMessage::GetPayloadSize() const {
 
 /**
  * @brief Serialize message to byte string for transmission
- * @return Serialized message in format: [1 byte type_length][N bytes type][4 bytes payload_length][M bytes payload]
+ * @return Serialized message in format: [4 bytes magic][1 byte type_length][N bytes type][4 bytes payload_length][M bytes payload]
  *
  * The length fields are in network byte order (big-endian) for platform independence.
  */
@@ -131,23 +147,28 @@ std::string CPeerMessage::Serialize() const {
 
     // Calculate total size
     uint8_t n_type_length = static_cast<uint8_t>(m_str_type.length());
-    size_t n_total_size = 1 + n_type_length + 4 + m_payload.size();
+    size_t n_total_size = 4 + 1 + n_type_length + 4 + m_payload.size();
     str_result.reserve(n_total_size);
 
-    // 1. Add type length (1 byte)
+    // 1. Add magic bytes (4 bytes, network byte order)
+    uint32_t n_magic_network = HostToNetwork(m_n_magic);
+    const char* p_magic = reinterpret_cast<const char*>(&n_magic_network);
+    str_result.append(p_magic, 4);
+
+    // 2. Add type length (1 byte)
     str_result.push_back(static_cast<char>(n_type_length));
 
-    // 2. Add type string (N bytes)
+    // 3. Add type string (N bytes)
     str_result.append(m_str_type);
 
-    // 3. Add payload length (4 bytes, network byte order)
+    // 4. Add payload length (4 bytes, network byte order)
     uint32_t n_payload_length = static_cast<uint32_t>(m_payload.size());
     uint32_t n_length_network = HostToNetwork(n_payload_length);
 
     const char* p_length = reinterpret_cast<const char*>(&n_length_network);
     str_result.append(p_length, 4);
 
-    // 4. Add payload data
+    // 5. Add payload data
     if (!m_payload.empty()) {
         str_result.append(reinterpret_cast<const char*>(m_payload.data()), m_payload.size());
     }
@@ -156,51 +177,68 @@ std::string CPeerMessage::Serialize() const {
 }
 
 /**
- * @brief Deserialize message from byte string
+ * @brief Deserialize message from byte string with magic validation
  * @param str_data Serialized message data
- * @return true if deserialization successful, false if data is invalid
+ * @param n_expected_magic Expected network magic bytes (0 = don't validate)
+ * @return true if deserialization successful and magic matches, false if data is invalid
  *
- * Parses message format: [1 byte type_length][N bytes type][4 bytes payload_length][M bytes payload]
- * Validates that the data contains enough bytes for the type and payload.
+ * Parses message format: [4 bytes magic][1 byte type_length][N bytes type][4 bytes payload_length][M bytes payload]
+ * Validates that the data contains enough bytes for the type and payload, and magic matches if specified.
  */
-bool CPeerMessage::Deserialize(const std::string& str_data) {
-    // Need at least 1 byte for type length
-    if (str_data.size() < 1) {
+bool CPeerMessage::Deserialize(const std::string& str_data, uint32_t n_expected_magic) {
+    // Need at least 4 bytes for magic
+    if (str_data.size() < 4) {
         return false;
     }
 
     size_t n_offset = 0;
 
-    // 1. Parse type length (1 byte)
+    // 1. Parse magic bytes (4 bytes, network byte order)
+    uint32_t n_magic_network;
+    std::memcpy(&n_magic_network, str_data.data() + n_offset, 4);
+    m_n_magic = NetworkToHost(n_magic_network);
+    n_offset += 4;
+
+    // 2. Validate magic if expected magic is provided (non-zero)
+    if (n_expected_magic != 0 && m_n_magic != n_expected_magic) {
+        return false;  // Magic mismatch - wrong network
+    }
+
+    // 3. Check if we have enough data for type length
+    if (str_data.size() < n_offset + 1) {
+        return false;
+    }
+
+    // 4. Parse type length (1 byte)
     uint8_t n_type_length = static_cast<uint8_t>(str_data[n_offset]);
     n_offset += 1;
 
-    // 2. Check if we have enough data for type string
+    // 5. Check if we have enough data for type string
     if (str_data.size() < n_offset + n_type_length) {
         return false;
     }
 
-    // 3. Parse type string (N bytes)
+    // 6. Parse type string (N bytes)
     m_str_type = str_data.substr(n_offset, n_type_length);
     n_offset += n_type_length;
 
-    // 4. Check if we have enough data for payload length
+    // 7. Check if we have enough data for payload length
     if (str_data.size() < n_offset + 4) {
         return false;
     }
 
-    // 5. Parse payload length (4 bytes, network byte order)
+    // 8. Parse payload length (4 bytes, network byte order)
     uint32_t n_length_network;
     std::memcpy(&n_length_network, str_data.data() + n_offset, 4);
     uint32_t n_payload_length = NetworkToHost(n_length_network);
     n_offset += 4;
 
-    // 6. Validate that we have enough data for the payload
+    // 9. Validate that we have enough data for the payload
     if (str_data.size() < n_offset + n_payload_length) {
         return false;
     }
 
-    // 7. Extract payload
+    // 10. Extract payload
     m_payload.clear();
     if (n_payload_length > 0) {
         const uint8_t* p_payload = reinterpret_cast<const uint8_t*>(str_data.data() + n_offset);

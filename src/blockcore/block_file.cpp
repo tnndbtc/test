@@ -1,6 +1,7 @@
 // ============= block_file.cpp =============
 #include "block_file.h"
 #include "logger/logger.h"
+#include "utils/pathutil.h"
 #include <sys/stat.h>
 #include <cstring>
 #include <sstream>
@@ -8,16 +9,11 @@
 
 CBlockFile::CBlockFile(const std::string& str_data_dir)
     : m_str_data_dir(str_data_dir), m_n_current_file_number(0), m_n_current_file_size(0) {
-    // Create data directory if it doesn't exist
-    struct stat st;
-    if (stat(m_str_data_dir.c_str(), &st) != 0) {
-        // Directory doesn't exist, create it
-#ifdef PLATFORM_WINDOWS
-        mkdir(m_str_data_dir.c_str());
-#else
-        mkdir(m_str_data_dir.c_str(), 0755);
-#endif
-        LOG_INFO("Created block data directory: " + m_str_data_dir);
+    // Create data directory recursively if it doesn't exist
+    if (!CreateDirectoryRecursive(m_str_data_dir)) {
+        LOG_ERROR("Failed to create block data directory: " + m_str_data_dir);
+    } else {
+        LOG_INFO("Block data directory ready: " + m_str_data_dir);
     }
 
     // Load existing index
@@ -184,15 +180,6 @@ CHash CBlockFile::ReadHash(std::ifstream& ifs) const {
         return CHash();
     }
 
-    // Convert bytes to hex string
-    std::string str_hex;
-    str_hex.reserve(64);
-    for (size_t n_i = 0; n_i < 32; n_i++) {
-        char buf[3];
-        snprintf(buf, sizeof(buf), "%02x", bytes[n_i]);
-        str_hex += buf;
-    }
-
     // Check if all zeros (empty hash)
     bool f_all_zeros = true;
     for (size_t n_i = 0; n_i < 32; n_i++) {
@@ -206,7 +193,9 @@ CHash CBlockFile::ReadHash(std::ifstream& ifs) const {
         return CHash();
     }
 
-    return CHash(str_hex);
+    // Use binary constructor to create CHash from raw bytes
+    // NOT the string constructor, which would hash the hex string!
+    return CHash(bytes, 32);
 }
 
 bool CBlockFile::WriteString(std::ofstream& ofs, const std::string& str) const {
@@ -317,7 +306,7 @@ bool CBlockFile::SaveBlock(const std::shared_ptr<CBlock>& p_block) {
     // Check if block already exists in index (prevent duplicates)
     std::string str_hash = p_block->GetHash().GetData();
     if (map_block_index.find(str_hash) != map_block_index.end()) {
-        LOG_TRACE("Block already exists in index, skipping save: " + str_hash.substr(0, 16) + "...");
+        LOG_TRACE("Block already exists in index, skipping save: " + str_hash + "...");
         return true;  // Not an error, just already saved
     }
 
@@ -428,7 +417,7 @@ bool CBlockFile::SaveBlock(const std::shared_ptr<CBlock>& p_block) {
     // Save index
     SaveIndex();
 
-    LOG_TRACE("Block saved to disk: " + p_block->GetHash().GetData().substr(0, 16) + "... at height " + std::to_string(p_block->GetHeight()) +
+    LOG_TRACE("Block saved to disk: " + p_block->GetHash().GetData() + "... at height " + std::to_string(p_block->GetHeight()) +
               " (file: blk" + std::to_string(m_n_current_file_number) + ".dat, offset: " + std::to_string(n_file_offset) + ")");
     return true;
 }
@@ -439,7 +428,7 @@ std::shared_ptr<CBlock> CBlockFile::LoadBlock(const CHash& hash) {
     // Find block in index
     auto it = map_block_index.find(hash.GetData());
     if (it == map_block_index.end()) {
-        LOG_ERROR("Block not found in index: " + hash.GetData().substr(0, 16) + "...");
+        LOG_ERROR("Block not found in index: " + hash.GetData() + "...");
         return nullptr;
     }
 
@@ -492,11 +481,13 @@ std::shared_ptr<CBlock> CBlockFile::LoadBlock(const CHash& hash) {
     // Create block
     auto p_block = std::make_shared<CBlock>(previous_hash, n_height, str_miner);
 
-    // Restore saved block hash and nonce
-    // Note: timestamp, difficulty, cumulative_data_size getters return by value
-    // so they can't be restored this way, but for block identity the hash is most important
-    const_cast<CHash&>(p_block->GetHash()) = block_hash;
+    // Restore all block fields from disk BEFORE adding transactions
+    // (as friend class, we can access private members)
+    p_block->m_hash = block_hash;
+    p_block->m_n_timestamp = n_timestamp;
+    p_block->m_n_difficulty = n_difficulty;
     p_block->m_n_nonce = n_nonce;
+    // Don't set cumulative_data_size yet - AddTransaction will recalculate it
 
     // Read and add transactions
     for (uint32_t n_i = 0; n_i < n_tx_count; n_i++) {
@@ -508,9 +499,16 @@ std::shared_ptr<CBlock> CBlockFile::LoadBlock(const CHash& hash) {
         p_block->AddTransaction(p_tx);
     }
 
+    // Verify cumulative_data_size matches what was saved
+    if (p_block->m_n_cumulative_data_size != n_cumulative_data_size) {
+        LOG_WARN("Cumulative data size mismatch: calculated=" +
+                 std::to_string(p_block->m_n_cumulative_data_size) +
+                 ", saved=" + std::to_string(n_cumulative_data_size));
+    }
+
     ifs.close();
 
-    LOG_TRACE("Block loaded from disk: " + hash.GetData().substr(0, 16) + "... at height " + std::to_string(n_height) +
+    LOG_TRACE("Block loaded from disk: " + hash.GetData() + "... at height " + std::to_string(n_height) +
               " (file: blk" + std::to_string(index.n_file_number) + ".dat, offset: " + std::to_string(index.n_file_offset) + ")");
     return p_block;
 }
@@ -596,6 +594,14 @@ std::shared_ptr<CBlock> CBlockFile::GetGenesisBlock() {
 
             auto p_block = std::make_shared<CBlock>(prev_hash, n_height, str_miner);
 
+            // Restore all block fields from disk BEFORE adding transactions
+            // (as friend class, we can access private members)
+            p_block->m_hash = block_hash;
+            p_block->m_n_timestamp = n_timestamp;
+            p_block->m_n_difficulty = n_difficulty;
+            p_block->m_n_nonce = n_nonce;
+            // Don't set cumulative_data_size yet - AddTransaction will recalculate it
+
             for (uint32_t n_i = 0; n_i < n_tx_count; n_i++) {
                 auto p_tx = ReadTransaction(ifs);
                 if (p_tx) {
@@ -603,7 +609,14 @@ std::shared_ptr<CBlock> CBlockFile::GetGenesisBlock() {
                 }
             }
 
-            LOG_INFO("Found genesis block in index: " + block_hash.GetData().substr(0, 16) + "...");
+            // Verify cumulative_data_size matches what was saved
+            if (p_block->m_n_cumulative_data_size != n_cumulative_data_size) {
+                LOG_WARN("Cumulative data size mismatch: calculated=" +
+                         std::to_string(p_block->m_n_cumulative_data_size) +
+                         ", saved=" + std::to_string(n_cumulative_data_size));
+            }
+
+            LOG_INFO("Found genesis block in index: " + block_hash.GetData() + "...");
             return p_block;
         }
     }

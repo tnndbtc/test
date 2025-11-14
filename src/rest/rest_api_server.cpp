@@ -828,14 +828,14 @@ std::tuple<int, std::string> CRestApiServer::HandlePostTransaction(const std::st
         std::ostringstream oss;
         oss << "{\n";
         oss << "  \"status\": \"success\",\n";
-        oss << "  \"transaction_id\": \"" << tx->m_id.GetData().substr(0, 32) << "...\",\n";
+        oss << "  \"transaction_id\": \"" << tx->m_id.GetData() << "...\",\n";
         oss << "  \"from\": \"" << str_from << "\",\n";
         oss << "  \"to\": \"" << str_to << "\",\n";
         oss << "  \"data_size\": " << data.size() << ",\n";
         oss << "  \"fee\": " << n_fee << "\n";
         oss << "}";
 
-        LOG_INFO("Transaction created: " + tx->m_id.GetData().substr(0, 16) + "... (from: " +
+        LOG_INFO("Transaction created: " + tx->m_id.GetData() + "... (from: " +
                  str_from + ", to: " + str_to + ", size: " + std::to_string(data.size()) +
                  " bytes, fee: " + std::to_string(n_fee) + ")");
 
@@ -937,7 +937,7 @@ std::tuple<int, std::string> CRestApiServer::HandlePostFiles(const CHttpRequest&
         std::ostringstream oss;
         oss << "{\n";
         oss << "  \"status\": \"success\",\n";
-        oss << "  \"transaction_id\": \"" << tx->m_id.GetData().substr(0, 32) << "...\",\n";
+        oss << "  \"transaction_id\": \"" << tx->m_id.GetData() << "...\",\n";
         oss << "  \"uuid\": \"" << str_uuid << "\",\n";
         oss << "  \"original_filename\": \"" << str_filename << "\",\n";
         oss << "  \"saved_path\": \"" << str_file_path << "\",\n";
@@ -947,7 +947,7 @@ std::tuple<int, std::string> CRestApiServer::HandlePostFiles(const CHttpRequest&
 
         LOG_INFO("File uploaded: " + str_filename + " -> " + str_uuid + " (" +
                  std::to_string(file_data.size()) + " bytes, TX: " +
-                 tx->m_id.GetData().substr(0, 16) + "...)");
+                 tx->m_id.GetData() + "...)");
 
         return {HTTP_OK, oss.str()};
     } catch (const std::exception& e) {
@@ -1074,6 +1074,99 @@ std::tuple<int, std::string> CRestApiServer::HandleRpcGetPeer() {
     }
 }
 
+std::tuple<int, std::string> CRestApiServer::HandleRpcMineStart() {
+    LOG_INFO("HandleRpcMineStart");
+    try {
+        // Check if we're on localnet
+        std::string str_network = p_config->GetNetwork();
+        if (str_network != "localnet") {
+            LOG_WARN("Mining control attempted on non-localnet network: " + str_network);
+            return {HTTP_FORBIDDEN,
+                    "{\"error\": \"Forbidden\", \"message\": \"Mining control is only available on localnet. Current network: " + str_network + "\"}"};
+        }
+
+        // Start mining
+        p_blockweave->StartMining();
+
+        // Build JSON response
+        std::ostringstream oss;
+        oss << "{\n";
+        oss << "  \"status\": \"success\",\n";
+        oss << "  \"mining_enabled\": true,\n";
+        oss << "  \"message\": \"Mining started\"\n";
+        oss << "}";
+
+        LOG_INFO("RPC minestart: Mining enabled");
+
+        return {HTTP_OK, oss.str()};
+    } catch (const std::exception& e) {
+        LOG_ERROR("POST /rpc/minestart exception: " + std::string(e.what()));
+        return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Internal Server Error\", \"message\": \"" + std::string(e.what()) + "\"}"};
+    }
+}
+
+std::tuple<int, std::string> CRestApiServer::HandleRpcMineStop() {
+    LOG_INFO("HandleRpcMineStop");
+    try {
+        // Check if we're on localnet
+        std::string str_network = p_config->GetNetwork();
+        if (str_network != "localnet") {
+            LOG_WARN("Mining control attempted on non-localnet network: " + str_network);
+            return {HTTP_FORBIDDEN,
+                    "{\"error\": \"Forbidden\", \"message\": \"Mining control is only available on localnet. Current network: " + str_network + "\"}"};
+        }
+
+        // Stop mining
+        p_blockweave->StopMining();
+
+        // Build JSON response
+        std::ostringstream oss;
+        oss << "{\n";
+        oss << "  \"status\": \"success\",\n";
+        oss << "  \"mining_enabled\": false,\n";
+        oss << "  \"message\": \"Mining stopped\"\n";
+        oss << "}";
+
+        LOG_INFO("RPC minestop: Mining disabled");
+
+        return {HTTP_OK, oss.str()};
+    } catch (const std::exception& e) {
+        LOG_ERROR("POST /rpc/minestop exception: " + std::string(e.what()));
+        return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Internal Server Error\", \"message\": \"" + std::string(e.what()) + "\"}"};
+    }
+}
+
+std::tuple<int, std::string> CRestApiServer::HandleRpcMineTrigger() {
+    LOG_INFO("HandleRpcMineTrigger");
+    try {
+        // Check if we're on localnet
+        std::string str_network = p_config->GetNetwork();
+        if (str_network != "localnet") {
+            LOG_WARN("Mining control attempted on non-localnet network: " + str_network);
+            return {HTTP_FORBIDDEN,
+                    "{\"error\": \"Forbidden\", \"message\": \"Mining control is only available on localnet. Current network: " + str_network + "\"}"};
+        }
+
+        // Mine one block immediately
+        p_blockweave->MineBlock(str_miner_address);
+
+        // Build JSON response with block info
+        std::ostringstream oss;
+        oss << "{\n";
+        oss << "  \"status\": \"success\",\n";
+        oss << "  \"message\": \"Block mined successfully\",\n";
+        oss << "  \"block_height\": " << p_blockweave->GetBlockCount() << "\n";
+        oss << "}";
+
+        LOG_INFO("RPC minetrigger: Block mined successfully at height " + std::to_string(p_blockweave->GetBlockCount()));
+
+        return {HTTP_OK, oss.str()};
+    } catch (const std::exception& e) {
+        LOG_ERROR("POST /rpc/minetrigger exception: " + std::string(e.what()));
+        return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Internal Server Error\", \"message\": \"" + std::string(e.what()) + "\"}"};
+    }
+}
+
 // ============= HTTP Method Handlers (Interface Implementation) =============
 
 std::tuple<int, std::string> CRestApiServer::HandleGET(const std::string& str_endpoint) {
@@ -1107,6 +1200,15 @@ std::tuple<int, std::string> CRestApiServer::HandlePOST(const std::string& str_e
     }
     else if (str_endpoint == "/rpc/ping") {
         return HandleRpcPing();
+    }
+    else if (str_endpoint == "/rpc/minestart") {
+        return HandleRpcMineStart();
+    }
+    else if (str_endpoint == "/rpc/minestop") {
+        return HandleRpcMineStop();
+    }
+    else if (str_endpoint == "/rpc/minetrigger") {
+        return HandleRpcMineTrigger();
     }
     else {
         LOG_ERROR("POST endpoint not found: " + str_endpoint);

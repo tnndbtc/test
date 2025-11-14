@@ -63,23 +63,27 @@ class P2PMessage:
     Helper class for P2P message serialization/deserialization.
 
     Matches CPeerMessage format from peer_message.h:
+    - 4 bytes: Magic bytes (uint32_t, network byte order)
     - 1 byte: Type string length (uint8_t)
     - N bytes: Type string (e.g., "ping", "get_peers")
     - 4 bytes: Payload length (uint32_t, network byte order)
     - M bytes: Payload data
     """
 
-    MIN_HEADER_SIZE = 5  # 1 byte type_length + 0 bytes type + 4 bytes payload_length
+    MIN_HEADER_SIZE = 9  # 4 bytes magic + 1 byte type_length + 0 bytes type + 4 bytes payload_length
+    LOCALNET_MAGIC = 0xACDE4892  # Must match LOCALNET_MAGIC in network.h
 
-    def __init__(self, msg_type=MessageType.UNKNOWN, payload=b""):
+    def __init__(self, msg_type=MessageType.UNKNOWN, payload=b"", magic=None):
         """
         Create a P2P message.
 
         Args:
             msg_type: Message type string (from MessageType class)
             payload: Message payload (bytes or string)
+            magic: Network magic bytes (default: LOCALNET_MAGIC)
         """
         self.msg_type = msg_type
+        self.magic = magic if magic is not None else P2PMessage.LOCALNET_MAGIC
         if isinstance(payload, str):
             self.payload = payload.encode('utf-8')
         else:
@@ -90,17 +94,18 @@ class P2PMessage:
         Serialize message to bytes for network transmission.
 
         Returns:
-            bytes: Serialized message [type_length][type_string][payload_length][payload]
+            bytes: Serialized message [magic][type_length][type_string][payload_length][payload]
         """
         # Convert type to bytes
         type_bytes = self.msg_type.encode('utf-8')
         type_len = len(type_bytes)
 
-        # Pack as: 1 byte type_length + N bytes type + 4 bytes payload_length + M bytes payload
-        result = struct.pack('B', type_len)  # Type length (1 byte)
-        result += type_bytes                  # Type string (N bytes)
+        # Pack as: 4 bytes magic + 1 byte type_length + N bytes type + 4 bytes payload_length + M bytes payload
+        result = struct.pack('!I', self.magic)  # Magic bytes (4 bytes, big-endian)
+        result += struct.pack('B', type_len)    # Type length (1 byte)
+        result += type_bytes                    # Type string (N bytes)
         result += struct.pack('!I', len(self.payload))  # Payload length (4 bytes, big-endian)
-        result += self.payload                # Payload data (M bytes)
+        result += self.payload                  # Payload data (M bytes)
 
         return result
 
@@ -115,39 +120,47 @@ class P2PMessage:
         Returns:
             P2PMessage: Deserialized message, or None if invalid
         """
-        if len(data) < 1:
+        if len(data) < 4:
             return None
 
         offset = 0
 
-        # 1. Parse type length (1 byte)
+        # 1. Parse magic bytes (4 bytes, big-endian)
+        magic = struct.unpack('!I', data[offset:offset+4])[0]
+        offset += 4
+
+        # 2. Check if we have enough data for type length
+        if len(data) < offset + 1:
+            return None
+
+        # 3. Parse type length (1 byte)
         type_len = struct.unpack('B', data[offset:offset+1])[0]
         offset += 1
 
-        # 2. Check if we have enough data for type string
+        # 4. Check if we have enough data for type string
         if len(data) < offset + type_len:
             return None
 
-        # 3. Parse type string (N bytes)
+        # 5. Parse type string (N bytes)
         msg_type = data[offset:offset+type_len].decode('utf-8')
         offset += type_len
 
-        # 4. Check if we have enough data for payload length
+        # 6. Check if we have enough data for payload length
         if len(data) < offset + 4:
             return None
 
-        # 5. Parse payload length (4 bytes, big-endian)
+        # 7. Parse payload length (4 bytes, big-endian)
         payload_len = struct.unpack('!I', data[offset:offset+4])[0]
         offset += 4
 
-        # 6. Check if we have enough data for payload
+        # 8. Check if we have enough data for payload
         if len(data) < offset + payload_len:
             return None
 
-        # 7. Extract payload
+        # 9. Extract payload
         payload = data[offset:offset+payload_len]
 
-        return P2PMessage(msg_type, payload)
+        return P2PMessage(msg_type, payload, magic)
 
     def get_type_string(self):
         """Get string representation of message type."""
@@ -239,7 +252,14 @@ class P2PConnection:
                 old_timeout = self.socket.gettimeout()
                 self.socket.settimeout(timeout)
 
-            # First, receive type_length (1 byte)
+            # First, receive magic bytes (4 bytes)
+            magic_bytes = self._receive_exactly(4)
+            if not magic_bytes:
+                return None
+
+            magic = struct.unpack('!I', magic_bytes)[0]
+
+            # Receive type_length (1 byte)
             type_len_bytes = self._receive_exactly(1)
             if not type_len_bytes:
                 return None
@@ -267,7 +287,7 @@ class P2PConnection:
             if timeout is not None:
                 self.socket.settimeout(old_timeout)
 
-            return P2PMessage(msg_type, payload)
+            return P2PMessage(msg_type, payload, magic)
 
         except socket.timeout:
             return None
@@ -359,7 +379,7 @@ class P2PTest(TestFramework):
         self.log_info("test_1_send_valid_inventory_message: Testing valid INVENTORY message")
 
         # Connect to Node 0
-        p2p_port = 28333
+        p2p_port = 48333
         with P2PConnection("127.0.0.1", p2p_port, timeout=3) as conn:
             if not conn.socket:
                 self.assert_true(False, "Failed to connect to P2P port")
@@ -405,10 +425,10 @@ class P2PTest(TestFramework):
             # Give node time to process
             time.sleep(0.5)
 
-            # APPROACH 4: Verify node doesn't respond (negative test)
-            # Node should NOT send GETDATA for invalid INVENTORY
+            # Wait for node to respond with GETDATA
             response = conn.receive_message(timeout=2)
 
+            self.assert_true(response is not None, "Node should send a response for valid INVENTORY")
             self.assert_true(response.msg_type == MessageType.GETDATA, "Node should send GETDATA for valid INVENTORY")
 
         self.log_info("INVENTORY message test completed")
@@ -421,7 +441,7 @@ class P2PTest(TestFramework):
         log_pos = self._get_log_position()
 
         # Connect to Node 0
-        p2p_port = 28333
+        p2p_port = 48333
         with P2PConnection("127.0.0.1", p2p_port, timeout=3) as conn:
             if not conn.socket:
                 self.assert_true(False, "Failed to connect to P2P port")
@@ -492,7 +512,7 @@ class P2PTest(TestFramework):
         log_pos = self._get_log_position()
 
         # Connect to Node 0
-        p2p_port = 28333
+        p2p_port = 48333
         with P2PConnection("127.0.0.1", p2p_port, timeout=3) as conn:
             if not conn.socket:
                 self.assert_true(False, "Failed to connect to P2P port")

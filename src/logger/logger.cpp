@@ -9,6 +9,7 @@
 
 #include "logger.h"
 #include "utils/threadname.h"
+#include "utils/pathutil.h"
 #include <iostream>
 #include <iomanip>
 #include <sstream>
@@ -214,18 +215,10 @@ bool CLogger::Initialize(const std::string& str_log_dir, ELogLevel min_level,
     m_n_max_file_size = static_cast<size_t>(n_max_file_size_mb) * 1024 * 1024;
     m_n_files_to_keep = n_files_to_keep;
 
-    // Create log directory if it doesn't exist
-    struct stat st;
-    if (stat(str_log_dir.c_str(), &st) != 0) {
-        // Directory doesn't exist, try to create it
-#ifdef _WIN32
-        if (_mkdir(str_log_dir.c_str()) != 0) {
-#else
-        if (mkdir(str_log_dir.c_str(), 0755) != 0) {
-#endif
-            std::cerr << "[Logger] Failed to create log directory: " << str_log_dir << "\n";
-            return false;
-        }
+    // Create log directory if it doesn't exist (recursively)
+    if (!CreateDirectoryRecursive(str_log_dir)) {
+        std::cerr << "[Logger] Failed to create log directory: " << str_log_dir << "\n";
+        return false;
     }
 
     // Use process name as log file name

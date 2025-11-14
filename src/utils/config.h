@@ -180,6 +180,22 @@ public:
      * @return true if daemon=true in config, false otherwise
      */
     bool IsDaemonMode() const;
+
+    /**
+     * @brief Get network type setting
+     * @return Network type string (mainnet/testnet/localnet)
+     */
+    std::string GetNetwork() const;
+
+    /**
+     * @brief Get network-specific data directory
+     * @param str_network Network type string
+     * @return Data directory path with network subdirectory
+     *
+     * Example: If data_dir is "./data" and network is "testnet",
+     * returns "./data/testnet"
+     */
+    std::string GetNetworkDataDir(const std::string& str_network) const;
 };
 
 #endif

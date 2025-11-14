@@ -7,6 +7,7 @@
 #include "peer/peer_node.h"
 #include "blockcore/i_block_weave.h"
 #include "utils/settings.h"
+#include "utils/network.h"
 #include <string>
 #include <vector>
 #include <thread>
@@ -145,6 +146,7 @@ private:
     int n_max_inbound_peers;         ///< Maximum number of inbound peer connections
     int n_max_outbound_peers;        ///< Maximum number of outbound peer connections
     int n_peers_ping_time;           ///< Interval in seconds between PING messages
+    uint32_t m_n_network_magic;      ///< Network magic bytes for P2P message validation
 
     // Peer connections (separate inbound and outbound tracking)
     std::vector<std::unique_ptr<CPeerConnection>> m_inbound_peers;   ///< Inbound peer connections (peers connecting to us)
@@ -506,8 +508,9 @@ public:
      * @param n_max_inbound Maximum number of inbound peers (default: MAX_INBOUND_PEERS from settings.h)
      * @param n_max_workers Maximum number of inbound worker threads (default: MAX_INBOUND_WORKER_THREADS from settings.h)
      * @param n_ping_time Interval in seconds between PING messages (default: PEERS_PING_TIME from settings.h)
+     * @param n_magic Network magic bytes for P2P message validation (default: MAINNET_MAGIC from settings.h)
      */
-    CPeerManager(int n_port = P2P_PORT, int n_max_outbound = MAX_OUTBOUND_PEERS, int n_max_inbound = MAX_INBOUND_PEERS, int n_max_workers = MAX_INBOUND_WORKER_THREADS, int n_ping_time = PEERS_PING_TIME);
+    CPeerManager(int n_port = P2P_PORT, int n_max_outbound = MAX_OUTBOUND_PEERS, int n_max_inbound = MAX_INBOUND_PEERS, int n_max_workers = MAX_INBOUND_WORKER_THREADS, int n_ping_time = PEERS_PING_TIME, uint32_t n_magic = MAINNET_MAGIC);
 
     /**
      * @brief Destructor - stops networking and cleans up resources

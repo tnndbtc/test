@@ -85,6 +85,7 @@ namespace MessageType {
  * Provides serialization/deserialization for network transmission.
  *
  * Message format:
+ * - 4 bytes: Network magic bytes (uint32_t, network byte order)
  * - 1 byte: Message type length (uint8_t)
  * - N bytes: Message type string (e.g., "ping", "get_peers")
  * - 4 bytes: Payload length (uint32_t, network byte order)
@@ -105,6 +106,7 @@ namespace MessageType {
  */
 class CPeerMessage {
 private:
+    uint32_t m_n_magic;             ///< Network magic bytes for protocol validation
     std::string m_str_type;         ///< Message type string
     std::vector<uint8_t> m_payload; ///< Message payload data
 
@@ -124,29 +126,45 @@ private:
 
 public:
     /**
-     * @brief Default constructor - creates UNKNOWN message
+     * @brief Default constructor - creates UNKNOWN message with default magic
+     * @param n_magic Network magic bytes (default: 0 for backward compatibility)
      */
-    CPeerMessage();
+    explicit CPeerMessage(uint32_t n_magic = 0);
 
     /**
-     * @brief Construct message with specific type
+     * @brief Construct message with specific type and magic
      * @param str_type Message type string (e.g., MessageType::PING)
+     * @param n_magic Network magic bytes (default: 0)
      */
-    explicit CPeerMessage(const std::string& str_type);
+    CPeerMessage(const std::string& str_type, uint32_t n_magic = 0);
 
     /**
-     * @brief Construct message with type and payload
+     * @brief Construct message with type, payload, and magic
      * @param str_type Message type string
      * @param str_payload Payload string
+     * @param n_magic Network magic bytes (default: 0)
      */
-    CPeerMessage(const std::string& str_type, const std::string& str_payload);
+    CPeerMessage(const std::string& str_type, const std::string& str_payload, uint32_t n_magic = 0);
 
     /**
-     * @brief Construct message with type and binary payload
+     * @brief Construct message with type, binary payload, and magic
      * @param str_type Message type string
      * @param payload Payload bytes
+     * @param n_magic Network magic bytes (default: 0)
      */
-    CPeerMessage(const std::string& str_type, const std::vector<uint8_t>& payload);
+    CPeerMessage(const std::string& str_type, const std::vector<uint8_t>& payload, uint32_t n_magic = 0);
+
+    /**
+     * @brief Get network magic bytes
+     * @return Network magic value
+     */
+    uint32_t GetMagic() const;
+
+    /**
+     * @brief Set network magic bytes
+     * @param n_magic Network magic value
+     */
+    void SetMagic(uint32_t n_magic);
 
     /**
      * @brief Get message type
@@ -192,21 +210,22 @@ public:
 
     /**
      * @brief Serialize message to byte string for transmission
-     * @return Serialized message (type_length + type + payload_length + payload)
+     * @return Serialized message (magic + type_length + type + payload_length + payload)
      *
-     * Format: [1 byte type_length][N bytes type][4 bytes payload_length][M bytes payload]
+     * Format: [4 bytes magic][1 byte type_length][N bytes type][4 bytes payload_length][M bytes payload]
      */
     std::string Serialize() const;
 
     /**
-     * @brief Deserialize message from byte string
+     * @brief Deserialize message from byte string with magic validation
      * @param str_data Serialized message data
-     * @return true if deserialization successful, false otherwise
+     * @param n_expected_magic Expected network magic bytes (0 = don't validate)
+     * @return true if deserialization successful and magic matches, false otherwise
      *
-     * Parses message format: [1 byte type_length][N bytes type][4 bytes payload_length][M bytes payload]
-     * Returns false if data is too short or length is invalid.
+     * Parses message format: [4 bytes magic][1 byte type_length][N bytes type][4 bytes payload_length][M bytes payload]
+     * Returns false if data is too short, length is invalid, or magic doesn't match.
      */
-    bool Deserialize(const std::string& str_data);
+    bool Deserialize(const std::string& str_data, uint32_t n_expected_magic = 0);
 
     /**
      * @brief Check if message is valid
@@ -224,7 +243,7 @@ public:
      * @brief Get minimum serialized message size (header only with smallest type)
      * @return Minimum size in bytes (varies based on type string length)
      */
-    static constexpr size_t GetMinHeaderSize() { return 5; }  // 1 byte type_length + 0 bytes type + 4 bytes payload_length
+    static constexpr size_t GetMinHeaderSize() { return 9; }  // 4 bytes magic + 1 byte type_length + 0 bytes type + 4 bytes payload_length
 };
 
 #endif // PEER_MESSAGE_H

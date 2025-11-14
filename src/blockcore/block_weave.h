@@ -7,6 +7,7 @@
 #include "blockcore/transaction.h"
 #include "blockcore/i_block_weave.h"
 #include "utils/hash.h"
+#include "utils/network.h"
 #include "peer/i_peer_manager.h"
 #include <unordered_map>
 #include <vector>

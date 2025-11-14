@@ -37,7 +37,7 @@ class BlockfileTest(TestFramework):
 
         # Get the data directory from the node's config (datadir is a string)
         self.data_dir = Path(self.node.datadir) / "data"
-        self.blocks_dir = self.data_dir / "blocks"
+        self.blocks_dir = self.data_dir / "localnet/blocks"
         self.log_info(f"Data directory: {self.data_dir}")
         self.log_info(f"Blocks directory: {self.blocks_dir}")
 
@@ -103,10 +103,7 @@ class BlockfileTest(TestFramework):
         initial_size = blk00000.stat().st_size if blk00000.exists() else 0
         self.log_info(f"Initial blk00000.dat size: {initial_size} bytes")
 
-        # Note: Mining is started automatically by the daemon
-        self.log_info("Mining should be running automatically...")
-
-        # Create a transaction to trigger mining
+        # Create a transaction
         transaction_data = {
             "from": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
             "to": "bc1qw508d6qejxtdg4y5r3zarvaryv98gj9p8t5z6",
@@ -121,29 +118,30 @@ class BlockfileTest(TestFramework):
 
         self.assert_equal(response.status_code, 200, "Transaction submission successful")
 
-        # Wait for block to be mined (check file size increase every 500ms for up to 15 seconds)
-        max_wait = 15
-        start_time = time.time()
-        block_mined = False
+        # Wait for transaction to be added to mempool
+        time.sleep(0.5)
 
-        while time.time() - start_time < max_wait:
-            current_size = blk00000.stat().st_size if blk00000.exists() else 0
-            elapsed = time.time() - start_time
-            self.log_info(f"Waiting for mining... {elapsed:.1f}s elapsed, current size: {current_size}, initial: {initial_size}")
-            if current_size > initial_size:
-                block_mined = True
-                self.log_info(f"Block mined! blk00000.dat size increased from {initial_size} to {current_size} bytes")
-                break
-            time.sleep(0.5)
+        # Trigger mining explicitly using RPC endpoint
+        self.log_info("Triggering block mining via /rpc/minetrigger...")
+        response = self.node.post("/rpc/minetrigger")
+        self.log_info(f"Mining trigger response: {response.status_code} - {response.text}")
+
+        if response.status_code != 200:
+            print(response.text)
+
+        self.assert_equal(response.status_code, 200, "Mining trigger successful")
+        self.log_info("Block mining triggered successfully")
+
+        # Wait a moment for block to be written to disk
+        time.sleep(1)
 
         # Verify block was mined
         final_size = blk00000.stat().st_size if blk00000.exists() else 0
         self.log_info(f"Final blk00000.dat size: {final_size} bytes (initial: {initial_size})")
 
-        # Note: With shared node state in setUpClass, file size may not always increase
-        # if previous tests already caused mining. Check that file exists and has content.
+        # Block file should have increased in size
         self.assert_true(final_size > initial_size,
-                        f"Block file should exist and have content (size: {final_size} bytes)")
+                        f"Block file should have increased in size (initial: {initial_size}, final: {final_size} bytes)")
 
         # Log all block files
         block_files = sorted(self.blocks_dir.glob("blk*.dat"))

@@ -148,10 +148,10 @@ CPeerConnection& CPeerConnection::operator=(CPeerConnection&& other) noexcept {
  * peer connections to avoid vector reallocations during operation.
  * Call Start() to begin accepting connections.
  */
-CPeerManager::CPeerManager(int n_port, int n_max_outbound, int n_max_inbound, int n_max_workers, int n_ping_time)
+CPeerManager::CPeerManager(int n_port, int n_max_outbound, int n_max_inbound, int n_max_workers, int n_ping_time, uint32_t n_magic)
     : n_listen_port(n_port), n_listen_socket(-1),
       n_max_inbound_peers(n_max_inbound), n_max_outbound_peers(n_max_outbound),
-      n_peers_ping_time(n_ping_time),
+      n_peers_ping_time(n_ping_time), m_n_network_magic(n_magic),
       f_running(false), f_stop_requested(false), f_stop_monitor(false),
       m_last_ping_time(std::chrono::steady_clock::now()),
       m_last_rotation_time(std::chrono::steady_clock::now()),
@@ -743,7 +743,7 @@ void CPeerManager::MonitorInboundSocketThread() {
                 // On Windows, io_context.run() can exit frequently when there are no pending async operations
                 LOG_TRACE("io_context.run() exited unexpectedly, restarting...");
 #else
-                LOG_WARN("io_context.run() exited unexpectedly, restarting...");
+                LOG_TRACE("io_context.run() exited unexpectedly, restarting...");
 #endif
                 m_io_context.restart();
             }
@@ -1183,9 +1183,9 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
     // Try to deserialize complete messages from buffer
     // CPeerMessage format: [1 byte type_length][N bytes type][4 bytes payload_length][M bytes payload]
     while (str_data.size() >= CPeerMessage::GetMinHeaderSize()) {
-        // Try to deserialize a message
+        // Try to deserialize a message with magic validation
         CPeerMessage received_msg;
-        if (received_msg.Deserialize(str_data)) {
+        if (received_msg.Deserialize(str_data, m_n_network_magic)) {
             // Successfully deserialized a message
             std::string msg_type = received_msg.GetType();
             LOG_TRACE("Received " + msg_type + " message from peer " + p_peer->peer_node->GetIdentifier());
@@ -1244,7 +1244,7 @@ void CPeerManager::HandlePingMessage(CPeerConnection* p_peer, const CPeerMessage
     }
 
     // Respond with PONG containing the same nonce
-    CPeerMessage pong_msg(MessageType::PONG, payload);
+    CPeerMessage pong_msg(MessageType::PONG, payload, m_n_network_magic);
 
     // Send PONG via async I/O
     SendMessageAsync(n_socket_fd, pong_msg);
@@ -1480,11 +1480,11 @@ void CPeerManager::HandleGetDataMessage(CPeerConnection* p_peer, const CPeerMess
                     if (p_tx) {
                         std::string str_serialized_tx = p_tx->Serialize();
                         // Send individual TX message
-                        CPeerMessage tx_msg(MessageType::TX, str_serialized_tx);
+                        CPeerMessage tx_msg(MessageType::TX, str_serialized_tx, m_n_network_magic);
                         SendMessageAsync(socket, tx_msg);
-                        LOG_TRACE("Sent TX message with transaction " + hash.GetData().substr(0, 16) + "... to peer " + peer_addr);
+                        LOG_TRACE("Sent TX message with transaction " + hash.GetData() + "... to peer " + peer_addr);
                     } else {
-                        LOG_TRACE("Transaction " + hash.GetData().substr(0, 16) + "... not found in mempool for peer " + peer_addr);
+                        LOG_TRACE("Transaction " + hash.GetData() + "... not found in mempool for peer " + peer_addr);
                     }
                 }
             } else if (obj_type == ObjectType::BLOCK) {
@@ -1494,11 +1494,11 @@ void CPeerManager::HandleGetDataMessage(CPeerConnection* p_peer, const CPeerMess
                     if (p_block) {
                         std::string str_serialized_block = p_block->Serialize();
                         // Send individual BLOCK message
-                        CPeerMessage block_msg(MessageType::BLOCK, str_serialized_block);
+                        CPeerMessage block_msg(MessageType::BLOCK, str_serialized_block, m_n_network_magic);
                         SendMessageAsync(socket, block_msg);
-                        LOG_TRACE("Sent BLOCK message with block " + hash.GetData().substr(0, 16) + "... to peer " + peer_addr);
+                        LOG_TRACE("Sent BLOCK message with block " + hash.GetData() + "... to peer " + peer_addr);
                     } else {
-                        LOG_TRACE("Block " + hash.GetData().substr(0, 16) + "... not found for peer " + peer_addr);
+                        LOG_TRACE("Block " + hash.GetData() + "... not found for peer " + peer_addr);
                     }
                 }
             }
@@ -1518,13 +1518,13 @@ void CPeerManager::HandleTxMessage(CPeerConnection* p_peer, const CPeerMessage& 
         return;
     }
 
-    LOG_INFO("Successfully deserialized transaction " + p_tx->m_id.GetData().substr(0, 16) +
+    LOG_INFO("Successfully deserialized transaction " + p_tx->m_id.GetData() +
              "... from peer " + p_peer->peer_node->GetIdentifier());
 
     // Add transaction to blockweave mempool
     if (p_blockweave) {
         p_blockweave->AddTransaction(p_tx);
-        LOG_INFO("Added transaction " + p_tx->m_id.GetData().substr(0, 16) + "... to mempool");
+        LOG_INFO("Added transaction " + p_tx->m_id.GetData() + "... to mempool");
 
         // Broadcast INVENTORY for the new transaction (scheduled asynchronously)
         std::vector<std::pair<ObjectType::Type, std::string>> vec_inventory;
@@ -1551,7 +1551,7 @@ void CPeerManager::HandleBlockMessage(CPeerConnection* p_peer, const CPeerMessag
     }
 
     LOG_INFO("Successfully deserialized block #" + std::to_string(p_block->GetHeight()) +
-             " (hash: " + p_block->GetHash().GetData().substr(0, 16) + "...) from peer " +
+             " (hash: " + p_block->GetHash().GetData() + "...) from peer " +
              p_peer->peer_node->GetIdentifier());
 
     LOG_TRACE("Block contains " + std::to_string(p_block->GetTransactions().size()) +
@@ -2065,7 +2065,7 @@ size_t CPeerManager::SendPingToAllPeers() {
                 nonce_bytes[1] = (n_nonce >> 16) & 0xFF;
                 nonce_bytes[2] = (n_nonce >> 8) & 0xFF;
                 nonce_bytes[3] = n_nonce & 0xFF;
-                CPeerMessage ping_message(MessageType::PING, nonce_bytes);
+                CPeerMessage ping_message(MessageType::PING, nonce_bytes, m_n_network_magic);
 
                 // Store nonce and send time for verification when PONG arrives
                 p_peer->n_last_ping_nonce = n_nonce;
@@ -2094,7 +2094,7 @@ size_t CPeerManager::SendPingToAllPeers() {
                 nonce_bytes[1] = (n_nonce >> 16) & 0xFF;
                 nonce_bytes[2] = (n_nonce >> 8) & 0xFF;
                 nonce_bytes[3] = n_nonce & 0xFF;
-                CPeerMessage ping_message(MessageType::PING, nonce_bytes);
+                CPeerMessage ping_message(MessageType::PING, nonce_bytes, m_n_network_magic);
 
                 // Store nonce and send time for verification when PONG arrives
                 p_peer->n_last_ping_nonce = n_nonce;
@@ -2202,7 +2202,7 @@ void CPeerManager::BroadcastInventoryByPeerKnowledge(const std::vector<std::pair
         }
 
         // Send message
-        CPeerMessage inv_message(MessageType::INVENTORY, str_payload);
+        CPeerMessage inv_message(MessageType::INVENTORY, str_payload, m_n_network_magic);
         SendMessageAsync(p_peer->n_socket, inv_message);
 
         /*
@@ -2246,7 +2246,7 @@ void CPeerManager::ScheduleGetDataMessage(int n_socket, const std::vector<std::p
     }
 
     // Send message
-    CPeerMessage getdata_message(MessageType::GETDATA, str_payload);
+    CPeerMessage getdata_message(MessageType::GETDATA, str_payload, m_n_network_magic);
     SendMessageAsync(n_socket, getdata_message);
 
     LOG_TRACE("Sent GETDATA request for " + std::to_string(vec_items.size()) + " items");

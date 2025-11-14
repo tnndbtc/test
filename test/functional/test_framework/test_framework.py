@@ -144,15 +144,15 @@ class TestFramework(unittest.TestCase):
         Create and add a new BlockweaveNode for testing.
 
         Args:
-            port: REST API port for the node (default: auto-assign starting from 28443)
+            port: REST API port for the node (default: auto-assign starting from 48443 for localnet)
             **kwargs: Additional arguments passed to BlockweaveNode
 
         Returns:
             BlockweaveNode: The created node instance
         """
-        # Auto-assign port if not specified (start from 28443 + node_counter)
+        # Auto-assign port if not specified (start from 48443 + node_counter for localnet)
         if port is None:
-            port = 28443 + self.node_counter
+            port = 48443 + self.node_counter
 
         node_dir = self.tmpdir / f"node{self.node_counter}"
         node_dir.mkdir(parents=True, exist_ok=True)
@@ -185,9 +185,9 @@ class TestFramework(unittest.TestCase):
 
         self.log_info(f"Starting {self.num_nodes} local blockweave nodes...")
 
-        # Calculate port numbers
-        base_rest_port = 28443
-        base_p2p_port = 28333
+        # Calculate port numbers (using localnet ports: 48443 REST, 48333 P2P)
+        base_rest_port = 48443
+        base_p2p_port = 48333
 
         # Create and start nodes
         for i in range(self.num_nodes):

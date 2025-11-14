@@ -71,6 +71,28 @@ if(APPLE)
 endif()
 
 # ============================================================
+# Path Utilities Library (libbwpathutil.so / .dylib / .dll)
+# Path manipulation utilities (no dependencies)
+# ============================================================
+add_library(bwpathutil SHARED
+    src/utils/pathutil.cpp
+)
+
+set_target_properties(bwpathutil PROPERTIES
+    VERSION 1.0.0
+    SOVERSION 1
+    POSITION_INDEPENDENT_CODE ON
+    CXX_VISIBILITY_PRESET default
+)
+
+if(APPLE)
+    set_target_properties(bwpathutil PROPERTIES
+        INSTALL_NAME_DIR "@rpath"
+        BUILD_WITH_INSTALL_RPATH TRUE
+    )
+endif()
+
+# ============================================================
 # Logger Library (libbwlogger.so / .dylib / .dll)
 # Logging utilities
 # ============================================================
@@ -92,18 +114,20 @@ if(APPLE)
     )
 endif()
 
-# Link threadname to logger (logger needs GetThreadName)
+# Link threadname and pathutil to logger
 target_link_libraries(bwlogger
     PUBLIC bwthreadname
+    PUBLIC bwpathutil
 )
 
 # ============================================================
 # Utils Library (libbwutils.so / .dylib / .dll)
-# Hash and configuration utilities
+# Hash, configuration, and network utilities
 # ============================================================
 add_library(bwutils SHARED
     src/utils/hash.cpp
     src/utils/config.cpp
+    src/utils/network.cpp
 )
 
 set_target_properties(bwutils PROPERTIES
@@ -120,12 +144,13 @@ if(APPLE)
     )
 endif()
 
-# Link OpenSSL and threadname to bwutils (needed for hash and config)
+# Link OpenSSL, pathutil, logger, and threadname to bwutils
 target_link_libraries(bwutils
     PUBLIC OpenSSL::SSL
     PUBLIC OpenSSL::Crypto
     PUBLIC bwlogger
     PUBLIC bwthreadname
+    PUBLIC bwpathutil
 )
 
 # ============================================================

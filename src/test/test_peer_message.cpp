@@ -75,18 +75,19 @@ TEST(PeerMessage_SerializeEmpty) {
     CPeerMessage ping(MessageType::PING);
     std::string serialized = ping.Serialize();
 
-    // Format: [1 byte type_length][4 bytes "ping"][4 bytes payload_length]
-    // Should be 1 + 4 + 4 = 9 bytes
-    ASSERT_EQUAL(serialized.size(), (size_t)9, "Serialized size should be 9 bytes");
-    ASSERT_EQUAL((uint8_t)serialized[0], (uint8_t)4, "First byte should be type length (4)");
+    // Format: [4 bytes magic][1 byte type_length][4 bytes "ping"][4 bytes payload_length]
+    // Should be 4 + 1 + 4 + 4 = 13 bytes
+    ASSERT_EQUAL(serialized.size(), (size_t)13, "Serialized size should be 13 bytes");
+    // Skip 4 bytes of magic, then check type_length
+    ASSERT_EQUAL((uint8_t)serialized[4], (uint8_t)4, "Byte 4 should be type length (4)");
 
-    // Extract type string
-    std::string type_str = serialized.substr(1, 4);
+    // Extract type string (after 4 bytes magic + 1 byte type_length)
+    std::string type_str = serialized.substr(5, 4);
     ASSERT_EQUAL(type_str, std::string("ping"), "Type string should be 'ping'");
 
-    // Payload length should be 0 (4 bytes at offset 5, network byte order)
+    // Payload length should be 0 (4 bytes at offset 9, network byte order)
     uint32_t length_network;
-    std::memcpy(&length_network, serialized.data() + 5, 4);
+    std::memcpy(&length_network, serialized.data() + 9, 4);
     uint32_t length = ntohl(length_network);
     ASSERT_EQUAL(length, (uint32_t)0, "Payload length field should be 0");
 }
@@ -99,17 +100,17 @@ TEST(PeerMessage_SerializeSmallPayload) {
     CPeerMessage msg(MessageType::PONG, payload);
     std::string serialized = msg.Serialize();
 
-    // Format: [1 byte type_length][4 bytes "pong"][4 bytes payload_length][4 bytes "test"]
-    // Should be 1 + 4 + 4 + 4 = 13 bytes
-    ASSERT_EQUAL(serialized.size(), (size_t)13, "Serialized size should be 13 bytes");
-    ASSERT_EQUAL((uint8_t)serialized[0], (uint8_t)4, "First byte should be type length (4)");
+    // Format: [4 bytes magic][1 byte type_length][4 bytes "pong"][4 bytes payload_length][4 bytes "test"]
+    // Should be 4 + 1 + 4 + 4 + 4 = 17 bytes
+    ASSERT_EQUAL(serialized.size(), (size_t)17, "Serialized size should be 17 bytes");
+    ASSERT_EQUAL((uint8_t)serialized[4], (uint8_t)4, "Byte 4 should be type length (4)");
 
-    // Extract type string
-    std::string type_str = serialized.substr(1, 4);
+    // Extract type string (after 4 bytes magic + 1 byte type_length)
+    std::string type_str = serialized.substr(5, 4);
     ASSERT_EQUAL(type_str, std::string("pong"), "Type string should be 'pong'");
 
-    // Extract and verify payload (starts at offset 9: 1 + 4 + 4)
-    std::string extracted_payload = serialized.substr(9);
+    // Extract and verify payload (starts at offset 13: 4 + 1 + 4 + 4)
+    std::string extracted_payload = serialized.substr(13);
     ASSERT_EQUAL(extracted_payload, payload, "Payload should match");
 }
 
@@ -121,17 +122,17 @@ TEST(PeerMessage_SerializeLargePayload) {
     CPeerMessage msg(MessageType::TX, large_payload);
     std::string serialized = msg.Serialize();
 
-    // Format: [1 byte type_length][2 bytes "tx"][4 bytes payload_length][1000 bytes payload]
-    // Should be 1 + 2 + 4 + 1000 = 1007 bytes
-    ASSERT_EQUAL(serialized.size(), (size_t)1007, "Serialized size should be 1007 bytes");
-    ASSERT_EQUAL((uint8_t)serialized[0], (uint8_t)2, "First byte should be type length (2)");
+    // Format: [4 bytes magic][1 byte type_length][2 bytes "tx"][4 bytes payload_length][1000 bytes payload]
+    // Should be 4 + 1 + 2 + 4 + 1000 = 1011 bytes
+    ASSERT_EQUAL(serialized.size(), (size_t)1011, "Serialized size should be 1011 bytes");
+    ASSERT_EQUAL((uint8_t)serialized[4], (uint8_t)2, "Byte 4 should be type length (2)");
 
-    // Extract type string
-    std::string type_str = serialized.substr(1, 2);
+    // Extract type string (after 4 bytes magic + 1 byte type_length)
+    std::string type_str = serialized.substr(5, 2);
     ASSERT_EQUAL(type_str, std::string("tx"), "Type string should be 'tx'");
 
-    // Extract and verify payload (starts at offset 7: 1 + 2 + 4)
-    std::string extracted_payload = serialized.substr(7);
+    // Extract and verify payload (starts at offset 11: 4 + 1 + 2 + 4)
+    std::string extracted_payload = serialized.substr(11);
     ASSERT_EQUAL(extracted_payload, large_payload, "Large payload should match");
 }
 
@@ -140,8 +141,13 @@ TEST(PeerMessage_SerializeLargePayload) {
  */
 TEST(PeerMessage_DeserializeValid) {
     // Create a simple PING message manually
-    // Format: [1 byte type_length][4 bytes "ping"][4 bytes payload_length]
+    // Format: [4 bytes magic][1 byte type_length][4 bytes "ping"][4 bytes payload_length]
     std::string data;
+
+    // Add magic bytes (4 bytes, network byte order)
+    uint32_t magic = htonl(0); // Use default magic=0
+    data.append(reinterpret_cast<const char*>(&magic), 4);
+
     data.push_back((char)4); // Type length = 4
     data.append("ping");     // Type string
 
@@ -164,8 +170,13 @@ TEST(PeerMessage_DeserializeWithPayload) {
     std::string payload_data = "Hello";
 
     // Manually construct serialized message
-    // Format: [1 byte type_length][4 bytes "pong"][4 bytes payload_length][5 bytes "Hello"]
+    // Format: [4 bytes magic][1 byte type_length][4 bytes "pong"][4 bytes payload_length][5 bytes "Hello"]
     std::string data;
+
+    // Add magic bytes (4 bytes, network byte order)
+    uint32_t magic = htonl(0); // Use default magic=0
+    data.append(reinterpret_cast<const char*>(&magic), 4);
+
     data.push_back((char)4); // Type length = 4
     data.append("pong");     // Type string
 
@@ -317,8 +328,8 @@ TEST(PeerMessage_SettersAndGetters) {
  * @brief Test GetMinHeaderSize
  */
 TEST(PeerMessage_GetMinHeaderSize) {
-    // Minimum header size is 1 (type_length) + 0 (empty type) + 4 (payload_length) = 5 bytes
-    ASSERT_EQUAL(CPeerMessage::GetMinHeaderSize(), (size_t)5, "Minimum header size should be 5 bytes");
+    // Minimum header size is 4 (magic) + 1 (type_length) + 0 (empty type) + 4 (payload_length) = 9 bytes
+    ASSERT_EQUAL(CPeerMessage::GetMinHeaderSize(), (size_t)9, "Minimum header size should be 9 bytes");
 }
 
 /**
@@ -354,25 +365,25 @@ TEST(PeerMessage_SerializationFormat) {
     CPeerMessage msg(MessageType::TX, payload);
     std::string serialized = msg.Serialize();
 
-    // Verify format: [1 byte type_length][2 bytes "tx"][4 bytes payload_length][3 bytes "ABC"]
-    // Total: 1 + 2 + 4 + 3 = 10 bytes
-    ASSERT_EQUAL(serialized.size(), (size_t)10, "Total size should be 10 bytes");
+    // Verify format: [4 bytes magic][1 byte type_length][2 bytes "tx"][4 bytes payload_length][3 bytes "ABC"]
+    // Total: 4 + 1 + 2 + 4 + 3 = 14 bytes
+    ASSERT_EQUAL(serialized.size(), (size_t)14, "Total size should be 14 bytes");
 
-    // Byte 0: Type length
-    ASSERT_EQUAL((uint8_t)serialized[0], (uint8_t)2, "Byte 0 should be type length (2)");
+    // Byte 4: Type length (after 4 bytes magic)
+    ASSERT_EQUAL((uint8_t)serialized[4], (uint8_t)2, "Byte 4 should be type length (2)");
 
-    // Bytes 1-2: Type string "tx"
-    std::string type_str = serialized.substr(1, 2);
+    // Bytes 5-6: Type string "tx"
+    std::string type_str = serialized.substr(5, 2);
     ASSERT_EQUAL(type_str, std::string("tx"), "Type string should be 'tx'");
 
-    // Bytes 3-6: Payload length (network byte order)
+    // Bytes 7-10: Payload length (network byte order)
     uint32_t length_network;
-    std::memcpy(&length_network, serialized.data() + 3, 4);
+    std::memcpy(&length_network, serialized.data() + 7, 4);
     uint32_t length = ntohl(length_network);
     ASSERT_EQUAL(length, (uint32_t)3, "Payload length should be 3");
 
-    // Bytes 7-9: Payload
-    std::string extracted_payload = serialized.substr(7, 3);
+    // Bytes 11-13: Payload
+    std::string extracted_payload = serialized.substr(11, 3);
     ASSERT_EQUAL(extracted_payload, payload, "Payload should match");
 }
 
@@ -402,10 +413,10 @@ TEST(PeerMessage_NetworkByteOrder) {
     CPeerMessage msg(MessageType::BLOCK, payload);
     std::string serialized = msg.Serialize();
 
-    // Format: [1 byte type_length][5 bytes "block"][4 bytes payload_length][256 bytes payload]
-    // Extract length field (bytes 6-9, after 1 byte type_length + 5 bytes "block")
+    // Format: [4 bytes magic][1 byte type_length][5 bytes "block"][4 bytes payload_length][256 bytes payload]
+    // Extract length field (bytes 10-13, after 4 bytes magic + 1 byte type_length + 5 bytes "block")
     uint32_t length_network;
-    std::memcpy(&length_network, serialized.data() + 6, 4);
+    std::memcpy(&length_network, serialized.data() + 10, 4);
     uint32_t length_host = ntohl(length_network);
 
     ASSERT_EQUAL(length_host, (uint32_t)256, "Payload length should be 256 in host byte order");

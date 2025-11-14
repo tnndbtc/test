@@ -30,9 +30,9 @@ class P2PRelayTest(TestFramework):
         Node0 <-> Node1 <-> Node2
 
         Nodes:
-        - Node 0: REST API port 28443, P2P port 28333
-        - Node 1: REST API port 28444, P2P port 28334
-        - Node 2: REST API port 28445, P2P port 28335
+        - Node 0: REST API port 48443, P2P port 48333
+        - Node 1: REST API port 48444, P2P port 48334
+        - Node 2: REST API port 48445, P2P port 48335
         """
         self.log_info("setup: Establishing relay topology...")
 

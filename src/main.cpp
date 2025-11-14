@@ -6,6 +6,7 @@
 #include "rest/rest_api_server.h"
 #include "peer/peer_manager.h"
 #include "utils/config.h"
+#include "utils/network.h"
 #include "utils/threadname.h"
 #include "logger/logger.h"
 #include "utils/settings.h"
@@ -31,13 +32,14 @@
 #endif
 
 // Forward declaration
-int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode);
+int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode, const std::string& str_network);
 
 void PrintUsage(const char* program_name) {
     std::cout << "Usage: " << program_name << " [OPTIONS]\n\n";
     std::cout << "Options:\n";
     std::cout << "  -c, --config <file>    Configuration file (default: bweave.conf)\n";
     std::cout << "  -d, --daemon           Run as daemon process\n";
+    std::cout << "  --network <type>       Network type: mainnet|testnet|localnet (default: mainnet)\n";
     std::cout << "  -h, --help             Show this help message\n";
 #ifdef _WIN32
     std::cout << "\nWindows Service Options:\n";
@@ -96,6 +98,7 @@ int main(int argc, char* argv[]) {
 
     std::string str_config_file = "bweave.conf";
     bool f_daemon_mode = false;
+    std::string str_network = "";  // Empty means use config file value
 
     // Parse command line arguments
     for (int n_i = 1; n_i < argc; n_i++) {
@@ -109,6 +112,16 @@ int main(int argc, char* argv[]) {
         }
         else if (str_arg == "-d" || str_arg == "--daemon") {
             f_daemon_mode = true;
+        }
+        else if (str_arg == "--network" && n_i + 1 < argc) {
+            str_network = argv[++n_i];
+            // Validate network type
+            if (str_network != "mainnet" && str_network != "testnet" && str_network != "localnet") {
+                std::cerr << "Error: Invalid network type '" << str_network << "'\n";
+                std::cerr << "Valid options: mainnet, testnet, localnet\n\n";
+                PrintUsage(argv[0]);
+                return 1;
+            }
         }
 #ifdef _WIN32
         else if (str_arg == "--service" || str_arg == "--install-service" || str_arg == "--uninstall-service") {
@@ -124,30 +137,55 @@ int main(int argc, char* argv[]) {
     }
 
     // Run the main application logic
-    return RunApplicationMain(str_config_file, f_daemon_mode);
+    return RunApplicationMain(str_config_file, f_daemon_mode, str_network);
 }
 
 /**
  * @brief Main application logic - runs the daemon
  * @param str_config_file Path to configuration file
  * @param f_daemon_mode true to run as daemon (POSIX only)
+ * @param str_network Network type from command line (empty = use config)
  * @return Exit code (0 for success)
  *
  * This function contains the main application logic and is called from:
  * - main() in console mode (Windows and POSIX)
  * - ServiceMain() via RunApplication() in Windows service mode
  */
-int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode) {
+int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode, const std::string& str_network) {
     // Load configuration
     CConfig config(str_config_file);
+
+    // Override network from command line if specified
+    if (!str_network.empty()) {
+        config.SetValue("network", str_network);
+    }
+
+    // Get network configuration and parameters
+    std::string str_configured_network = config.GetNetwork();
+    NetworkType network_type = ParseNetworkType(str_configured_network);
+    const NetworkParams& network_params = GetNetworkParams(network_type);
+
     std::string str_miner_address = config.GetMinerAddress();
+
+    // Use network-specific default ports if not set in config
     int n_rest_port = config.GetRestApiPort();
     int n_p2p_port = config.GetP2PPort();
+
+    // Override with network defaults if using default values
+    if (n_rest_port == REST_API_PORT) {
+        n_rest_port = network_params.default_rest_port;
+    }
+    if (n_p2p_port == P2P_PORT) {
+        n_p2p_port = network_params.default_p2p_port;
+    }
+
     std::string str_log_dir = config.GetLogDir();
     std::string str_log_level = config.GetLogLevel();
     int n_log_file_size_mb = config.GetLogFileSizeMB();
     int n_log_file_keep = config.GetLogFileKeep();
-    std::string str_data_dir = config.GetDataDir();
+
+    // Use network-specific data directory
+    std::string str_data_dir = config.GetNetworkDataDir(str_configured_network);
 
     // Override daemon mode from command line
     if (f_daemon_mode) {
@@ -232,30 +270,26 @@ int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode) {
         std::cerr << "Error: Failed to initialize logger\n";
         return 1;
     }
-    LOG_INFO("=== Blockweave REST Daemon Starting ===");
+    LOG_INFO("=== Blockweave Daemon Starting ===");
     if (config.IsDaemonMode()) {
         LOG_INFO("Daemon process started successfully");
     }
     LOG_INFO("Log level set to: " + str_log_level);
 
-    LOG_INFO("=== Blockweave REST Daemon ===");
-    LOG_INFO("Miner address: " + str_miner_address.substr(0, 16) + "...");
+    LOG_INFO("=== Blockweave Daemon ===");
+    LOG_INFO("Network: " + network_params.network_name + " (magic: 0x" +
+             std::to_string(network_params.magic_bytes) + ")");
+    LOG_INFO("Miner address: " + str_miner_address + "...");
     LOG_INFO("REST API port: " + std::to_string(n_rest_port));
     LOG_INFO("P2P port: " + std::to_string(n_p2p_port));
+    // LOG_INFO("Target block time: " + std::to_string(network_params.target_block_time_seconds) + " seconds");
+    if (network_params.fast_mining) {
+        LOG_INFO("Fast mining mode: ENABLED (localnet only)");
+    }
     LOG_INFO("REST worker threads: " + std::to_string(REST_WORKER_THREADS));
     LOG_INFO("Data directory: " + str_data_dir);
 
-    // Create data directory if it doesn't exist
-    struct stat st;
-    if (stat(str_data_dir.c_str(), &st) != 0) {
-#ifdef _WIN32
-        mkdir(str_data_dir.c_str());
-#else
-        mkdir(str_data_dir.c_str(), 0755);
-#endif
-        LOG_INFO("Created data directory: " + str_data_dir);
-    }
-
+    // Note: Data directory is automatically created by config.GetNetworkDataDir()
     // Create blockweave with data/blocks subdirectory for block storage
     std::string str_blocks_dir = str_data_dir + "/blocks";
     auto p_weave = std::make_shared<CBlockweave>(str_blocks_dir);
@@ -265,9 +299,10 @@ int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode) {
     int n_max_outbound = config.GetMaxOutboundPeers();
     int n_max_inbound = config.GetMaxInboundPeers();
     int n_peers_ping_time = config.GetPeersPingTime();
+    uint32_t n_network_magic = network_params.magic_bytes;
     LOG_INFO("Creating peer manager on port " + std::to_string(n_p2p_port));
     LOG_INFO("Peers PING time: " + std::to_string(n_peers_ping_time) + " seconds");
-    CPeerManager peer_manager(n_p2p_port, n_max_outbound, n_max_inbound, n_peers_ping_time);
+    CPeerManager peer_manager(n_p2p_port, n_max_outbound, n_max_inbound, MAX_INBOUND_WORKER_THREADS, n_peers_ping_time, n_network_magic);
 
     // Start REST API server (1 listener thread + N worker threads)
     LOG_INFO("Starting REST API server on port " + std::to_string(n_rest_port));
@@ -313,7 +348,7 @@ int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode) {
     }
 #endif
 
-    LOG_INFO("REST daemon is running and ready to accept requests");
+    LOG_INFO("bweave daemon is running and ready to accept requests");
     LOG_INFO("Status: Starting main loop");
 
     // Main loop - wait for shutdown signal

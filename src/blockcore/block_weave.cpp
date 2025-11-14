@@ -26,7 +26,7 @@ CBlockweave::CBlockweave(const std::string& str_data_dir)
         // Found existing genesis on disk
         LOG_INFO("Existing blockchain detected, loading genesis from disk...");
         m_genesis_block = p_loaded_genesis;
-        LOG_INFO("Genesis block loaded: " + m_genesis_block->GetHash().GetData().substr(0, 16) + "...");
+        LOG_INFO("Genesis block loaded: " + m_genesis_block->GetHash().GetData() + "...");
 
         // Add genesis to in-memory structures
         map_blocks[m_genesis_block->GetHash().GetData()] = m_genesis_block;
@@ -43,6 +43,7 @@ CBlockweave::CBlockweave(const std::string& str_data_dir)
         LOG_INFO("No existing blockchain found, creating genesis block");
 
         m_genesis_block = CBlock::CreateGenesisBlock();
+        LOG_INFO("Genesis block created: " + m_genesis_block->GetHash().GetData() + "...");
 
         if (m_p_blockfile) {
             m_p_blockfile->SaveBlock(m_genesis_block);
@@ -66,13 +67,13 @@ void CBlockweave::AddTransaction(std::shared_ptr<CTransaction> tx) {
         str_tx_id = tx->m_id.GetData();
         for (const auto& p_existing_tx : m_mempool) {
             if (p_existing_tx->m_id == tx->m_id) {
-                LOG_TRACE("Transaction " + str_tx_id.substr(0, 16) + "... already in mempool, skipping");
+                LOG_TRACE("Transaction " + str_tx_id + "... already in mempool, skipping");
                 return;
             }
         }
 
         m_mempool.push_back(tx);
-        LOG_INFO("Transaction added to mempool: " + str_tx_id.substr(0, 16) + "..." + " current size: " + std::to_string(m_mempool.size()));
+        LOG_INFO("Transaction added to mempool: " + str_tx_id + "..." + " current size: " + std::to_string(m_mempool.size()));
     }
 
     // Broadcast transaction ID via INVENTORY message to peers (outside lock to avoid deadlock)
@@ -155,7 +156,7 @@ void CBlockweave::MineBlock(const std::string& str_miner_address) {
         }
 
         str_block_hash = new_block->GetHash().GetData();
-        LOG_INFO("Block #" + std::to_string(new_block->GetHeight()) + " mined successfully, hash: " + str_block_hash.substr(0, 16) + "...");
+        LOG_INFO("Block #" + std::to_string(new_block->GetHeight()) + " mined successfully, hash: " + str_block_hash + "...");
     }
 
     // Broadcast block to peers via INVENTORY message (outside lock to avoid deadlock)
@@ -194,7 +195,7 @@ std::shared_ptr<CBlock> CBlockweave::GetBlock(const CHash& hash) {
     // Block not in memory, try loading from disk (blockfile has its own locking)
     std::shared_ptr<CBlock> p_block;
     if (m_p_blockfile && m_p_blockfile->BlockExists(hash)) {
-        LOG_TRACE("Loading block from disk: " + hash.GetData().substr(0, 16) + "...");
+        LOG_TRACE("Loading block from disk: " + hash.GetData() + "...");
         p_block = m_p_blockfile->LoadBlock(hash);
     }
 
@@ -338,11 +339,11 @@ std::pair<bool, std::vector<std::shared_ptr<CBlock>>> CBlockweave::VerifyBlock(s
     
         // 1. Check if block already exists in map_blocks
         if (map_blocks.find(str_block_hash) != map_blocks.end()) {
-            LOG_TRACE("Block already exists, ignoring: " + str_block_hash.substr(0, 16) + "...");
+            LOG_TRACE("Block already exists, ignoring: " + str_block_hash + "...");
             return {false, vec_blocks_to_broadcast};
         }
-    
-        // 2. Validate proof-of-work
+
+        // 2. Validate proof-of-work (network isolation is handled by P2P magic bytes)
         // Recalculate the hash from block data and verify it matches the stored hash
         // This matches the logic in CBlock::Mine() which computes:
         //   m_hash = CHash(str_block_data + std::to_string(m_n_nonce));
@@ -368,7 +369,7 @@ std::pair<bool, std::vector<std::shared_ptr<CBlock>>> CBlockweave::VerifyBlock(s
         // Verify the hash meets the difficulty requirement (first 4 hex chars < "0fff")
         const std::string& str_hash = calculated_hash.GetData();
         if (str_hash.length() < 4 || str_hash.substr(0, 4) >= "0fff") {
-            LOG_WARN("Invalid proof-of-work: block hash " + str_hash.substr(0, 16) +
+            LOG_WARN("Invalid proof-of-work: block hash " + str_hash +
                      "... does not meet difficulty requirement (first 4 hex chars must be < 0fff)");
             return {false, vec_blocks_to_broadcast};
         }

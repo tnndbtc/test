@@ -83,7 +83,7 @@ CTransaction::CTransaction(const std::string& str_owner, const std::string& str_
       m_type(type), m_str_metadata(str_meta) {
     m_n_timestamp = std::chrono::system_clock::now().time_since_epoch().count();
 
-    // Compute transaction ID from all fields including metadata
+    // Compute transaction ID from all fields and metadata
     std::string str_id_input = str_owner + str_target;
     str_id_input.append(reinterpret_cast<const char*>(data.data()), data.size());
     str_id_input += std::to_string(n_reward);
@@ -135,7 +135,7 @@ std::string CTransaction::Serialize() const {
 std::shared_ptr<CTransaction> CTransaction::Deserialize(const std::string& str_data) {
     size_t n_offset = 0;
 
-    // Minimum size check
+    // Minimum size check (owner_len + target_len + data_len + reward + timestamp + type + metadata_len)
     const size_t min_size = BLOCK_UINT32_SIZE + BLOCK_UINT32_SIZE + BLOCK_UINT32_SIZE +
                             BLOCK_UINT64_SIZE + BLOCK_INT64_SIZE + BLOCK_UINT8_SIZE + BLOCK_UINT32_SIZE;
     if (str_data.length() < min_size) {

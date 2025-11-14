@@ -106,8 +106,9 @@ class BlockweaveNode:
             with open(custom_config_path, 'w') as f:
                 p2p_port_written = False
                 log_level_written = False
+                network_written = False
                 for line in config_lines:
-                    # Override log_dir, data_dir, rest_api_port, p2p_port, log_level, and daemon settings
+                    # Override log_dir, data_dir, rest_api_port, p2p_port, log_level, network, and daemon settings
                     if line.strip().startswith('log_dir='):
                         # Use forward slashes for cross-platform compatibility (Windows accepts them)
                         f.write(f"log_dir={log_dir.as_posix()}\n")
@@ -124,6 +125,9 @@ class BlockweaveNode:
                     elif line.strip().startswith('log_level='):
                         f.write("log_level=TRACE\n")  # Set TRACE log level for tests
                         log_level_written = True
+                    elif line.strip().startswith('network='):
+                        f.write("network=localnet\n")  # Use localnet for functional tests
+                        network_written = True
                     elif line.strip().startswith('daemon='):
                         f.write("daemon=false\n")  # Force foreground mode for tests
                     else:
@@ -138,6 +142,11 @@ class BlockweaveNode:
                 if not log_level_written:
                     f.write(f"\n# Log level (added by test framework)\n")
                     f.write(f"log_level=TRACE\n")
+
+                # Add network if it wasn't in the config
+                if not network_written:
+                    f.write(f"\n# Network (added by test framework)\n")
+                    f.write(f"network=localnet\n")
 
             self.logger.info(f"Created custom config at {custom_config_path}")
             self.logger.info(f"Log directory: {log_dir}")

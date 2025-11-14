@@ -142,6 +142,24 @@ private:
     std::tuple<int, std::string> HandleRpcPing();
 
     /**
+     * @brief Handle POST /rpc/minestart endpoint - enable continuous mining (localnet only)
+     * @return Tuple of (HTTP status code, JSON response with result)
+     */
+    std::tuple<int, std::string> HandleRpcMineStart();
+
+    /**
+     * @brief Handle POST /rpc/minestop endpoint - disable mining (localnet only)
+     * @return Tuple of (HTTP status code, JSON response with result)
+     */
+    std::tuple<int, std::string> HandleRpcMineStop();
+
+    /**
+     * @brief Handle POST /rpc/minetrigger endpoint - mine one block immediately (localnet only)
+     * @return Tuple of (HTTP status code, JSON response with result)
+     */
+    std::tuple<int, std::string> HandleRpcMineTrigger();
+
+    /**
      * @brief Parse raw HTTP request into structured form
      * @param str_raw_request Raw HTTP request string from socket
      * @param n_client_socket Client socket for response

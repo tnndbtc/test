@@ -8,10 +8,118 @@
  */
 
 #include "config.h"
+#include "pathutil.h"
 #include <fstream>
 #include <sstream>
 #include <iostream>
 #include <algorithm>
+#include <cstdlib>
+#include <sys/stat.h>
+#ifdef _WIN32
+    #include <windows.h>
+    #include <shlobj.h>
+#else
+    #include <unistd.h>
+    #include <sys/types.h>
+    #include <pwd.h>
+#endif
+
+/**
+ * @brief Expand path by replacing ~ with home directory and handling relative paths
+ * @param str_path Path to expand (may contain ~, be relative, or absolute)
+ * @param str_parent_dir Parent directory for relative paths (default: ~/.bweave)
+ * @return Expanded absolute path
+ *
+ * Path expansion rules:
+ * 1. Absolute paths (/path or C:\path on Windows): returned as-is
+ * 2. Paths starting with ~: expand to user's home directory
+ * 3. Relative paths (data, log, etc.): expand to parent_dir/path
+ *
+ * Default parent directory is ~/.bweave on Linux/Mac, %APPDATA%\bweave on Windows
+ */
+static std::string ExpandPath(const std::string& str_path, const std::string& str_parent_dir = "") {
+    if (str_path.empty()) {
+        return str_path;
+    }
+
+    // Check if path is absolute
+#ifdef _WIN32
+    // Windows: Check for drive letter (C:) or UNC path (\\)
+    if ((str_path.length() >= 2 && str_path[1] == ':') ||
+        (str_path.length() >= 2 && str_path[0] == '\\' && str_path[1] == '\\')) {
+        return str_path;  // Already absolute
+    }
+#else
+    // POSIX: Check if path starts with /
+    if (str_path[0] == '/') {
+        return str_path;  // Already absolute
+    }
+#endif
+
+    // Handle ~ expansion (home directory)
+    if (str_path[0] == '~') {
+        std::string str_home;
+#ifdef _WIN32
+        // Windows: Use USERPROFILE environment variable
+        const char* p_userprofile = std::getenv("USERPROFILE");
+        if (p_userprofile) {
+            str_home = p_userprofile;
+        }
+#else
+        // POSIX: Use HOME environment variable or getpwuid
+        const char* p_home = std::getenv("HOME");
+        if (p_home) {
+            str_home = p_home;
+        } else {
+            struct passwd* pw = getpwuid(getuid());
+            if (pw && pw->pw_dir) {
+                str_home = pw->pw_dir;
+            }
+        }
+#endif
+        if (!str_home.empty()) {
+            if (str_path.length() == 1) {
+                // Just "~"
+                return str_home;
+            } else if (str_path[1] == '/' || str_path[1] == '\\') {
+                // "~/path" or "~\path"
+                return str_home + str_path.substr(1);
+            }
+        }
+    }
+
+    // Relative path: expand to parent_dir/path
+    std::string str_effective_parent = str_parent_dir;
+    if (str_effective_parent.empty()) {
+        // Use default parent directory: ~/.bweave
+#ifdef _WIN32
+        const char* p_appdata = std::getenv("APPDATA");
+        if (p_appdata) {
+            str_effective_parent = std::string(p_appdata) + "\\bweave";
+        } else {
+            str_effective_parent = ".";  // Fallback to current directory
+        }
+#else
+        const char* p_home = std::getenv("HOME");
+        if (p_home) {
+            str_effective_parent = std::string(p_home) + "/.bweave";
+        } else {
+            struct passwd* pw = getpwuid(getuid());
+            if (pw && pw->pw_dir) {
+                str_effective_parent = std::string(pw->pw_dir) + "/.bweave";
+            } else {
+                str_effective_parent = ".";  // Fallback to current directory
+            }
+        }
+#endif
+    }
+
+#ifdef _WIN32
+    return str_effective_parent + "\\" + str_path;
+#else
+    return str_effective_parent + "/" + str_path;
+#endif
+}
 
 /**
  * @brief Default constructor - initialize with default values
@@ -43,13 +151,14 @@ void CConfig::LoadDefaults() {
     m_config_values["p2p_port"] = std::to_string(P2P_PORT);
     m_config_values["max_outbound_peers"] = std::to_string(MAX_OUTBOUND_PEERS);
     m_config_values["max_inbound_peers"] = std::to_string(MAX_INBOUND_PEERS);
-    m_config_values["data_dir"] = "./data";
-    m_config_values["log_dir"] = LOG_DIR;
+    m_config_values["data_dir"] = "data";  // Relative path, will expand to ~/.bweave/data
+    m_config_values["log_dir"] = "log";     // Relative path, will expand to ~/.bweave/log
     m_config_values["log_level"] = LOG_LEVEL;
     m_config_values["log_file_size_in_mb"] = std::to_string(LOG_FILE_SIZE_MB);
     m_config_values["log_file_keep"] = std::to_string(LOG_FILE_KEEP);
     m_config_values["peers_ping_time"] = std::to_string(PEERS_PING_TIME);
     m_config_values["daemon"] = "false";
+    m_config_values["network"] = DEFAULT_NETWORK;
 }
 
 /**
@@ -212,11 +321,19 @@ int CConfig::GetMaxInboundPeers() const {
 }
 
 std::string CConfig::GetDataDir() const {
-    return GetValue("data_dir", "./data");
+    std::string str_path = GetValue("data_dir", "data");
+    std::string str_expanded = ExpandPath(str_path);
+    // Create directory silently if it doesn't exist
+    CreateDirectoryRecursive(str_expanded);
+    return str_expanded;
 }
 
 std::string CConfig::GetLogDir() const {
-    return GetValue("log_dir", LOG_DIR);
+    std::string str_path = GetValue("log_dir", "log");
+    std::string str_expanded = ExpandPath(str_path);
+    // Create directory silently if it doesn't exist
+    CreateDirectoryRecursive(str_expanded);
+    return str_expanded;
 }
 
 std::string CConfig::GetLogLevel() const {
@@ -237,4 +354,17 @@ int CConfig::GetPeersPingTime() const {
 
 bool CConfig::IsDaemonMode() const {
     return GetBoolValue("daemon", false);
+}
+
+std::string CConfig::GetNetwork() const {
+    return GetValue("network", DEFAULT_NETWORK);
+}
+
+std::string CConfig::GetNetworkDataDir(const std::string& str_network) const {
+    std::string str_base_dir = GetDataDir();
+    // Remove trailing slash if present
+    if (!str_base_dir.empty() && str_base_dir.back() == '/') {
+        str_base_dir.pop_back();
+    }
+    return str_base_dir + "/" + str_network;
 }
