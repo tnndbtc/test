@@ -68,6 +68,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         "${BUILD_DIR}/libbwblockcore.${LIB_EXT}"
         "${BUILD_DIR}/libbwrest.${LIB_EXT}"
         "${BUILD_DIR}/libbwutils.${LIB_EXT}"
+        "${BUILD_DIR}/libbwpathutil.${LIB_EXT}"
     )
 
     set(LIBS_MISSING FALSE)
@@ -128,6 +129,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         PRIVATE ${BUILD_DIR}/libbwrest.${LIB_EXT}
         PRIVATE ${BUILD_DIR}/libbwblockcore.${LIB_EXT}
         PRIVATE ${BUILD_DIR}/libbwutils.${LIB_EXT}
+        PRIVATE ${BUILD_DIR}/libbwpathutil.${LIB_EXT}
         PRIVATE ${BUILD_DIR}/libbwpeer.${LIB_EXT}
         PRIVATE ${BUILD_DIR}/libbwpeermsg.${LIB_EXT}
         PRIVATE ${BUILD_DIR}/libbwlogger.${LIB_EXT}
@@ -183,6 +185,7 @@ else()
         PRIVATE bwrest
         PRIVATE bwblockcore
         PRIVATE bwutils
+        PRIVATE bwpathutil
         PRIVATE bwpeer
         PRIVATE bwpeermsg
         PRIVATE bwlogger

@@ -442,7 +442,7 @@ bool SetupConsoleCtrlHandler() {
 }
 
 // Forward declaration of main application function from main.cpp
-extern int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode);
+extern int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode, const std::string& str_network);
 
 /**
  * @brief Run the main application logic

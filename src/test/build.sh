@@ -91,6 +91,7 @@ REQUIRED_LIBS=(
     "libbwblockcore.${LIB_EXT}"
     "libbwrest.${LIB_EXT}"
     "libbwutils.${LIB_EXT}"
+    "libbwpathutil.${LIB_EXT}"
 )
 
 echo "Checking for required libraries in: $BUILD_DIR"
@@ -126,10 +127,10 @@ if [ "$LIBS_EXIST" = false ]; then
     # Build the required libraries
     if [ -n "$MAKE_JOBS" ]; then
         echo "Building libraries with $MAKE_JOBS parallel jobs (this may take a few minutes)..."
-        make $MAKE_JOBS bwthreadname bwlogger bwpeer bwutils bwblockcore bwrest
+        make $MAKE_JOBS bwthreadname bwlogger bwpeer bwutils bwpathutil bwblockcore bwrest
     else
         echo "Building libraries (this may take a few minutes)..."
-        make bwthreadname bwlogger bwpeer bwutils bwblockcore bwrest
+        make bwthreadname bwlogger bwpeer bwutils bwpathutil bwblockcore bwrest
     fi
 
     if [ $? -ne 0 ]; then
