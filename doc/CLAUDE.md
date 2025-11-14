@@ -6,10 +6,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Project:** C++17 blockweave implementation (similar to Arweave)
 **Key Concept:** Proof-of-access consensus
+**Networks:** Mainnet (production), Testnet (public testing), Localnet (dev/testing)
 **Documentation:**
 - [design.md](design.md) - Architecture and design decisions
 - [api.md](api.md) - REST API, RPC, and CLI documentation
 - [naming_convention.txt](naming_convention.txt) - Code style guide
+
+**Network Configuration:**
+```bash
+# Mainnet (default): Block time 10min, ports 28443/28333
+./bweave
+
+# Testnet: Block time 1min, ports 38443/38333
+./bweave --network testnet
+
+# Localnet: Block time 1s, ports 48443/48333, fast mining
+./bweave --network localnet
+```
 
 ## Dependencies
 
@@ -148,15 +161,22 @@ Strictly follow these conventions from `naming_convention.txt`:
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `miner_address` | *required* | Wallet address for rewards |
-| `rest_api_port` | 28443 | REST API port |
-| `p2p_port` | 28333 | P2P listening port |
+| `network` | mainnet | Network type: mainnet/testnet/localnet |
+| `rest_api_port` | *varies* | REST API port (28443/38443/48443 by network) |
+| `p2p_port` | *varies* | P2P listening port (28333/38333/48333 by network) |
 | `max_inbound_peers` | 120 | Max inbound connections |
 | `max_outbound_peers` | 8 | Max outbound connections |
 | `log_dir` | ./log | Log directory |
 | `log_level` | INFO | FATAL/ERROR/WARN/INFO/TRACE |
-| `data_dir` | ./data | Blockchain data storage |
+| `data_dir` | ./data | Blockchain data storage (network-specific subdirs created) |
 
-Defaults defined in `src/utils/settings.h`.
+Defaults defined in `src/utils/settings.h` and `src/utils/network.h`.
+
+**Network-Specific Behavior:**
+- Data stored in `{data_dir}/{network}/` subdirectory
+- Port defaults vary by network (see Quick Reference above)
+- Magic bytes used for P2P message validation (prevents cross-network communication)
+- Localnet has 1-second block time for fast testing
 
 ## Threading Model
 

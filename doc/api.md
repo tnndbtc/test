@@ -132,50 +132,6 @@ curl -X POST http://localhost:28443/files \
 
 ---
 
-#### POST /mine/start
-
-Start the mining process.
-
-**Request:**
-```bash
-curl -X POST http://localhost:28443/mine/start
-```
-
-**Response:**
-```json
-{
-  "status": "success",
-  "message": "Mining started"
-}
-```
-
-**Status Codes:**
-- 200 OK - Mining started or already running
-- 500 Internal Server Error - Failed to start mining
-
----
-
-#### POST /mine/stop
-
-Stop the mining process.
-
-**Request:**
-```bash
-curl -X POST http://localhost:28443/mine/stop
-```
-
-**Response:**
-```json
-{
-  "status": "success",
-  "message": "Mining stopped"
-}
-```
-
-**Status Codes:**
-- 200 OK - Mining stopped or already stopped
-- 500 Internal Server Error - Failed to stop mining
-
 ---
 
 ## RPC API
@@ -282,6 +238,122 @@ curl http://localhost:28443/rpc/getpeer
 **Status Codes:**
 - 200 OK - Peer list retrieved
 - 500 Internal Server Error - Server error
+
+---
+
+### POST /rpc/minestart
+
+Start continuous mining (localnet only).
+
+**Request:**
+```bash
+curl -X POST http://localhost:48443/rpc/minestart
+```
+
+**Response (Success):**
+```json
+{
+  "status": "success",
+  "mining_enabled": true,
+  "message": "Mining started"
+}
+```
+
+**Response (Forbidden - Wrong Network):**
+```json
+{
+  "error": "Forbidden",
+  "message": "Mining control is only available on localnet. Current network: mainnet"
+}
+```
+
+**Status Codes:**
+- 200 OK - Mining started
+- 403 Forbidden - Not running on localnet
+- 500 Internal Server Error - Server error
+
+**Notes:**
+- **Localnet only** - Returns 403 Forbidden on mainnet/testnet
+- Enables automatic continuous mining
+- Mining continues until explicitly stopped with /rpc/minestop
+
+---
+
+### POST /rpc/minestop
+
+Stop continuous mining (localnet only).
+
+**Request:**
+```bash
+curl -X POST http://localhost:48443/rpc/minestop
+```
+
+**Response (Success):**
+```json
+{
+  "status": "success",
+  "mining_enabled": false,
+  "message": "Mining stopped"
+}
+```
+
+**Response (Forbidden - Wrong Network):**
+```json
+{
+  "error": "Forbidden",
+  "message": "Mining control is only available on localnet. Current network: mainnet"
+}
+```
+
+**Status Codes:**
+- 200 OK - Mining stopped
+- 403 Forbidden - Not running on localnet
+- 500 Internal Server Error - Server error
+
+**Notes:**
+- **Localnet only** - Returns 403 Forbidden on mainnet/testnet
+- Stops automatic mining
+- Does not affect /rpc/minetrigger (which works independently)
+
+---
+
+### POST /rpc/minetrigger
+
+Mine one block immediately (localnet only).
+
+**Request:**
+```bash
+curl -X POST http://localhost:48443/rpc/minetrigger
+```
+
+**Response (Success):**
+```json
+{
+  "status": "success",
+  "message": "Block mined successfully",
+  "block_height": 42
+}
+```
+
+**Response (Forbidden - Wrong Network):**
+```json
+{
+  "error": "Forbidden",
+  "message": "Mining control is only available on localnet. Current network: mainnet"
+}
+```
+
+**Status Codes:**
+- 200 OK - Block mined
+- 403 Forbidden - Not running on localnet
+- 500 Internal Server Error - Mining failed or server error
+
+**Notes:**
+- **Localnet only** - Returns 403 Forbidden on mainnet/testnet
+- Mines exactly one block immediately (if mempool has transactions)
+- Returns immediately without blocking
+- Works regardless of continuous mining state (minestart/minestop)
+- Useful for functional tests to deterministically trigger mining
 
 ---
 
@@ -417,7 +489,20 @@ Runs daemon in background (forks to daemon process).
 **Options:**
 - `-d, --daemon` - Run in daemon mode (background)
 - `-c, --config <file>` - Configuration file path
+- `--network <type>` - Network type: mainnet/testnet/localnet (overrides config file)
 - `-h, --help` - Show help message
+
+**Network Examples:**
+```bash
+# Run on mainnet (default)
+./bweave
+
+# Run on testnet
+./bweave --network testnet
+
+# Run on localnet for development
+./bweave --network localnet
+```
 
 **Signals:**
 - SIGTERM - Graceful shutdown
@@ -473,16 +558,22 @@ miner_address=abc123
 | Setting | Type | Required | Default | Description |
 |---------|------|----------|---------|-------------|
 | `miner_address` | string | **Yes** | - | Wallet address for mining rewards |
-| `rest_api_port` | integer | No | 28443 | REST API server port |
-| `p2p_port` | integer | No | 28333 | P2P network listening port |
+| `network` | string | No | mainnet | Network type: mainnet/testnet/localnet |
+| `rest_api_port` | integer | No | *varies* | REST API server port (28443/38443/48443 by network) |
+| `p2p_port` | integer | No | *varies* | P2P network listening port (28333/38333/48333 by network) |
 | `max_inbound_peers` | integer | No | 120 | Maximum inbound peer connections |
 | `max_outbound_peers` | integer | No | 8 | Maximum outbound peer connections |
 | `log_dir` | string | No | ./log | Log directory path |
 | `log_level` | string | No | INFO | Log level (FATAL/ERROR/WARN/INFO/TRACE) |
 | `log_file_size_in_mb` | integer | No | 10 | Log file size limit before rotation |
 | `log_file_keep` | integer | No | 5 | Number of rotated log files to keep |
-| `data_dir` | string | No | ./data | Blockchain data storage directory |
+| `data_dir` | string | No | ./data | Blockchain data storage (network subdirs auto-created) |
 | `daemon` | boolean | No | false | Daemon mode (set by -d flag) |
+
+**Network-Specific Defaults:**
+- Mainnet: ports 28443/28333, 10min blocks, magic `0xBEEFCAFE`
+- Testnet: ports 38443/38333, 1min blocks, magic `0xDEADBEEEF`
+- Localnet: ports 48443/48333, 1sec blocks, magic `0xCAFEBABE`, fast mining enabled
 
 ### Example
 
@@ -492,15 +583,18 @@ miner_address=abc123
 # Miner address (REQUIRED)
 miner_address=ea6dc2ca1bd34a376850629cc74510133b7c2a4c318
 
-# REST API Settings
+# Network selection (mainnet/testnet/localnet)
+network=mainnet
+
+# REST API Settings (defaults vary by network)
 rest_api_port=28443
 
-# P2P Settings
+# P2P Settings (defaults vary by network)
 p2p_port=28333
 max_inbound_peers=120
 max_outbound_peers=8
 
-# Storage
+# Storage (network-specific subdirs auto-created: data/mainnet/, data/testnet/, etc.)
 data_dir=./data
 
 # Logging
@@ -523,6 +617,7 @@ daemon=false
 |------|---------|-------------|
 | 200 | OK | Request successful |
 | 400 | Bad Request | Invalid or missing parameters |
+| 403 | Forbidden | Request forbidden (e.g., localnet-only endpoint on mainnet) |
 | 404 | Not Found | Endpoint not found |
 | 405 | Method Not Allowed | HTTP method not supported for endpoint |
 | 500 | Internal Server Error | Server error during processing |

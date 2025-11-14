@@ -115,10 +115,15 @@ libbwrest (depends on blockcore, utils, logger, threadname)
 
 ### Message Protocol
 
-String-based message format for extensibility:
+String-based message format with network isolation via magic bytes:
 ```
-[1 byte type_length][N bytes type_string][4 bytes payload_length][M bytes payload]
+[4 bytes magic][1 byte type_length][N bytes type_string][4 bytes payload_length][M bytes payload]
 ```
+
+**Network Magic Bytes:**
+- Mainnet:  `0x8AC65DF3`
+- Testnet:  `0xEA71B96E`
+- Localnet: `0xACDE4892`
 
 **Message Types:**
 - `ping` / `pong` - Connection keep-alive (PING sent every 30 seconds)
@@ -126,11 +131,15 @@ String-based message format for extensibility:
 - `tx_ids` - Broadcast transaction IDs
 - `block` - Broadcast block data
 - `get_chain` - Request blockchain state
+- `inv` - Inventory announcement (notify peers about transactions/blocks)
+- `getdata` - Request specific data by hash
 
 **Design Rationale:**
+- **Magic bytes** prevent cross-network communication (e.g., mainnet node won't accept testnet messages)
 - Variable-length type strings allow easy addition of new message types
 - Network byte order (big-endian) for cross-platform compatibility
 - Explicit payload length prevents buffer overruns
+- Early magic validation rejects wrong-network messages with minimal CPU cost
 
 ### Peer Filter Design
 
@@ -154,6 +163,57 @@ CPeerFilter
 - Reduces network bandwidth
 - Prevents broadcast storms
 - Maintains O(1) lookup performance
+
+## Multi-Network Deployment
+
+The blockweave supports three distinct networks for different deployment scenarios:
+
+### Network Types
+
+| Network | Magic Bytes | REST Port | P2P Port | Block Time | Use Case |
+|---------|------------|-----------|----------|------------|----------|
+| **Mainnet** | `0xBEEFCAFE` | 28443 | 28333 | 600s (10min) | Production deployment |
+| **Testnet** | `0xDEADBEEF` | 38443 | 38333 | 60s (1min) | Public testing, experimentation |
+| **Localnet** | `0xCAFEBABE` | 48443 | 48333 | 1s | Local development, functional tests |
+
+### Network Isolation Mechanisms
+
+**1. P2P Protocol Level (Primary)**
+- Every P2P message includes 4-byte network magic as first field
+- Peer manager validates magic on all incoming messages
+- Cross-network messages rejected immediately
+- Zero risk of accidental cross-network communication
+
+**2. Data Directory Isolation**
+- Each network uses separate data directory: `data/{network}/`
+- Prevents blockchain data mixing
+- Allows running multiple networks on same machine (different ports)
+
+**3. Configuration**
+- Network specified via `network=` config option or `--network` CLI flag
+- Defaults to mainnet for safety
+- Network parameters loaded from `src/utils/network.h`
+
+### Security Benefits
+
+**Cross-Network Protection:**
+```
+Mainnet node ← PING(magic=0xBEEFCAFE) ← Mainnet peer ✅ Accepted
+Mainnet node ← PING(magic=0xDEADBEEF) ← Testnet peer ❌ Rejected
+```
+
+**Prevents:**
+- Accidental testnet transactions on mainnet
+- Replay attacks across networks
+- Wrong-network peer connections
+- Data directory confusion
+
+### Implementation
+
+Network magic bytes integrated throughout P2P stack:
+- `CPeerMessage` - Serializes/deserializes magic bytes
+- `CPeerManager` - Validates magic on all received messages
+- `main.cpp` - Passes network magic from config to peer manager
 
 ## Storage Architecture
 
