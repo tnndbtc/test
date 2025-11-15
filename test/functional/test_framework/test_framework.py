@@ -15,7 +15,6 @@ import time
 from pathlib import Path
 
 from .blockweave_node import BlockweaveNode
-from .test_node import TestNode
 
 
 class TestFramework(unittest.TestCase):
@@ -35,7 +34,6 @@ class TestFramework(unittest.TestCase):
         self.nodes = []
         self.node_counter = 0
         self.num_nodes = 0  # Number of nodes to create (set by test case)
-        self.test_nodes = []  # TestNode wrappers (created in setup_nodes)
 
     @staticmethod
     def force_remove_tree(path):
@@ -174,9 +172,8 @@ class TestFramework(unittest.TestCase):
         Setup test nodes based on self.num_nodes.
 
         Creates self.num_nodes BlockweaveNode instances, starts them,
-        and wraps them in TestNode instances (stored in self.test_nodes).
         Nodes are NOT connected to each other - test cases should call
-        self.test_nodes[0].connect_to_peer(self.test_nodes[1]) as needed.
+        self.nodes[0].connect_to_peer(self.nodes[1]) as needed.
 
         This method is called automatically by setUp() if num_nodes > 0.
         """
@@ -199,10 +196,6 @@ class TestFramework(unittest.TestCase):
 
             if not blockweave_node.start(timeout=20):
                 raise RuntimeError(f"Failed to start node {i}")
-
-            # Wrap with TestNode for convenience methods
-            test_node = TestNode(blockweave_node)
-            self.test_nodes.append(test_node)
 
             self.log_info(f"Node {i} started successfully")
 
@@ -228,7 +221,6 @@ class TestFramework(unittest.TestCase):
         cls.nocleanup = False
         cls.nodes = []
         cls.node_counter = 0
-        cls.test_nodes = []
 
         # Create instance to access instance methods
         cls._temp_instance = cls('setUp')
@@ -249,7 +241,6 @@ class TestFramework(unittest.TestCase):
             cls._temp_instance.setup_nodes()
             # Copy to class level
             cls.nodes = cls._temp_instance.nodes
-            cls.test_nodes = cls._temp_instance.test_nodes
             cls.node_counter = cls._temp_instance.node_counter
 
         # Call custom setup AFTER nodes are created
@@ -309,7 +300,6 @@ class TestFramework(unittest.TestCase):
             self.nocleanup = False
             self.nodes = []
             self.node_counter = 0
-            self.test_nodes = []
 
             self.init_tmpdir()
             self.setup_logging()
@@ -325,7 +315,6 @@ class TestFramework(unittest.TestCase):
                 self.tmpdir = self.__class__.tmpdir
                 self.nocleanup = self.__class__.nocleanup
                 self.nodes = self.__class__.nodes
-                self.test_nodes = self.__class__.test_nodes
                 self.node_counter = self.__class__.node_counter
                 self.logger = self.__class__.logger if hasattr(self.__class__, 'logger') else None
 
@@ -336,7 +325,7 @@ class TestFramework(unittest.TestCase):
                 # Copy any other custom attributes from _temp_instance
                 # This allows test classes to set attributes in setup() that are accessible in test methods
                 for attr_name in dir(self.__class__._temp_instance):
-                    if not attr_name.startswith('_') and attr_name not in ['node', 'nodes', 'test_nodes', 'tmpdir', 'nocleanup', 'logger', 'node_counter']:
+                    if not attr_name.startswith('_') and attr_name not in ['node', 'nodes', 'tmpdir', 'nocleanup', 'logger', 'node_counter']:
                         attr_value = getattr(self.__class__._temp_instance, attr_name, None)
                         # Only copy non-callable attributes that aren't already set
                         if not callable(attr_value) and not hasattr(self, attr_name):

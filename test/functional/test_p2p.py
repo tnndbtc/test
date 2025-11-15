@@ -38,11 +38,11 @@ class P2PTest(TestFramework):
         # Node0 will connect to nodes 1, 2, 3 during setup
         self.log_info("setup: Establishing peer connections...")
 
-        node0 = self.test_nodes[0]
+        node0 = self.nodes[0]
         target_nodes = [
-            self.test_nodes[1],
-            self.test_nodes[2],
-            self.test_nodes[3]
+            self.nodes[1],
+            self.nodes[2],
+            self.nodes[3]
         ]
 
         self.successful_connections = 0
@@ -50,15 +50,15 @@ class P2PTest(TestFramework):
         # Connect node0 to nodes 1, 2, 3
         for peer_node in target_nodes:
             self.log_info(
-                f"setup: Node{node0.index} connecting to Node{peer_node.index} "
+                f"setup: Node{node0.node_index} connecting to Node{peer_node.node_index} "
                 f"at 127.0.0.1:{peer_node.p2p_port}..."
             )
 
             if node0.connect_to_peer(peer_node, wait=True):
-                self.log_info(f"setup: Node{node0.index} successfully connected to Node{peer_node.index}")
+                self.log_info(f"setup: Node{node0.node_index} successfully connected to Node{peer_node.node_index}")
                 self.successful_connections += 1
             else:
-                self.log_info(f"setup: WARNING - Failed to connect Node{node0.index} to Node{peer_node.index}")
+                self.log_info(f"setup: WARNING - Failed to connect Node{node0.node_index} to Node{peer_node.node_index}")
 
         # Wait for connections to stabilize
         time.sleep(2)
@@ -66,7 +66,7 @@ class P2PTest(TestFramework):
         self.log_info(f"setup: Completed - {self.successful_connections}/3 connections established")
 
         # Debug: Log peer counts after setup
-        for i, node in enumerate(self.test_nodes):
+        for i, node in enumerate(self.nodes):
             peer_info = node.get_peer_info()
             total = peer_info.get('total_peers', 0)
             outbound = peer_info.get('outbound_peers', 0)
@@ -77,14 +77,14 @@ class P2PTest(TestFramework):
         """Verify all nodes are running."""
         self.log_info("test_01_nodes_are_running: Verifying all nodes are running...")
 
-        for test_node in self.test_nodes:
+        for node in self.nodes:
             # Check if process is alive
-            if test_node.node.process and test_node.node.process.poll() is None:
-                self.assert_true(True, f"Node {test_node.index} process is running")
+            if node.process and node.process.poll() is None:
+                self.assert_true(True, f"Node {node.node_index} process is running")
             else:
-                self.assert_true(False, f"Node {test_node.index} process should be running")
+                self.assert_true(False, f"Node {node.node_index} process should be running")
 
-            self.log_info(f"Node {test_node.index} is running")
+            self.log_info(f"Node {node.node_index} is running")
 
     def test_02_port_isolation(self):
         """Verify nodes are listening on different ports."""
@@ -93,34 +93,34 @@ class P2PTest(TestFramework):
         ports_used = set()
         base_port = 48443
 
-        for test_node in self.test_nodes:
-            expected_port = base_port + test_node.index
+        for node in self.nodes:
+            expected_port = base_port + node.node_index
             self.assert_equal(
-                test_node.port,
+                node.port,
                 expected_port,
-                f"Node {test_node.index} should use port {expected_port}"
+                f"Node {node.node_index} should use port {expected_port}"
             )
             self.assert_true(
                 expected_port not in ports_used,
                 f"Port {expected_port} should be unique"
             )
             ports_used.add(expected_port)
-            self.log_info(f"Node {test_node.index} confirmed on unique port {expected_port}")
+            self.log_info(f"Node {node.node_index} confirmed on unique port {expected_port}")
 
     def test_03_mining_status(self):
         """Verify mining is enabled on all nodes (mining starts automatically)."""
         self.log_info("test_03_mining_status: Verifying mining status on all nodes...")
 
-        for test_node in self.test_nodes:
-            chain_info = test_node.get_chain_info()
+        for node in self.nodes:
+            chain_info = node.get_chain_info()
 
             # Mining should be enabled by default when daemon starts
             self.assert_equal(
                 chain_info.get("mining_enabled"),
                 True,
-                f"Node {test_node.index} should have mining enabled by default"
+                f"Node {node.node_index} should have mining enabled by default"
             )
-            self.log_info(f"Node {test_node.index} mining status confirmed: enabled={chain_info['mining_enabled']}")
+            self.log_info(f"Node {node.node_index} mining status confirmed: enabled={chain_info['mining_enabled']}")
 
     def test_04_node0_outbound_connections(self):
         """
@@ -135,7 +135,7 @@ class P2PTest(TestFramework):
         self.log_info("test_05_node0 outbound connections via TestNode: Testing node0 outbound connections via TestNode...")
 
         # Connections were established in setup()
-        node0 = self.test_nodes[0]
+        node0 = self.nodes[0]
 
         # Verify we established connections during setup
         self.assert_true(
@@ -156,13 +156,13 @@ class P2PTest(TestFramework):
 
         total_peers = peer_info["total_peers"]
         outbound_peers = peer_info["outbound_peers"]
-        self.assert_true(outbound_peers==self.successful_connections, f"Node{node0.index} should have {outbound_peers} total outbound peers")
+        self.assert_true(outbound_peers==self.successful_connections, f"Node{node0.node_index} should have {outbound_peers} total outbound peers")
         inbound_peers = peer_info["inbound_peers"]
-        self.assert_true(inbound_peers==0, f"Node{node0.index} should have {inbound_peers} total inbound peers")
+        self.assert_true(inbound_peers==0, f"Node{node0.node_index} should have {inbound_peers} total inbound peers")
         peer_list = peer_info["peers"]
 
         self.log_info(
-            f"Node{node0.index} peer status: total={total_peers}, "
+            f"Node{node0.node_index} peer status: total={total_peers}, "
             f"outbound={outbound_peers}, inbound={inbound_peers}"
         )
         self.log_info(f"Connected peers: {peer_list}")
@@ -186,14 +186,14 @@ class P2PTest(TestFramework):
 
         # Verify nodes are still responsive after peer connections
         self.log_info("Verifying all nodes remain responsive after peer connections...")
-        for test_node in self.test_nodes:
+        for node in self.nodes:
             self.assert_true(
-                test_node.is_ready(),
-                f"Node{test_node.index} should still be responsive"
+                node.is_ready(),
+                f"Node{node.node_index} should still be responsive"
             )
 
         self.log_info(
-            f"Node{node0.index} outbound connections test completed successfully "
+            f"Node{node0.node_index} outbound connections test completed successfully "
             f"({self.successful_connections}/3 connections established)"
         )
 
@@ -209,11 +209,11 @@ class P2PTest(TestFramework):
         self.log_info("test_06_peerinfo_after_addpeer: Testing connection_time after addpeer...")
 
         # Connections were established in setup()
-        node0 = self.test_nodes[0]
+        node0 = self.nodes[0]
         target_nodes = [
-            self.test_nodes[1],
-            self.test_nodes[2],
-            self.test_nodes[3]
+            self.nodes[1],
+            self.nodes[2],
+            self.nodes[3]
         ]
 
         # Verify connections were established in setup
@@ -269,25 +269,25 @@ class P2PTest(TestFramework):
         # Step 2: Each of nodes 1, 2, 3 call getpeer and verify connection_time is set
         self.log_info("Step 2: Nodes 1, 2, 3 querying their peer info...")
         for peer_node in target_nodes:
-            self.log_info(f"Querying Node{peer_node.index} peer info...")
+            self.log_info(f"Querying Node{peer_node.node_index} peer info...")
             peer_info = peer_node.get_peer_info()
 
             self.assert_equal(
                 peer_info.get("status"),
                 "success",
-                f"Node{peer_node.index} getpeer should return success"
+                f"Node{peer_node.node_index} getpeer should return success"
             )
 
             total_peers = peer_info.get("total_peers", 0)
             self.assert_true(
                 total_peers == 1,
-                f"Node{peer_node.index} should have at least 1 peer (Node0), got {total_peers}"
+                f"Node{peer_node.node_index} should have at least 1 peer (Node0), got {total_peers}"
             )
 
             peers_list = peer_info.get("peers", [])
 
             # Debug logging - show all peers with their connection_time
-            self.log_info(f"Node{peer_node.index} has {len(peers_list)} peer(s):")
+            self.log_info(f"Node{peer_node.node_index} has {len(peers_list)} peer(s):")
             for idx, peer in enumerate(peers_list):
                 self.log_info(
                     f"  Peer {idx}: address={peer.get('address')}, port={peer.get('port')}, "
@@ -296,7 +296,7 @@ class P2PTest(TestFramework):
 
             self.assert_true(
                 len(peers_list) == 1,
-                f"Node{peer_node.index} should have exactly 1 peer in list, got {len(peers_list)}"
+                f"Node{peer_node.node_index} should have exactly 1 peer in list, got {len(peers_list)}"
             )
 
             # Find the connection to Node0 (127.0.0.1:port)
@@ -305,24 +305,24 @@ class P2PTest(TestFramework):
 
             self.assert_true(
                 node0_peer is not None,
-                f"Node{peer_node.index} should have Node0 (port {node0.p2p_port}) in its peer list"
+                f"Node{peer_node.node_index} should have Node0 (port {node0.p2p_port}) in its peer list"
             )
 
             # Verify connection_time is set
             self.assert_in(
                 "connection_time",
                 node0_peer,
-                f"Node{peer_node.index}'s connection to Node0 should have connection_time field"
+                f"Node{peer_node.node_index}'s connection to Node0 should have connection_time field"
             )
 
             connection_time = node0_peer.get("connection_time", 0)
             self.assert_true(
                 connection_time > 0,
-                f"Node{peer_node.index}'s connection to Node0 should have connection_time > 0, got {connection_time}"
+                f"Node{peer_node.node_index}'s connection to Node0 should have connection_time > 0, got {connection_time}"
             )
 
             self.log_info(
-                f"Node{peer_node.index} connected to Node0: "
+                f"Node{peer_node.node_index} connected to Node0: "
                 f"address={node0_peer.get('address')}, "
                 f"port={node0_peer.get('port')}, "
                 f"connection_time={connection_time}"
@@ -342,7 +342,7 @@ class P2PTest(TestFramework):
         """
         self.log_info("test_07_ping_after_addpeer: Testing ping_roundtrip_time after PING...")
 
-        node0 = self.test_nodes[0]
+        node0 = self.nodes[0]
 
         # Verify connections exist
         self.assert_true(

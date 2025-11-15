@@ -36,29 +36,29 @@ class P2PRelayTest(TestFramework):
         """
         self.log_info("setup: Establishing relay topology...")
 
-        node0 = self.test_nodes[0]
-        node1 = self.test_nodes[1]
-        node2 = self.test_nodes[2]
+        node0 = self.nodes[0]
+        node1 = self.nodes[1]
+        node2 = self.nodes[2]
 
         # Connect node0 <-> node1
-        self.log_info(f"setup: Node{node0.index} connecting to Node{node1.index}...")
+        self.log_info(f"setup: Node{node0.node_index} connecting to Node{node1.node_index}...")
         if node0.connect_to_peer(node1, wait=True):
-            self.log_info(f"setup: Node{node0.index} <-> Node{node1.index} connected")
+            self.log_info(f"setup: Node{node0.node_index} <-> Node{node1.node_index} connected")
         else:
-            self.log_error(f"setup: FAILED to connect Node{node0.index} to Node{node1.index}")
+            self.log_error(f"setup: FAILED to connect Node{node0.node_index} to Node{node1.node_index}")
 
         # Connect node1 <-> node2
-        self.log_info(f"setup: Node{node1.index} connecting to Node{node2.index}...")
+        self.log_info(f"setup: Node{node1.node_index} connecting to Node{node2.node_index}...")
         if node1.connect_to_peer(node2, wait=True):
-            self.log_info(f"setup: Node{node1.index} <-> Node{node2.index} connected")
+            self.log_info(f"setup: Node{node1.node_index} <-> Node{node2.node_index} connected")
         else:
-            self.log_error(f"setup: FAILED to connect Node{node1.index} to Node{node2.index}")
+            self.log_error(f"setup: FAILED to connect Node{node1.node_index} to Node{node2.node_index}")
 
         # Wait for connections to stabilize
         time.sleep(2)
 
         # Debug: Log peer counts after setup
-        for i, node in enumerate(self.test_nodes):
+        for i, node in enumerate(self.nodes):
             peer_info = node.get_peer_info()
             total = peer_info.get('total_peers', 0)
             outbound = peer_info.get('outbound_peers', 0)
@@ -84,13 +84,13 @@ class P2PRelayTest(TestFramework):
         """
         self.log_info("test_1_mine_block_broadcast: Starting block relay test...")
 
-        node0 = self.test_nodes[0]
-        node1 = self.test_nodes[1]
-        node2 = self.test_nodes[2]
+        node0 = self.nodes[0]
+        node1 = self.nodes[1]
+        node2 = self.nodes[2]
 
         # Verify initial block counts (should have 1 genesis block)
         self.log_info("Step 0: Verifying initial state...")
-        for i, node in enumerate(self.test_nodes):
+        for i, node in enumerate(self.nodes):
             chain_info = node.get_chain_info()
             blocks = chain_info.get('blocks', -1)
             self.log_info(f"Node{i} initial blocks: {blocks}")
@@ -105,7 +105,7 @@ class P2PRelayTest(TestFramework):
         }
 
         try:
-            success = node0.node.create_transaction(tx_data)
+            success = node0.create_transaction(tx_data)
             self.assert_equal(success, True, "Transaction submission should succeed")
             self.log_info(f"Transaction submitted successfully")
         except Exception as e:
@@ -162,7 +162,7 @@ class P2PRelayTest(TestFramework):
         # Step 9: Verify all nodes have blocks: 2 (genesis + mined block)
         self.log_info("Step 9: Verifying final block counts...")
 
-        for i, node in enumerate(self.test_nodes):
+        for i, node in enumerate(self.nodes):
             chain_info = node.get_chain_info()
             blocks = chain_info.get('blocks', -1)
 
@@ -191,9 +191,9 @@ class P2PRelayTest(TestFramework):
         """
         self.log_info("test_2_block_transaction_broadcast: Starting block+tx relay test...")
 
-        node0 = self.test_nodes[0]
-        node1 = self.test_nodes[1]
-        node2 = self.test_nodes[2]
+        node0 = self.nodes[0]
+        node1 = self.nodes[1]
+        node2 = self.nodes[2]
 
         # Step 1: Send first transaction to node0
         self.log_info("Step 1: Sending first transaction to node0...")
@@ -244,7 +244,7 @@ class P2PRelayTest(TestFramework):
             "data": "test_block_tx_data_2"
         }
 
-        success = node0.node.create_transaction(tx2_data)
+        success = node0.create_transaction(tx2_data)
         self.assert_true(success, "Second transaction submission should succeed")
         self.log_info("Second transaction submitted successfully")
         time.sleep(2)
@@ -294,7 +294,7 @@ class P2PRelayTest(TestFramework):
         # Step 11: Verify all nodes have blocks: 2 and mempool_size: 1
         self.log_info("Step 11: Verifying final block counts and mempool sizes...")
 
-        for i, node in enumerate(self.test_nodes):
+        for i, node in enumerate(self.nodes):
             chain_info = node.get_chain_info()
             blocks = chain_info.get('blocks', -1)
             mempool_size = chain_info.get('mempool_size', -1)

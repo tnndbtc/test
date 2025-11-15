@@ -77,6 +77,33 @@ class BlockweaveNode:
         self.logger = logging.getLogger(f"node{node_index}")
         self.custom_config_file = None
 
+    @property
+    def port(self):
+        """Get P2P port."""
+        return self._port
+
+    @port.setter
+    def port(self, value):
+        self._port = value
+
+    @property
+    def p2p_port(self):
+        """Get P2P port."""
+        return self._p2p_port
+
+    @p2p_port.setter
+    def p2p_port(self, value):
+        self._p2p_port = value
+
+    @property
+    def node_index(self):
+        """Get P2P port."""
+        return self._node_index
+
+    @node_index.setter
+    def node_index(self, value):
+        self._node_index = value
+
     def create_custom_config(self):
         """
         Create a custom config file with node-specific settings.
@@ -437,6 +464,92 @@ class BlockweaveNode:
                 "status": "error",
                 "error": str(e)
             }
+
+    def get_peer_info(self):
+        """
+        Get peer connection information.
+
+        Returns:
+            dict: Peer information with keys:
+                - status (str): "success" or "error"
+                - total_peers (int): Total connected peers
+                - outbound_peers (int): Number of outbound connections
+                - inbound_peers (int): Number of inbound connections
+                - peers (list): List of peer addresses
+                - error (str): Error message if status is "error"
+        """
+        try:
+            response = self.get("/rpc/getpeer")
+
+            if response.status_code != 200:
+                return {
+                    "status": "error",
+                    "error": f"HTTP {response.status_code}"
+                }
+
+            data = response.json()
+            return data
+
+        except Exception as e:
+            self.logger.error(f"Exception getting peer info: {e}")
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+
+    # def connect_to_peer(self, peer_address, peer_port, wait=True):
+    def connect_to_peer(self, peer_node, wait=True):
+        """
+        Connect to another peer node using RPC.
+
+        Args:
+            peer_node: TestNode instance to connect to
+            wait: Wait for connection to be established (default: True)
+
+        Returns:
+            bool: True if connection initiated successfully, False otherwise
+        """
+
+        peer_address = "127.0.0.1"
+        self.logger.info(
+            f"Node{self.node_index} connecting to peer at {peer_address}:{peer_node.p2p_port}..."
+        )
+
+        try:
+            response = self.post("/rpc/addpeer", json_data={
+                "address": peer_address,
+                "port": peer_node.p2p_port
+            })
+
+            if response.status_code != 200:
+                self.logger.error(
+                    f"Failed to connect to peer: HTTP {response.status_code}"
+                )
+                return False
+
+            data = response.json()
+
+            if data.get("status") == "success":
+                self.logger.info(
+                    f"Node{self.node_index} successfully initiated connection to {peer_address}:{peer_node.p2p_port}"
+                )
+
+                # Wait for connection to be established
+                if wait:
+                    import time
+                    time.sleep(1)
+
+                return True
+            else:
+                self.logger.warning(
+                    f"Failed to connect to peer at {peer_address}:{peer_node.p2p_port}: "
+                    f"{data.get('message', 'unknown error')}"
+                )
+                return False
+
+        except Exception as e:
+            self.logger.error(f"Exception connecting to peer: {e}")
+            return False
 
     def __enter__(self):
         """Context manager entry - start the node."""
