@@ -404,6 +404,40 @@ class BlockweaveNode:
             self.logger.error(f"Exception triggering mining: {e}")
             return False
 
+    def get_chain_info(self):
+        """
+        Get blockchain state information.
+
+        Returns:
+            dict: Chain information with keys:
+                - status (str): "success" or "error"
+                - height (int): Current blockchain height
+                - mempool_size (int): Number of pending transactions
+                - mining_enabled (bool): Whether mining is active
+                - error (str): Error message if status is "error"
+        """
+        try:
+            response = self.get("/chain")
+
+            if response.status_code != 200:
+                return {
+                    "status": "error",
+                    "error": f"HTTP {response.status_code}"
+                }
+
+            data = response.json()
+            return {
+                "status": "success",
+                **data
+            }
+
+        except Exception as e:
+            self.logger.error(f"Exception getting chain info: {e}")
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+
     def __enter__(self):
         """Context manager entry - start the node."""
         if not self.start():

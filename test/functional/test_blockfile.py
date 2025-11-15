@@ -99,9 +99,8 @@ class BlockfileTest(TestFramework):
         self.log_info("test_3_block_persistence_after_mining: Testing block persistence after mining...")
 
         # Get initial blockchain state
-        response = self.node.get("/chain")
-        self.assert_equal(response.status_code, 200, "GET /chain should succeed")
-        initial_state = response.json()
+        initial_state = self.node.get_chain_info()
+        self.assert_equal(initial_state.get("status"), "success", "get_chain_info() should succeed")
         initial_height = initial_state.get("blocks", 0)
         initial_mempool_size = initial_state.get("mempool_size", 0)
         self.log_info(f"Initial state - height: {initial_height}, mempool: {initial_mempool_size}")
@@ -128,8 +127,7 @@ class BlockfileTest(TestFramework):
 
         # Verify transaction is in mempool
         time.sleep(0.5)
-        response = self.node.get("/chain")
-        state_after_tx = response.json()
+        state_after_tx = self.node.get_chain_info()
         mempool_after_tx = state_after_tx.get("mempool_size", 0)
         self.log_info(f"Mempool size after transaction: {mempool_after_tx}")
         self.assert_true(mempool_after_tx > initial_mempool_size,
@@ -143,8 +141,7 @@ class BlockfileTest(TestFramework):
         time.sleep(0.5)
 
         # Verify blockchain height increased
-        response = self.node.get("/chain")
-        final_state = response.json()
+        final_state = self.node.get_chain_info()
         final_height = final_state.get("blocks", 0)
         final_mempool_size = final_state.get("mempool_size", 0)
         self.log_info(f"Final state - height: {final_height}, mempool: {final_mempool_size}")
@@ -249,8 +246,7 @@ class BlockfileTest(TestFramework):
         self.log_info(f"Block index before restart: exists={index_exists_before}, size={index_size_before}")
 
         # Get current blocks
-        response = self.node.get("/chain")
-        before_shutdown_state = response.json()
+        before_shutdown_state = self.node.get_chain_info()
         before_shutdown_blocks = before_shutdown_state.get("blocks", 0)
         before_shutdown_mempool = before_shutdown_state.get("mempool_size", 0)
         self.log_info(f"Before shutdown blocks: {before_shutdown_blocks}, mempool: {before_shutdown_mempool}")
@@ -271,8 +267,7 @@ class BlockfileTest(TestFramework):
         time.sleep(2)
 
         # Get current blocks
-        response = self.node.get("/chain")
-        after_restart_state = response.json()
+        after_restart_state = self.node.get_chain_info()
         after_restart_blocks = after_restart_state.get("blocks", 0)
         after_restart_mempool = after_restart_state.get("mempool_size", 0)
         self.log_info(f"After restart blocks: {after_restart_blocks}, mempool: {after_restart_mempool}")
@@ -297,10 +292,8 @@ class BlockfileTest(TestFramework):
         self.assert_true(index_exists_after, "Block index should exist after restart")
 
         # Verify node is still functional
-        response = self.node.get("/chain")
-        self.assert_equal(response.status_code, 200, "GET /chain returns 200 after restart")
-
-        chain_state = response.json()
+        chain_state = self.node.get_chain_info()
+        self.assert_equal(chain_state.get("status"), "success", "get_chain_info() returns success after restart")
         self.log_info(f"Chain state after restart: {chain_state}")
 
         self.log_info("Block loading after restart verified")

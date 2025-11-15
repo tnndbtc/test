@@ -103,10 +103,9 @@ class P2PRelayTest(TestFramework):
             "to": "wallet_receiver",
             "data": "test_relay_data"
         }
-        node0_mask = self.nodes[0]
 
         try:
-            success = node0_mask.create_transaction(tx_data)
+            success = node0.node.create_transaction(tx_data)
             self.assert_equal(success, True, "Transaction submission should succeed")
             self.log_info(f"Transaction submitted successfully")
         except Exception as e:
@@ -122,7 +121,7 @@ class P2PRelayTest(TestFramework):
         self.assert_equal(node2_mempool, 1, f"Transaction propagated to node2")
 
         # Step 2: Trigger Node0 to mine a block
-        self.assert_true(node0_mask.trigger_mining(), "Block mining triggered successfully")
+        self.assert_true(node0.trigger_mining(), "Block mining triggered successfully")
 
         # Note: Mining happens automatically when there are transactions in the mempool
         self.log_info("Step 2: Trigger Node0 to mine a block")
@@ -233,8 +232,8 @@ class P2PRelayTest(TestFramework):
 
         # Step 3: Stop mining on node0
         self.log_info("Step 3: Stopping mining on node0...")
-        response = node0.post("/mine/stop")
-        self.assert_equal(response.status_code, 200, "Mining stop should succeed")
+        success = node0.stop_mining()
+        self.assert_true(success, "Mining stop should succeed")
         time.sleep(1)
 
         # Step 4: Send second transaction to node0 (will stay in mempool)
@@ -245,9 +244,9 @@ class P2PRelayTest(TestFramework):
             "data": "test_block_tx_data_2"
         }
 
-        response = node0.post("/transaction", json_data=tx2_data)
-        self.assert_equal(response.status_code, 200, "Second transaction submission should succeed")
-        self.log_info(f"Second transaction submitted: {response.json()}")
+        success = node0.node.create_transaction(tx2_data)
+        self.assert_true(success, "Second transaction submission should succeed")
+        self.log_info("Second transaction submitted successfully")
         time.sleep(2)
 
         # Verify node0 has transaction in mempool

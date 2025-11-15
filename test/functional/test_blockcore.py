@@ -31,10 +31,9 @@ class BlockcoreTest(TestFramework):
 
         # Step 1: Get initial chain state
         self.log_info("Step 1: Getting initial chain state...")
-        response = self.node.get("/chain")
-        self.assert_equal(response.status_code, 200, "GET /chain returns 200")
+        initial_state = self.node.get_chain_info()
+        self.assert_equal(initial_state.get("status"), "success", "get_chain_info() returns success")
 
-        initial_state = response.json()
         initial_mempool_size = initial_state.get("mempool_size", -1)
         initial_mining_enabled = initial_state.get("mining_enabled", False)
         initial_blocks = initial_state.get('blocks', -1)
@@ -70,8 +69,7 @@ class BlockcoreTest(TestFramework):
 
         # Step 3: Verify mempool size increased
         self.log_info("Step 3: Verifying transaction is in mempool...")
-        response = self.node.get("/chain")
-        state_after_tx = response.json()
+        state_after_tx = self.node.get_chain_info()
         mempool_size_after_tx = state_after_tx.get("mempool_size", 0)
 
         self.log_info(f"Mempool size after transaction: {mempool_size_after_tx}")
@@ -92,8 +90,7 @@ class BlockcoreTest(TestFramework):
         self.assert_true(self.node.trigger_mining(), f"Block mining triggered successfully")
 
         # Step 5: Verify mining result
-        response = self.node.get("/chain")
-        final_state = response.json()
+        final_state = self.node.get_chain_info()
         final_blocks = final_state.get('blocks', -1)
         self.assert_equal(final_blocks, initial_blocks + 1, f"blocks size should increase by 1")
         final_mempool_size = final_state.get("mempool_size", -1)
