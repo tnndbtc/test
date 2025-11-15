@@ -1217,7 +1217,7 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
         } else {
             // Not enough data yet for a complete message, wait for more
             // Note: In production, we should buffer this partial data per-socket
-            LOG_TRACE("Incomplete message in buffer, waiting for more data (socket " + std::to_string(n_socket_fd) + ")");
+            LOG_TRACE("Incomplete or incorrect message in buffer, waiting for more data (socket " + std::to_string(n_socket_fd) + ")");
             break;
         }
     }

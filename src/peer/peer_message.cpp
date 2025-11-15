@@ -1,6 +1,9 @@
 // ============= peer_message.cpp =============
 #include "peer_message.h"
+#include "logger/logger.h"
 #include <cstring>
+#include <iomanip>
+#include <sstream>
 // Network byte order functions are in peer_message.h (platform-specific)
 
 // ============= MessageType Namespace Functions =============
@@ -173,6 +176,9 @@ std::string CPeerMessage::Serialize() const {
         str_result.append(reinterpret_cast<const char*>(m_payload.data()), m_payload.size());
     }
 
+    // Log serialization at trace level
+    LOG_TRACE("Serialized P2P message: type='" + m_str_type + "', total_size=" + std::to_string(n_total_size) + " bytes");
+
     return str_result;
 }
 
@@ -201,6 +207,12 @@ bool CPeerMessage::Deserialize(const std::string& str_data, uint32_t n_expected_
 
     // 2. Validate magic if expected magic is provided (non-zero)
     if (n_expected_magic != 0 && m_n_magic != n_expected_magic) {
+        // Log magic mismatch - indicates message from different network
+        std::ostringstream oss;
+        oss << "Network magic mismatch: received 0x" << std::hex << std::setw(8) << std::setfill('0') << m_n_magic
+            << ", expected 0x" << std::hex << std::setw(8) << std::setfill('0') << n_expected_magic
+            << " (message from wrong network)";
+        LOG_WARN(oss.str());
         return false;  // Magic mismatch - wrong network
     }
 
@@ -244,6 +256,9 @@ bool CPeerMessage::Deserialize(const std::string& str_data, uint32_t n_expected_
         const uint8_t* p_payload = reinterpret_cast<const uint8_t*>(str_data.data() + n_offset);
         m_payload.assign(p_payload, p_payload + n_payload_length);
     }
+
+    // Log successful deserialization at trace level
+    LOG_TRACE("Deserialized P2P message: type='" + m_str_type + "', payload_size=" + std::to_string(n_payload_length) + " bytes");
 
     return true;
 }

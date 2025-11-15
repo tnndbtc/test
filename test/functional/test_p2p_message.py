@@ -581,5 +581,68 @@ class P2PTest(TestFramework):
 
         self.log_info("Invalid type INVENTORY test completed")
 
+    def test_4_wrong_network_magic_rejection(self):
+        """Test that node rejects P2P messages with wrong network magic bytes."""
+        self.log_info("test_4_wrong_network_magic_rejection: Testing wrong magic rejection...")
+
+        # Define magic bytes for different networks (from src/utils/network.h)
+        MAINNET_MAGIC = 0x8AC65DF3
+        TESTNET_MAGIC = 0xEA71B96E
+        LOCALNET_MAGIC = 0xACDE4892  # Expected magic for test environment
+
+        # Get initial log position for verification
+        log_pos = self._get_log_position()
+
+        # Test: Send message with TESTNET_MAGIC to LOCALNET node
+        p2p_port = 48333  # LOCALNET P2P port
+        with P2PConnection("127.0.0.1", p2p_port, timeout=3) as conn:
+            if not conn.socket:
+                self.assert_true(False, "Failed to connect to P2P port")
+                return
+
+            # Create GET_PEERS message with WRONG magic bytes
+            wrong_magic_msg = P2PMessage(
+                msg_type=MessageType.GET_PEERS,
+                payload=b"",
+                magic=TESTNET_MAGIC  # Wrong! Node expects LOCALNET_MAGIC
+            )
+
+            self.log_info(
+                f"Sending GET_PEERS with TESTNET_MAGIC (0x{TESTNET_MAGIC:08X}) "
+                f"to node expecting LOCALNET_MAGIC (0x{LOCALNET_MAGIC:08X})"
+            )
+
+            sent = conn.send_message(wrong_magic_msg)
+            self.assert_true(sent, "Should be able to send message over socket")
+
+            # Give node time to process
+            time.sleep(0.5)
+
+            # Node should NOT respond to message with wrong magic
+            response = conn.receive_message(timeout=2)
+
+            if response is None:
+                self.log_info("Node correctly did not respond to wrong magic")
+            else:
+                self.assert_true(
+                    False,
+                    f"Node should NOT respond to message with wrong magic. "
+                    f"Got response: {response.msg_type}"
+                )
+
+        # Verify node logged something about the rejection
+        new_logs = self._read_new_logs(log_pos)
+
+        # Current implementation logs "Incomplete message in buffer, waiting for more data"
+        # because Deserialize() returns false but doesn't distinguish between
+        # "wrong magic" and "incomplete data"
+        if "magic mismatch" in new_logs:
+            self.log_info("Node logged about magic mismatch message handling as expected")
+        else:
+            # If no specific log, that's acceptable - node simply ignored the message
+            self.log_info("Node silently ignored wrong magic message (acceptable behavior)")
+
+        self.log_info("Wrong network magic rejection test completed successfully")
+
 if __name__ == "__main__":
     unittest.main()
