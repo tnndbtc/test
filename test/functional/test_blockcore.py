@@ -35,8 +35,10 @@ class BlockcoreTest(TestFramework):
         self.assert_equal(response.status_code, 200, "GET /chain returns 200")
 
         initial_state = response.json()
-        initial_mempool_size = initial_state.get("mempool_size", 0)
+        initial_mempool_size = initial_state.get("mempool_size", -1)
         initial_mining_enabled = initial_state.get("mining_enabled", False)
+        initial_blocks = initial_state.get('blocks', -1)
+
 
         self.log_info(f"Initial state - mempool: {initial_mempool_size}, mining: {initial_mining_enabled}")
 
@@ -53,34 +55,18 @@ class BlockcoreTest(TestFramework):
             "fee": 1000
         }
 
-        # Try to POST transaction
-        transaction_submitted = False
+        # Submit transaction
         tx_id = None
-
-        endpoint = "/transaction"
         try:
-            self.log_info(f"Attempting to submit transaction to {endpoint}...")
-            response = self.node.post(endpoint, json_data=transaction_data)
-            transaction_submitted = False
+            success = self.node.create_transaction(transaction_data)
+            self.assert_true(success, "Transaction submission should succeed")
 
-            if response.status_code == 200:
-                self.log_info(f"Transaction submitted successfully via {endpoint}")
-                self.log_info(f"Response status: {response.status_code}")
-
-                tx_response = response.json()
-                self.log_info(f"Transaction response: {tx_response}")
-
-                # Extract transaction ID if available
-                if "transaction_id" in tx_response:
-                    tx_id = tx_response["transaction_id"]
-                    self.log_info(f"Transaction ID: {tx_id}")
-                    transaction_submitted = True
-            if transaction_submitted == False:
-                # Log detailed error information
-                raise Exception("Transaction submission failed. response code: %d, response header: %s, response body: %s" % (response.status_code, dict(response.headers), response.text))
+            # Extract transaction ID
+            # tx_id = tx_response.get("transaction_id")
+            # self.log_info(f"Transaction ID: {tx_id}")
 
         except Exception as e:
-            self.assert_true(False, f"Error submitting to {endpoint}: {e}")
+            self.assert_true(False, f"Error submitting transaction: {e}")
 
         # Step 3: Verify mempool size increased
         self.log_info("Step 3: Verifying transaction is in mempool...")
@@ -101,60 +87,21 @@ class BlockcoreTest(TestFramework):
                 f"(before: {initial_mempool_size}, after: {mempool_size_after_tx})"
             )
 
-        # Step 4: Wait for block to be mined
-        self.log_info("Step 4: Waiting for block to be mined...")
-
-        max_wait_time = 15  # seconds
-        poll_interval = 0.5  # seconds
-        start_time = time.time()
-        block_mined = False
-        current_mempool_size = mempool_size_after_tx  # Initialize to avoid NameError
-
-        self.log_info(f"Polling mempool every {poll_interval}s for up to {max_wait_time}s...")
-
-        while time.time() - start_time < max_wait_time:
-            response = self.node.get("/chain")
-            current_state = response.json()
-            current_mempool_size = current_state.get("mempool_size", 0)
-
-            # Check if mempool size decreased (indicating a block was mined)
-            # sometimes mining happens too quick so current_mempool_size decreased immediately
-            if current_mempool_size < mempool_size_after_tx or current_mempool_size == 0:
-                elapsed = time.time() - start_time
-                self.log_info(f"Block mined after {elapsed:.2f}s!")
-                self.log_info(f"Mempool size: {mempool_size_after_tx} -> {current_mempool_size}")
-                block_mined = True
-                break
-
-            time.sleep(poll_interval)
+        # Step 4: mine immediately
+        self.log_info("Step 4: Mine immediately")
+        self.assert_true(self.node.trigger_mining(), f"Block mining triggered successfully")
 
         # Step 5: Verify mining result
-        if block_mined:
-            self.assert_true(True, "Block successfully mined with transaction")
+        response = self.node.get("/chain")
+        final_state = response.json()
+        final_blocks = final_state.get('blocks', -1)
+        self.assert_equal(final_blocks, initial_blocks + 1, f"blocks size should increase by 1")
+        final_mempool_size = final_state.get("mempool_size", -1)
+        self.assert_true(final_mempool_size == 0, f"mempool size should be 0")
 
-            # Get final chain state
-            response = self.node.get("/chain")
-            final_state = response.json()
-            final_mempool_size = final_state.get("mempool_size", 0)
-
-            self.log_info(f"Final mempool size: {final_mempool_size}")
-
-            # Optionally verify transaction was included in a block
-            if tx_id:
-                self.log_info(f"Verifying transaction {tx_id} was mined...")
-                # Could check /data/{tx_id} endpoint here if implemented
-        else:
-            elapsed = time.time() - start_time
-            self.log_info(
-                f"No block mined within {max_wait_time}s "
-                f"(final mempool size: {current_mempool_size})"
-            )
-            # Log warning but don't fail - mining might just be slow
-            self.log_info("Note: Mining may still complete, but test timeout reached")
-            self.assert_true(
-                False,
-                "Mining test completed (block mining in progress)"
-            )
+        # Optionally verify transaction was included in a block
+        if tx_id:
+            self.log_info(f"Verifying transaction {tx_id} was mined...")
 
     def test_invalid_transaction(self):
         """Test that submitting transaction with only data field returns bad request."""

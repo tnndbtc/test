@@ -68,8 +68,23 @@ std::shared_ptr<CBlock> CBlock::CreateGenesisBlock() {
 }
 
 void CBlock::AddTransaction(std::shared_ptr<CTransaction> tx) {
+    std::lock_guard<std::mutex> lock(cs_block);
+
+    // Check for duplicate transaction IDs
+    for (const auto& existing_tx : m_transactions) {
+        if (existing_tx->m_id.GetData() == tx->m_id.GetData()) {
+            // Duplicate transaction - ignore it
+            return;
+        }
+    }
+
     m_transactions.push_back(tx);
     m_n_cumulative_data_size += tx->m_n_data_size;
+}
+
+std::vector<std::shared_ptr<CTransaction>> CBlock::GetTransactions() const {
+    std::lock_guard<std::mutex> lock(cs_block);
+    return m_transactions;  // Returns a copy of the vector
 }
 
 void CBlock::Mine() {

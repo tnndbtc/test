@@ -187,6 +187,15 @@ public:
     std::shared_ptr<CBlock> LoadBlock(const CHash& hash);
 
     /**
+     * @brief Load a block from disk using hex string
+     * @param str_hash Block hash as hex string
+     * @return Loaded block, or nullptr on error
+     *
+     * Convenience overload that accepts hash as hex string directly.
+     */
+    std::shared_ptr<CBlock> LoadBlock(const std::string& str_hash);
+
+    /**
      * @brief Check if a block exists in the index
      * @param hash Block hash
      * @return true if block exists in index, false otherwise
@@ -208,6 +217,16 @@ public:
      * @return Data directory path
      */
     const std::string& GetDataDir() const { return m_str_data_dir; }
+
+    /**
+     * @brief Get all block hashes from the index
+     * @return Vector of all block hash strings (hex format) in the index
+     *
+     * Returns a list of all blocks that have been saved to disk.
+     * Useful for loading the entire blockchain on startup.
+     * Hash strings are in hexadecimal format.
+     */
+    std::vector<std::string> GetAllBlockHashes() const;
 };
 
 #endif // BLOCKFILE_H

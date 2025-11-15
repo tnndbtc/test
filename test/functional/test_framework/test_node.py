@@ -311,6 +311,17 @@ class TestNode:
             self.logger.error(f"Exception stopping mining: {e}")
             return False
 
+    def trigger_mining(self):
+        """
+        Trigger mining of one block immediately (localnet only).
+
+        This method delegates to the underlying BlockweaveNode.trigger_mining().
+
+        Returns:
+            bool: True if block was mined successfully, False otherwise
+        """
+        return self.node.trigger_mining()
+
     def wait_for_block(self, target_height, timeout=30, check_interval=1):
         """
         Wait for blockchain to reach a specific height.

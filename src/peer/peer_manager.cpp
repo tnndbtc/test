@@ -1963,18 +1963,11 @@ bool CPeerManager::SendMessageToPeer(const std::string& str_address, int n_port,
         return false;
     }
 
-    // Send the serialized message without holding the lock
-    ssize_t n_sent = send(n_target_socket, str_serialized.c_str(), str_serialized.length(), 0);
-
-    if (n_sent > 0) {
-        LOG_TRACE("Sent " + message.GetTypeString() + " message (" + std::to_string(str_serialized.length()) +
-                  " bytes) to peer " + str_peer_id);
-        return true;
-    } else {
-        LOG_ERROR("Failed to send " + message.GetTypeString() + " message to peer " + str_peer_id +
-                  " (error: " + std::string(strerror(errno)) + ")");
-        return false;
-    }
+    // Send the message using async I/O (works for both inbound and outbound peers)
+    SendMessageAsync(n_target_socket, message);
+    LOG_TRACE("Queued async " + message.GetTypeString() + " message (" + std::to_string(str_serialized.length()) +
+              " bytes) to peer " + str_peer_id);
+    return true;
 }
 
 /**
@@ -1987,54 +1980,37 @@ bool CPeerManager::SendMessageToPeer(const std::string& str_address, int n_port,
  * sends to other peers.
  */
 size_t CPeerManager::BroadcastMessage(const CPeerMessage& message) {
-    // Collect peer connections while holding the lock
-    // This prevents blocking I/O operations from holding the mutex
-    std::vector<CPeerConnection*> vec_peers;
+    size_t n_sent = 0;
 
     {
         std::lock_guard<std::mutex> lock(cs_peers);
 
-        // Add all connected outbound peers
+        // Send to outbound peers using async I/O
+        // (outbound sockets are registered in map_inbound_descriptors via RegisterOutboundSocket)
         for (const auto& p_peer : m_outbound_peers) {
             if (p_peer && p_peer->f_connected && p_peer->n_socket >= 0) {
-                vec_peers.push_back(p_peer.get());
+                SendMessageAsync(p_peer->n_socket, message);
+                n_sent++;
+                LOG_TRACE("Queued async " + message.GetTypeString() + " to outbound peer " +
+                         p_peer->peer_node->GetIdentifier());
             }
         }
 
-        // Add all connected inbound peers
+        // Send to inbound peers using async I/O
         for (const auto& p_peer : m_inbound_peers) {
             if (p_peer && p_peer->f_connected && p_peer->n_socket >= 0) {
-                vec_peers.push_back(p_peer.get());
+                SendMessageAsync(p_peer->n_socket, message);
+                n_sent++;
+                LOG_TRACE("Queued async " + message.GetTypeString() + " to inbound peer " +
+                         p_peer->peer_node->GetIdentifier());
             }
         }
     }
 
-    // Log detailed broadcast information at TRACE level
-    if (!vec_peers.empty()) {
-        std::string str_peer_list;
-        for (size_t i = 0; i < vec_peers.size(); ++i) {
-            if (i > 0) str_peer_list += ", ";
-            str_peer_list += vec_peers[i]->peer_node->GetIdentifier();
-        }
-        LOG_TRACE("BroadcastMessage: Broadcasting " + message.GetTypeString() + " message to " +
-                 std::to_string(vec_peers.size()) + " peers: " + str_peer_list);
-    } else {
-        LOG_TRACE("Broadcasting " + message.GetTypeString() + " message to 0 peers");
-        return 0;
-    }
+    LOG_TRACE("Broadcast complete: sent " + message.GetTypeString() + " to " +
+             std::to_string(n_sent) + " peers");
 
-    // Send to all peers using SendMessageAsync for consistent async I/O
-    // This prevents slow/blocked sockets from blocking other operations
-    for (const auto& p_peer : vec_peers) {
-        SendMessageAsync(p_peer->n_socket, message);
-        LOG_TRACE("Queued " + message.GetTypeString() + " for async send to peer " +
-                 p_peer->peer_node->GetIdentifier());
-    }
-
-    LOG_TRACE("Broadcast complete: queued " + message.GetTypeString() + " for " +
-             std::to_string(vec_peers.size()) + " peers");
-
-    return vec_peers.size();
+    return n_sent;
 }
 
 /**
@@ -2053,7 +2029,8 @@ size_t CPeerManager::SendPingToAllPeers() {
     {
         std::lock_guard<std::mutex> lock(cs_peers);
 
-        // Send PING to outbound peers (synchronous send in OutboundConnectionThread)
+        // Send PING to outbound peers using async I/O
+        // (outbound sockets are registered in map_inbound_descriptors via RegisterOutboundSocket)
         for (auto& p_peer : m_outbound_peers) {
             if (p_peer && p_peer->f_connected && p_peer->n_socket >= 0) {
                 // Generate random nonce
@@ -2071,14 +2048,11 @@ size_t CPeerManager::SendPingToAllPeers() {
                 p_peer->n_last_ping_nonce = n_nonce;
                 p_peer->m_last_ping_send_time = ping_send_time;
 
-                // Serialize and send
-                std::string str_serialized = ping_message.Serialize();
-                ssize_t n_bytes_sent = send(p_peer->n_socket, str_serialized.c_str(), str_serialized.length(), 0);
-                if (n_bytes_sent > 0) {
-                    n_sent++;
-                    LOG_TRACE("Sent " + ping_message.GetType() + " with nonce " + std::to_string(n_nonce) + " to peer " +
-                             p_peer->peer_node->GetIdentifier());
-                }
+                // Send via async I/O (for outbound peers)
+                SendMessageAsync(p_peer->n_socket, ping_message);
+                n_sent++;
+                LOG_TRACE("Queued async " + ping_message.GetType() + " with nonce " + std::to_string(n_nonce) + " to outbound peer " +
+                         p_peer->peer_node->GetIdentifier());
             }
         }
 

@@ -146,8 +146,9 @@ TEST(BlockFileSaveAndLoadWithTransactions) {
     // Save block
     ASSERT_TRUE(blockfile.SaveBlock(p_block), "Assertion should be true");
 
-    // Load block
-    auto p_loaded = blockfile.LoadBlock(hash);
+    // Load block with a different blockfile instance
+    CBlockFile blockfile2(str_test_dir);
+    auto p_loaded = blockfile2.LoadBlock(hash);
     ASSERT_NOT_NULL(p_loaded, "Should not be null");
     ASSERT_EQUAL(p_loaded->GetHeight(), 5, "Values should match");
     ASSERT_EQUAL(p_loaded->GetMiner(), "miner_address", "Values should match");

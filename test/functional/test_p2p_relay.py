@@ -103,38 +103,29 @@ class P2PRelayTest(TestFramework):
             "to": "wallet_receiver",
             "data": "test_relay_data"
         }
+        node0_mask = self.nodes[0]
 
-        response = node0.post("/transaction", json_data=tx_data)
-        self.assert_equal(response.status_code, 200, "Transaction submission should succeed")
+        try:
+            success = node0_mask.create_transaction(tx_data)
+            self.assert_equal(success, True, "Transaction submission should succeed")
+            self.log_info(f"Transaction submitted successfully")
+        except Exception as e:
+            self.assert_true(False, f"Transaction submission failed: {e}")
 
-        tx_result = response.json()
-        self.log_info(f"Transaction submitted: {tx_result}")
+        # Wait for transaction to be added to mempool and propagate to node1 and node2
+        time.sleep(0.5)
+        node1_chain_info = node1.get_chain_info()
+        node1_mempool = node1_chain_info.get('mempool_size', -1)
+        self.assert_equal(node1_mempool, 1, f"Transaction propagated to node1")
+        node2_chain_info = node2.get_chain_info()
+        node2_mempool = node2_chain_info.get('mempool_size', -1)
+        self.assert_equal(node2_mempool, 1, f"Transaction propagated to node2")
 
-        # Wait for transaction to be added to mempool
-        time.sleep(1)
+        # Step 2: Trigger Node0 to mine a block
+        self.assert_true(node0_mask.trigger_mining(), "Block mining triggered successfully")
 
-        # Step 2: Wait for Node0 to mine a block
         # Note: Mining happens automatically when there are transactions in the mempool
-        self.log_info("Step 2: Waiting for Node0 to mine block...")
-
-        # Wait for block to be mined (poll /chain for blocks count)
-        # Genesis block is at height 0, so we wait for blocks >= 2 (genesis + mined block)
-        max_wait = 60  # Maximum 60 seconds
-        start_time = time.time()
-        block_mined = False
-
-        while time.time() - start_time < max_wait:
-            chain_info = node0.get_chain_info()
-            blocks = chain_info.get('blocks', 0)
-
-            if blocks >= 2:
-                self.log_info(f"Node0 mined block! blocks={blocks}")
-                block_mined = True
-                break
-
-            time.sleep(1)
-
-        self.assert_true(block_mined, "Node0 should have mined a block within 60 seconds")
+        self.log_info("Step 2: Trigger Node0 to mine a block")
 
         # Step 3-8: Wait for block relay through the network
         # The P2P protocol should automatically:
@@ -149,8 +140,8 @@ class P2PRelayTest(TestFramework):
         self.log_info("  (Node0 -> Node1 -> Node2 via INVENTORY/GETDATA/BLOCKS)")
 
         # Wait for blocks to propagate
-        # Check every 2 seconds for up to 20 seconds
-        max_relay_wait = 20
+        # Check every 2 seconds for up to 5 seconds
+        max_relay_wait = 2
         relay_start = time.time()
 
         while time.time() - relay_start < max_relay_wait:
@@ -167,7 +158,7 @@ class P2PRelayTest(TestFramework):
                 self.log_info("Block successfully relayed to all nodes!")
                 break
 
-            time.sleep(2)
+            time.sleep(1)
 
         # Step 9: Verify all nodes have blocks: 2 (genesis + mined block)
         self.log_info("Step 9: Verifying final block counts...")
@@ -213,9 +204,12 @@ class P2PRelayTest(TestFramework):
             "data": "test_block_tx_data_1"
         }
 
-        response = node0.post("/transaction", json_data=tx1_data)
-        self.assert_equal(response.status_code, 200, "First transaction submission should succeed")
-        self.log_info(f"First transaction submitted: {response.json()}")
+        try:
+            success = node0.create_transaction(tx1_data)
+            self.assert_equal(success, True, "First transaction submission should succeed")
+            # self.log_info(f"First transaction submitted: {tx1_result}")
+        except Exception as e:
+            self.assert_true(False, f"First transaction submission failed: {e}")
         time.sleep(1)
 
         # Step 2: Wait for Node0 to mine the first transaction

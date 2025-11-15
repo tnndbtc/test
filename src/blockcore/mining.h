@@ -11,6 +11,7 @@
 #define MINING_H
 
 #include "block_weave.h"
+#include "../utils/network.h"
 #include <string>
 #include <thread>
 #include <atomic>
@@ -44,6 +45,7 @@ class CMiningManager {
 private:
     CBlockweave* p_blockweave;          ///< Pointer to blockweave instance
     std::string str_miner_address;      ///< Mining reward address
+    NetworkType m_network_type;         ///< Network type (localnet/testnet/mainnet)
     std::thread m_mining_thread;        ///< Mining thread handle
     std::atomic<bool> f_running;        ///< Mining manager running state
 
@@ -69,11 +71,14 @@ public:
      * @brief Constructor - initialize mining manager
      * @param p_weave Pointer to blockweave instance
      * @param str_miner_addr Mining reward address
+     * @param network_type Network type (localnet/testnet/mainnet)
      *
      * Creates mining manager in stopped state.
      * Call Start() to begin mining.
+     *
+     * Note: On localnet, automatic mining is disabled (only manual mining via RPC).
      */
-    CMiningManager(CBlockweave* p_weave, const std::string& str_miner_addr);
+    CMiningManager(CBlockweave* p_weave, const std::string& str_miner_addr, NetworkType network_type);
 
     /**
      * @brief Destructor - stops mining if running

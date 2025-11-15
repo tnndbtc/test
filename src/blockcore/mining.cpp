@@ -17,11 +17,12 @@
  * @brief Constructor - initialize mining manager
  * @param p_weave Pointer to blockweave instance
  * @param str_miner_addr Mining reward address
+ * @param network_type Network type (localnet/testnet/mainnet)
  *
  * Initializes mining manager in stopped state.
  */
-CMiningManager::CMiningManager(CBlockweave* p_weave, const std::string& str_miner_addr)
-    : p_blockweave(p_weave), str_miner_address(str_miner_addr), f_running(false) {
+CMiningManager::CMiningManager(CBlockweave* p_weave, const std::string& str_miner_addr, NetworkType network_type)
+    : p_blockweave(p_weave), str_miner_address(str_miner_addr), m_network_type(network_type), f_running(false) {
 }
 
 /**
@@ -98,6 +99,10 @@ bool CMiningManager::IsRunning() const {
  * 3. If mempool is empty, mines an empty block every MINING_EMPTY_BLOCK_INTERVAL_SECONDS (24 hours)
  * 4. Both intervals are configurable in settings.h
  *
+ * IMPORTANT: On localnet, automatic mining is DISABLED. Blocks can only be mined
+ * manually via /rpc/minetrigger. On mainnet and testnet, automatic time-based
+ * mining continues as normal.
+ *
  * Thread is named "mining_thread" for visibility in logs and debuggers.
  * Exits when blockweave->ShouldStopMining() returns true.
  */
@@ -106,6 +111,16 @@ void CMiningManager::MiningThread() {
     SetThreadName("mining_thread");
 
     LOG_INFO("Mining thread started");
+
+    // On localnet, disable automatic mining - only manual mining via /rpc/minetrigger
+    if (m_network_type == NetworkType::LOCALNET) {
+        LOG_INFO("Localnet detected - automatic mining disabled (use /rpc/minetrigger for manual mining)");
+        while (!p_blockweave->ShouldStopMining()) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        LOG_INFO("Mining thread stopped");
+        return;
+    }
 
     // Track last empty block mining time
     auto last_empty_block_time = std::chrono::steady_clock::now();

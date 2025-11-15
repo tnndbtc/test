@@ -321,6 +321,89 @@ class BlockweaveNode:
         url = f"{self.base_url}{endpoint}"
         return requests.post(url, data=data, json=json_data, timeout=timeout)
 
+    def create_transaction(self, transaction):
+        """
+        Create and submit a transaction to the node.
+
+        Args:
+            transaction: Dictionary with transaction data containing:
+                - from (str): Sender address
+                - to (str): Recipient address
+                - data (str): Transaction data/payload
+                - fee (int, optional): Transaction fee (default: 0)
+
+        Returns:
+            tuple: (success: bool, response_data: dict or None)
+                - success: True if transaction was submitted successfully
+                - response_data: JSON response from server (contains transaction_id on success)
+
+        Raises:
+            Exception: If transaction submission fails with detailed error information
+        """
+        try:
+            self.logger.info(f"Submitting transaction to /transaction...")
+            response = self.post("/transaction", json_data=transaction)
+
+            if response.status_code == 200:
+                tx_response = response.json()
+                tx_id = tx_response.get("transaction_id", "unknown")
+                self.logger.info(f"Transaction submitted successfully (ID: {tx_id})")
+                # return True, tx_response
+                return True
+            else:
+                # Log detailed error information
+                error_msg = (
+                    f"Transaction submission failed. "
+                    f"Status: {response.status_code}, "
+                    f"Headers: {dict(response.headers)}, "
+                    f"Body: {response.text}"
+                )
+                self.logger.error(error_msg)
+                return False
+                # raise Exception(error_msg)
+
+        except Exception as e:
+            self.logger.error(f"Exception submitting transaction: {e}")
+            return False
+            # raise
+
+    def trigger_mining(self):
+        """
+        Trigger mining of one block immediately (localnet only).
+
+        This method calls the /rpc/minetrigger endpoint which mines a single block
+        on demand. This endpoint is only available on localnet for testing purposes.
+
+        Returns:
+            bool: True if block was mined successfully, False otherwise
+        """
+        try:
+            response = self.post("/rpc/minetrigger")
+
+            if response.status_code == 200:
+                data = response.json()
+                block_hash = data.get("block_hash", "unknown")
+                block_height = data.get("block_height", "unknown")
+                self.logger.info(
+                    f"Node{self.node_index} mined block #{block_height} "
+                    f"(hash: {block_hash[:16]}...)"
+                )
+                return True
+            elif response.status_code == 403:
+                self.logger.error(
+                    f"Mining trigger forbidden: Only available on localnet"
+                )
+                return False
+            else:
+                self.logger.error(
+                    f"Failed to trigger mining: HTTP {response.status_code}"
+                )
+                return False
+
+        except Exception as e:
+            self.logger.error(f"Exception triggering mining: {e}")
+            return False
+
     def __enter__(self):
         """Context manager entry - start the node."""
         if not self.start():

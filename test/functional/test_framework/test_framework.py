@@ -423,3 +423,18 @@ class TestFramework(unittest.TestCase):
         """Log an informational message."""
         if hasattr(self, 'logger'):
             self.logger.info(message)
+
+    def log_error(self, message):
+        """Log an error message."""
+        if hasattr(self, 'logger'):
+            self.logger.error(message)
+
+    def log_warn(self, message):
+        """Log a warning message."""
+        if hasattr(self, 'logger'):
+            self.logger.warning(message)
+
+    def log_debug(self, message):
+        """Log a debug message."""
+        if hasattr(self, 'logger'):
+            self.logger.debug(message)

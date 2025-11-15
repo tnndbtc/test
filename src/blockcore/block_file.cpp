@@ -422,13 +422,13 @@ bool CBlockFile::SaveBlock(const std::shared_ptr<CBlock>& p_block) {
     return true;
 }
 
-std::shared_ptr<CBlock> CBlockFile::LoadBlock(const CHash& hash) {
+std::shared_ptr<CBlock> CBlockFile::LoadBlock(const std::string& str_hash) {
     std::shared_lock<std::shared_mutex> lock(cs_rw_blockfile);
 
     // Find block in index
-    auto it = map_block_index.find(hash.GetData());
+    auto it = map_block_index.find(str_hash);
     if (it == map_block_index.end()) {
-        LOG_ERROR("Block not found in index: " + hash.GetData() + "...");
+        LOG_ERROR("Block not found in index: " + str_hash.substr(0, 16) + "...");
         return nullptr;
     }
 
@@ -508,14 +508,31 @@ std::shared_ptr<CBlock> CBlockFile::LoadBlock(const CHash& hash) {
 
     ifs.close();
 
-    LOG_TRACE("Block loaded from disk: " + hash.GetData() + "... at height " + std::to_string(n_height) +
+    LOG_TRACE("Block loaded from disk: " + str_hash.substr(0, 16) + "... at height " + std::to_string(n_height) +
               " (file: blk" + std::to_string(index.n_file_number) + ".dat, offset: " + std::to_string(index.n_file_offset) + ")");
     return p_block;
+}
+
+// CHash overload delegates to string version
+std::shared_ptr<CBlock> CBlockFile::LoadBlock(const CHash& hash) {
+    return LoadBlock(hash.GetData());
 }
 
 bool CBlockFile::BlockExists(const CHash& hash) const {
     std::shared_lock<std::shared_mutex> lock(cs_rw_blockfile);
     return map_block_index.find(hash.GetData()) != map_block_index.end();
+}
+
+std::vector<std::string> CBlockFile::GetAllBlockHashes() const {
+    std::shared_lock<std::shared_mutex> lock(cs_rw_blockfile);
+    std::vector<std::string> vec_hashes;
+    vec_hashes.reserve(map_block_index.size());
+
+    for (const auto& pair : map_block_index) {
+        vec_hashes.push_back(pair.first);  // pair.first is the hex string
+    }
+
+    return vec_hashes;
 }
 
 std::shared_ptr<CBlock> CBlockFile::GetGenesisBlock() {

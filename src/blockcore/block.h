@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 #include <cstdint>
+#include <mutex>
 
 class CBlock {
     friend class CBlockFile;  // Allow CBlockFile to access private members for serialization
@@ -22,6 +23,7 @@ private:
     uint64_t m_n_difficulty;
     uint64_t m_n_cumulative_data_size;
     uint32_t m_n_nonce;
+    mutable std::mutex cs_block;  ///< Mutex to protect block data members
 
 public:
     CBlock(const CHash& prev_block, int64_t n_height, const std::string& str_miner);
@@ -48,7 +50,7 @@ public:
     const CHash& GetPreviousBlock() const { return m_previous_block; }
     int64_t GetHeight() const { return m_n_height; }
     int64_t GetTimestamp() const { return m_n_timestamp; }
-    const std::vector<std::shared_ptr<CTransaction>>& GetTransactions() const { return m_transactions; }
+    std::vector<std::shared_ptr<CTransaction>> GetTransactions() const;
     const std::string& GetMiner() const { return m_str_miner; }
     uint64_t GetDifficulty() const { return m_n_difficulty; }
     uint64_t GetCumulativeDataSize() const { return m_n_cumulative_data_size; }

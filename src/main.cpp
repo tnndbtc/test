@@ -330,7 +330,7 @@ int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode, c
 
     // Start mining manager
     LOG_INFO("Starting mining manager");
-    CMiningManager mining_manager(p_weave.get(), str_miner_address);
+    CMiningManager mining_manager(p_weave.get(), str_miner_address, network_type);
     p_weave->StartMining();
     if (!mining_manager.Start()) {
         LOG_ERROR("Failed to start mining manager");

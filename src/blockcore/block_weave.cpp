@@ -23,8 +23,8 @@ CBlockweave::CBlockweave(const std::string& str_data_dir)
     auto p_loaded_genesis = m_p_blockfile ? m_p_blockfile->GetGenesisBlock() : nullptr;
 
     if (p_loaded_genesis) {
-        // Found existing genesis on disk
-        LOG_INFO("Existing blockchain detected, loading genesis from disk...");
+        // Found existing genesis on disk - load all blocks from disk
+        LOG_INFO("Existing blockchain detected, loading all blocks from disk...");
         m_genesis_block = p_loaded_genesis;
         LOG_INFO("Genesis block loaded: " + m_genesis_block->GetHash().GetData() + "...");
 
@@ -33,9 +33,39 @@ CBlockweave::CBlockweave(const std::string& str_data_dir)
         m_block_hashes.push_back(m_genesis_block->GetHash());
         m_current_block = m_genesis_block;
 
-        // Note: We're only loading genesis for now
-        // A full implementation would load the entire chain and rebuild state
-        // For now, blocks will be loaded on-demand via GetBlock()
+        // Load all other blocks from disk
+        if (m_p_blockfile) {
+            std::vector<std::string> vec_all_hashes = m_p_blockfile->GetAllBlockHashes();
+            LOG_INFO("Found " + std::to_string(vec_all_hashes.size()) + " blocks in index");
+
+            // Load each block from disk (skip genesis which is already loaded)
+            int n_loaded_count = 0;
+            for (const auto& str_hash : vec_all_hashes) {
+                // Skip genesis block (already loaded)
+                if (str_hash == m_genesis_block->GetHash().GetData()) {
+                    continue;
+                }
+
+                // Load block from disk using hex string directly
+                auto p_block = m_p_blockfile->LoadBlock(str_hash);
+                if (p_block) {
+                    map_blocks[str_hash] = p_block;
+                    m_block_hashes.push_back(p_block->GetHash());
+                    n_loaded_count++;
+
+                    // Update current block to the highest height
+                    if (p_block->GetHeight() > m_current_block->GetHeight()) {
+                        m_current_block = p_block;
+                    }
+                } else {
+                    LOG_WARN("Failed to load block from disk: " + str_hash.substr(0, 16) + "...");
+                }
+            }
+
+            LOG_INFO("Loaded " + std::to_string(n_loaded_count) + " blocks from disk (total: " +
+                     std::to_string(map_blocks.size()) + " blocks, current height: " +
+                     std::to_string(m_current_block->GetHeight()) + ")");
+        }
 
         LOG_INFO("Blockchain state loaded from disk");
     } else {
@@ -161,24 +191,16 @@ void CBlockweave::MineBlock(const std::string& str_miner_address) {
 
     // Broadcast block to peers via INVENTORY message (outside lock to avoid deadlock)
     if (p_peer_manager != nullptr && !str_block_hash.empty()) {
-        // Build INVENTORY message manually: [count][type][hash]
-        std::string str_payload;
+        // Use BroadcastInventoryByPeerKnowledge to broadcast block inventory
+        // This ensures proper magic bytes and peer filtering
+        std::vector<std::pair<ObjectType::Type, std::string>> vec_inventory;
 
-        // Write count (4 bytes, network byte order) - we have 1 block
-        uint32_t n_count = htonl(1);
-        str_payload.append(reinterpret_cast<const char*>(&n_count), 4);
-
-        // Write type (2 bytes)
-        uint16_t n_type = htons(ObjectType::BLOCK);
-        str_payload.append(reinterpret_cast<const char*>(&n_type), 2);
-
-        // Write hash (32 bytes binary)
+        // Convert hash from hex string to binary (32 bytes)
         const auto& hash_bytes = new_block->GetHash().GetBytes();
-        str_payload.append(reinterpret_cast<const char*>(hash_bytes.data()), hash_bytes.size());
+        std::string str_hash_binary(reinterpret_cast<const char*>(hash_bytes.data()), hash_bytes.size());
 
-        // Broadcast INVENTORY message to all peers
-        CPeerMessage inv_msg(MessageType::INVENTORY, str_payload);
-        p_peer_manager->BroadcastMessage(inv_msg);
+        vec_inventory.push_back({ObjectType::BLOCK, str_hash_binary});
+        p_peer_manager->BroadcastInventoryByPeerKnowledge(vec_inventory);
     }
 }
 

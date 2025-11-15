@@ -98,6 +98,14 @@ class BlockfileTest(TestFramework):
         """Test that blocks are saved to disk after mining."""
         self.log_info("test_3_block_persistence_after_mining: Testing block persistence after mining...")
 
+        # Get initial blockchain state
+        response = self.node.get("/chain")
+        self.assert_equal(response.status_code, 200, "GET /chain should succeed")
+        initial_state = response.json()
+        initial_height = initial_state.get("blocks", 0)
+        initial_mempool_size = initial_state.get("mempool_size", 0)
+        self.log_info(f"Initial state - height: {initial_height}, mempool: {initial_mempool_size}")
+
         # Check initial blk00000.dat size
         blk00000 = self.blocks_dir / "blk00000.dat"
         initial_size = blk00000.stat().st_size if blk00000.exists() else 0
@@ -112,36 +120,45 @@ class BlockfileTest(TestFramework):
         }
 
         self.log_info("Submitting transaction...")
-        response = self.node.post("/transaction", json_data=transaction_data)
-        if response.status_code != 200:
-            print(response.text)
+        try:
+            success = self.node.create_transaction(transaction_data)
+            self.assert_equal(success, True, "Transaction submission successful")
+        except Exception as e:
+            self.assert_true(False, f"Transaction submission failed: {e}")
 
-        self.assert_equal(response.status_code, 200, "Transaction submission successful")
-
-        # Wait for transaction to be added to mempool
+        # Verify transaction is in mempool
         time.sleep(0.5)
+        response = self.node.get("/chain")
+        state_after_tx = response.json()
+        mempool_after_tx = state_after_tx.get("mempool_size", 0)
+        self.log_info(f"Mempool size after transaction: {mempool_after_tx}")
+        self.assert_true(mempool_after_tx > initial_mempool_size,
+                        f"Transaction should be in mempool (before: {initial_mempool_size}, after: {mempool_after_tx})")
 
-        # Trigger mining explicitly using RPC endpoint
-        self.log_info("Triggering block mining via /rpc/minetrigger...")
-        response = self.node.post("/rpc/minetrigger")
-        self.log_info(f"Mining trigger response: {response.status_code} - {response.text}")
-
-        if response.status_code != 200:
-            print(response.text)
-
-        self.assert_equal(response.status_code, 200, "Mining trigger successful")
-        self.log_info("Block mining triggered successfully")
+        # Trigger mining
+        self.log_info("Triggering block mining...")
+        self.assert_true(self.node.trigger_mining(), "Block mining triggered successfully")
 
         # Wait a moment for block to be written to disk
-        time.sleep(1)
+        time.sleep(0.5)
 
-        # Verify block was mined
+        # Verify blockchain height increased
+        response = self.node.get("/chain")
+        final_state = response.json()
+        final_height = final_state.get("blocks", 0)
+        final_mempool_size = final_state.get("mempool_size", 0)
+        self.log_info(f"Final state - height: {final_height}, mempool: {final_mempool_size}")
+
+        # Block should have been mined (height increased, mempool cleared)
+        self.assert_equal(final_height, initial_height + 1,
+                         f"Blockchain height should increase by 1 (initial: {initial_height}, final: {final_height})")
+        self.assert_equal(final_mempool_size, 0, "Mempool should be empty after mining")
+
+        # Verify block file exists and has content
         final_size = blk00000.stat().st_size if blk00000.exists() else 0
         self.log_info(f"Final blk00000.dat size: {final_size} bytes (initial: {initial_size})")
-
-        # Block file should have increased in size
         self.assert_true(final_size > initial_size,
-                        f"Block file should have increased in size (initial: {initial_size}, final: {final_size} bytes)")
+                        f"Block file should increase size (initial: {initial_size}, final: {final_size} bytes)")
 
         # Log all block files
         block_files = sorted(self.blocks_dir.glob("blk*.dat"))
@@ -170,26 +187,15 @@ class BlockfileTest(TestFramework):
                 "fee": 1000
             }
             self.log_info(f"Submitting transaction {i+1}/{num_transactions}...")
-            response = self.node.post("/transaction", json_data=transaction_data)
-            if response.status_code != 200:
-                print(response.text)
-            self.assert_equal(response.status_code, 200, f"Transaction {i+1} submission successful")
+            try:
+                success = self.node.create_transaction(transaction_data)
+                self.assert_equal(success, True, f"Transaction {i+1} submission successful")
+            except Exception as e:
+                self.assert_true(False, f"Transaction {i+1} submission failed: {e}")
             # Small delay between transactions to ensure they're processed separately
             time.sleep(0.2)
 
-        # Wait for all blocks to be mined (file size should increase significantly)
-        max_wait = 25
-        start_time = time.time()
-        # Expect file to grow (each block adds some bytes)
-        expected_min_size = initial_size + (num_transactions * 100)  # Rough estimate
-
-        while time.time() - start_time < max_wait:
-            current_size = blk00000.stat().st_size if blk00000.exists() else 0
-            self.log_info(f"Waiting for blocks... current size: {current_size}, initial: {initial_size}")
-            if current_size >= expected_min_size:
-                self.log_info(f"All blocks mined! File size increased to {current_size} bytes")
-                break
-            time.sleep(1.0)
+        self.assert_true(self.node.trigger_mining(), f"Block mining triggered successfully")
 
         # Verify file size increased significantly
         final_size = blk00000.stat().st_size
@@ -197,15 +203,15 @@ class BlockfileTest(TestFramework):
 
         # Note: With shared node state in setUpClass, file size may not always increase
         # Check that file exists and has reasonable content.
-        self.assert_true(final_size > 0,
-                        f"Block file should exist and have content (size: {final_size} bytes)")
+        self.assert_true(final_size > initial_size,
+                        f"Block file should increase the size: {final_size} bytes, compare to initial {initial_size} bytes)")
 
         # Log all block files
-        block_files = sorted(self.blocks_dir.glob("blk*.dat"))
-        for block_file in block_files:
-            file_size = block_file.stat().st_size
-            self.assert_true(file_size > 0, f"Block file {block_file.name} should have non-zero size")
-            self.log_info(f"Block file: {block_file.name} (size: {file_size} bytes)")
+        # block_files = sorted(self.blocks_dir.glob("blk*.dat"))
+        # for block_file in block_files:
+        #     file_size = block_file.stat().st_size
+        #     self.assert_true(file_size > 0, f"Block file {block_file.name} should have non-zero size")
+        #     self.log_info(f"Block file: {block_file.name} (size: {file_size} bytes)")
 
         self.log_info("Multiple blocks persistence verified")
 
@@ -223,24 +229,13 @@ class BlockfileTest(TestFramework):
             "fee": 1000
         }
 
-        response = self.node.post("/transaction", json_data=transaction_data)
-        if response.status_code != 200:
-            print(response.text)
+        try:
+            success = self.node.create_transaction(transaction_data)
+            self.assert_equal(success, True, "Transaction submission successful")
+        except Exception as e:
+            self.assert_true(False, f"Transaction submission failed: {e}")
 
-        self.assert_equal(response.status_code, 200, "Transaction submission successful")
-
-        # Wait for block to be mined (check file size)
-        max_wait = 5
-        start_time = time.time()
-        blk00000 = self.blocks_dir / "blk00000.dat"
-        initial_size = blk00000.stat().st_size if blk00000.exists() else 0
-
-        while time.time() - start_time < max_wait:
-            current_size = blk00000.stat().st_size if blk00000.exists() else 0
-            if current_size > initial_size:
-                self.log_info("Transaction mined into a block")
-                break
-            time.sleep(0.5)
+        self.assert_true(self.node.trigger_mining(), f"Block mining triggered successfully")
 
         # Record state before restart
         blk_files_before = sorted(self.blocks_dir.glob("blk*.dat"))
@@ -252,6 +247,13 @@ class BlockfileTest(TestFramework):
         index_exists_before = index_file.exists()
         index_size_before = index_file.stat().st_size if index_exists_before else 0
         self.log_info(f"Block index before restart: exists={index_exists_before}, size={index_size_before}")
+
+        # Get current blocks
+        response = self.node.get("/chain")
+        before_shutdown_state = response.json()
+        before_shutdown_blocks = before_shutdown_state.get("blocks", 0)
+        before_shutdown_mempool = before_shutdown_state.get("mempool_size", 0)
+        self.log_info(f"Before shutdown blocks: {before_shutdown_blocks}, mempool: {before_shutdown_mempool}")
 
         # Stop the node
         self.log_info("Stopping node...")
@@ -267,6 +269,15 @@ class BlockfileTest(TestFramework):
 
         # Wait for directories to be ready again
         time.sleep(2)
+
+        # Get current blocks
+        response = self.node.get("/chain")
+        after_restart_state = response.json()
+        after_restart_blocks = after_restart_state.get("blocks", 0)
+        after_restart_mempool = after_restart_state.get("mempool_size", 0)
+        self.log_info(f"After restart blocks: {after_restart_blocks}, mempool: {after_restart_mempool}")
+        self.assert_equal(before_shutdown_blocks, after_restart_blocks, f"blocks should be equal after restart")
+        self.assert_equal(before_shutdown_mempool, after_restart_mempool, f"mempool should be equal after restart")
 
         # Verify block files still exist after restart with same sizes
         blk_files_after = sorted(self.blocks_dir.glob("blk*.dat"))

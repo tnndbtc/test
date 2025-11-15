@@ -220,3 +220,58 @@ TEST(Block_CreateGenesisBlock) {
     // Verify no transactions initially
     ASSERT_EQUAL(p_genesis->GetTransactions().size(), (size_t)0, "Genesis block should have no transactions initially");
 }
+
+/**
+ * @brief Test CBlock with no transactions and GetTransactions() returns empty vector
+ */
+TEST(Block_NoTransactions_GetTransactions) {
+    CHash previous_hash("previous");
+    CBlock block(previous_hash, 1, "miner");
+
+    block.Mine();
+
+    // Get transactions from block with no transactions
+    std::vector<std::shared_ptr<CTransaction>> transactions = block.GetTransactions();
+
+    // Verify empty vector is returned
+    ASSERT_EQUAL(transactions.size(), (size_t)0, "Block with no transactions should return empty vector");
+
+    // Verify it's a copy (modifying the returned vector shouldn't affect the block)
+    transactions.push_back(nullptr);
+    ASSERT_EQUAL(block.GetTransactions().size(), (size_t)0, "Block should still have 0 transactions after modifying returned vector");
+}
+
+/**
+ * @brief Test CBlock AddTransaction ignores duplicates
+ */
+TEST(Block_AddTransaction_IgnoreDuplicates) {
+    CHash previous_hash("previous");
+    CBlock block(previous_hash, 1, "miner");
+
+    // Create a transaction
+    std::vector<uint8_t> data = {'t', 'e', 's', 't'};
+    auto tx1 = std::make_shared<CTransaction>("alice", "bob", data, 100);
+
+    // Add transaction twice (same shared_ptr object)
+    block.AddTransaction(tx1);
+    block.AddTransaction(tx1);  // Duplicate - should be ignored
+
+    // Should only have 1 transaction (same transaction object added twice)
+    ASSERT_EQUAL(block.GetTransactions().size(), (size_t)1, "Duplicate transaction (same object) should be ignored");
+
+    // Create a different transaction
+    std::vector<uint8_t> data2 = {'t', 'e', 's', 't', '2'};
+    auto tx2 = std::make_shared<CTransaction>("bob", "charlie", data2, 200);
+
+    // Add the different transaction
+    block.AddTransaction(tx2);
+
+    // Should now have 2 transactions (different IDs)
+    ASSERT_EQUAL(block.GetTransactions().size(), (size_t)2, "Different transaction should be added");
+
+    // Try adding tx1 again
+    block.AddTransaction(tx1);
+
+    // Should still have 2 transactions
+    ASSERT_EQUAL(block.GetTransactions().size(), (size_t)2, "Previously added transaction should be ignored");
+}
