@@ -454,10 +454,10 @@ if(WIN32)
         target_compile_definitions(bweave_cli PRIVATE _WIN32_WINNT=0x0601)
     endif()
 
-    # Link Windows socket library (ws2_32) and service library (advapi32)
+    # Link Windows socket library (ws2_32), mswsock for AcceptEx, and service library (advapi32)
     target_link_libraries(bwpeermsg PUBLIC ws2_32)
-    target_link_libraries(bwpeer PUBLIC ws2_32)
-    target_link_libraries(bwblockcore PUBLIC advapi32)  # For Windows Service APIs
+    target_link_libraries(bwpeer PUBLIC ws2_32 mswsock)
+    target_link_libraries(bwblockcore PUBLIC ws2_32 advapi32)  # For network functions and Windows Service APIs
     target_link_libraries(bweave PRIVATE ws2_32 advapi32)
     target_link_libraries(wallet PRIVATE ws2_32)
     if(TARGET bweave_cli)
