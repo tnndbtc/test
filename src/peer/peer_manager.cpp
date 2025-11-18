@@ -157,7 +157,7 @@ CPeerConnection& CPeerConnection::operator=(CPeerConnection&& other) noexcept {
  * Call Start() to begin accepting connections.
  */
 CPeerManager::CPeerManager(int n_port, int n_max_outbound, int n_max_inbound, int n_max_workers, int n_ping_time, uint32_t n_magic)
-    : n_listen_port(n_port), n_listen_socket(-1),
+    : n_listen_port(n_port), m_p_acceptor(nullptr),
       n_max_inbound_peers(n_max_inbound), n_max_outbound_peers(n_max_outbound),
       n_peers_ping_time(n_ping_time), m_n_network_magic(n_magic),
       f_running(false), f_stop_requested(false), f_stop_monitor(false),
@@ -205,23 +205,23 @@ bool CPeerManager::Start() {
         return true;
     }
 
-    // Create listen socket for inbound connections
-    if (!CreateListenSocket()) {
-        LOG_ERROR("Failed to create listen socket for peer manager");
+    // Create acceptor for inbound connections
+    if (!CreateAcceptor()) {
+        LOG_ERROR("Failed to create acceptor for peer manager");
         return false;
     }
 
     f_running = true;
     f_stop_requested = false;
 
-    // Start listener thread for inbound connections
-    m_listener_thread = std::thread(&CPeerManager::ListenerThread, this);
-
     // Start peer management thread
     m_peer_thread = std::thread(&CPeerManager::PeerManagerThread, this);
 
-    // Start monitor thread for inbound socket I/O multiplexing
+    // Start monitor thread for inbound socket I/O multiplexing and async accept
     m_monitor_inbound_thread = std::thread(&CPeerManager::MonitorInboundSocketThread, this);
+
+    // Start async accept chain (runs in io_context, processed by monitor thread)
+    StartAccept();
 
     LOG_TRACE("Peer Manager started on port " + std::to_string(n_listen_port));
     LOG_TRACE("Maximum inbound peers: " + std::to_string(n_max_inbound_peers));
@@ -268,8 +268,8 @@ void CPeerManager::Stop() {
     f_stop_monitor = true;
     f_running = false;
 
-    // Close listen socket
-    CloseListenSocket();
+    // Close acceptor (cancels pending async_accept operations)
+    CloseAcceptor();
 
     // Stop all peer connections (both inbound and outbound)
 
@@ -325,11 +325,7 @@ void CPeerManager::Stop() {
         }
     }
 
-    // Join threads
-    if (m_listener_thread.joinable()) {
-        m_listener_thread.join();
-    }
-
+    // Join threads (listener thread removed - accept handled by monitor thread)
     if (m_peer_thread.joinable()) {
         m_peer_thread.join();
     }
@@ -365,69 +361,244 @@ bool CPeerManager::IsRunning() const {
 }
 
 /**
- * @brief Create and bind listening socket
- * @return true if socket created and bound successfully, false on error
+ * @brief Create and configure Boost.Asio acceptor
+ * @return true if acceptor created and bound successfully, false on error
  *
- * Socket creation sequence:
- * 1. Create IPv4 TCP socket
- * 2. Set SO_REUSEADDR to allow rapid restart after shutdown
- * 3. Bind to INADDR_ANY (all network interfaces) on configured port
- * 4. Start listening with backlog of 10 pending connections
+ * Acceptor creation sequence:
+ * 1. Create Boost.Asio TCP acceptor bound to io_context
+ * 2. Open acceptor for IPv4 TCP
+ * 3. Set SO_REUSEADDR to allow rapid restart after shutdown
+ * 4. Set SO_REUSEPORT (on non-Windows) for load balancing
+ * 5. Bind to INADDR_ANY (all network interfaces) on configured port
+ * 6. Start listening with backlog of 10 pending connections
  *
- * On any error, cleans up socket and returns false.
+ * On any error, cleans up acceptor and returns false.
  */
-bool CPeerManager::CreateListenSocket() {
-    // Create socket
-    n_listen_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if (n_listen_socket < 0) {
-        std::cerr << "[Peer Manager] Failed to create listen socket\n";
-        return false;
-    }
+bool CPeerManager::CreateAcceptor() {
+    try {
+        // Create acceptor
+        m_p_acceptor = std::make_unique<boost::asio::ip::tcp::acceptor>(m_io_context);
 
-    // Set socket options
-    int n_opt = 1;
-#ifdef _WIN32
-    setsockopt(n_listen_socket, SOL_SOCKET, SO_REUSEADDR, (const char*)&n_opt, sizeof(n_opt));
-#else
-    setsockopt(n_listen_socket, SOL_SOCKET, SO_REUSEADDR, &n_opt, sizeof(n_opt));
+        // Open for IPv4 TCP
+        m_p_acceptor->open(boost::asio::ip::tcp::v4());
+
+        // Set socket options
+        m_p_acceptor->set_option(boost::asio::ip::tcp::acceptor::reuse_address(true));
+
+#ifndef _WIN32
+        // Set SO_REUSEPORT on POSIX systems for better load balancing
+        typedef boost::asio::detail::socket_option::boolean<SOL_SOCKET, SO_REUSEPORT> reuse_port;
+        m_p_acceptor->set_option(reuse_port(true));
 #endif
 
-    // Bind socket
-    sockaddr_in server_addr{};
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(n_listen_port);
+        // Bind to all interfaces on configured port
+        boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::tcp::v4(), n_listen_port);
+        m_p_acceptor->bind(endpoint);
 
-    if (bind(n_listen_socket, (sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        std::cerr << "[Peer Manager] Failed to bind to port " << n_listen_port << "\n";
-        close_socket(n_listen_socket);
-        n_listen_socket = -1;
+        // Start listening with backlog of 10
+        m_p_acceptor->listen(10);
+
+        LOG_INFO("Acceptor created and listening on port " + std::to_string(n_listen_port));
+        return true;
+
+    } catch (const boost::system::system_error& e) {
+        std::cerr << "[Peer Manager] Failed to create acceptor: " << e.what() << "\n";
+        LOG_ERROR("Failed to create acceptor: " + std::string(e.what()));
+        m_p_acceptor.reset();
         return false;
     }
-
-    // Listen
-    if (listen(n_listen_socket, 10) < 0) {
-        std::cerr << "[Peer Manager] Failed to listen\n";
-        close_socket(n_listen_socket);
-        n_listen_socket = -1;
-        return false;
-    }
-
-    return true;
 }
 
 /**
- * @brief Close listening socket
+ * @brief Close acceptor and stop accepting connections
  *
- * Shuts down server socket gracefully (SHUT_RDWR), causing any
- * blocking accept() calls to fail and listener thread to exit.
- * Marks socket as invalid (-1) after closing.
+ * Cancels any pending async_accept operations and closes the acceptor gracefully.
+ * This causes the async accept chain to stop.
  */
-void CPeerManager::CloseListenSocket() {
-    if (n_listen_socket >= 0) {
-        shutdown(n_listen_socket, SHUT_RDWR);
-        close_socket(n_listen_socket);
-        n_listen_socket = -1;
+void CPeerManager::CloseAcceptor() {
+    if (m_p_acceptor && m_p_acceptor->is_open()) {
+        boost::system::error_code ec;
+        m_p_acceptor->cancel(ec);  // Cancel pending accepts
+        m_p_acceptor->close(ec);   // Close acceptor
+        LOG_INFO("Acceptor closed");
+    }
+}
+
+/**
+ * @brief Start async accept chain for incoming connections
+ *
+ * Initiates an async_accept operation on the acceptor. When a connection
+ * is accepted, HandleAccept callback is invoked which processes the connection
+ * and chains the next async_accept.
+ */
+void CPeerManager::StartAccept() {
+    if (!m_p_acceptor || !m_p_acceptor->is_open()) {
+        LOG_ERROR("Cannot start accept: acceptor is not open");
+        return;
+    }
+
+    // Create a new socket for the incoming connection
+    // The socket will be moved into the callback
+    m_p_acceptor->async_accept(
+        [this](const boost::system::error_code& ec, boost::asio::ip::tcp::socket socket) {
+            HandleAccept(ec, std::move(socket));
+        }
+    );
+
+    LOG_INFO("Async accept chain started");
+}
+
+/**
+ * @brief Async accept completion handler
+ * @param ec Error code from async_accept
+ * @param socket Accepted socket (moved into callback)
+ *
+ * Callback invoked when async_accept completes. Performs:
+ * 1. Error checking
+ * 2. Ban checking
+ * 3. Peer limit enforcement with subnet diversity logic
+ * 4. Connection setup and registration
+ * 5. Chains next async_accept
+ *
+ * Runs in io_context thread (MonitorInboundSocketThread).
+ */
+void CPeerManager::HandleAccept(const boost::system::error_code& ec, boost::asio::ip::tcp::socket socket) {
+    // Check for errors
+    if (ec) {
+        if (ec == boost::asio::error::operation_aborted) {
+            // Acceptor was closed - this is expected during shutdown
+            LOG_INFO("Accept operation cancelled");
+            return;
+        }
+        LOG_ERROR("Accept error: " + ec.message());
+
+        // Chain next accept despite error (unless stopping)
+        if (!f_stop_requested) {
+            StartAccept();
+        }
+        return;
+    }
+
+    // Get peer address and port
+    boost::system::error_code remote_ec;
+    auto remote_endpoint = socket.remote_endpoint(remote_ec);
+    if (remote_ec) {
+        LOG_ERROR("Failed to get remote endpoint: " + remote_ec.message());
+        socket.close();
+
+        // Chain next accept
+        if (!f_stop_requested) {
+            StartAccept();
+        }
+        return;
+    }
+
+    std::string str_ip = remote_endpoint.address().to_string();
+    int n_peer_port = remote_endpoint.port();
+
+    // Check if peer is banned
+    if (IsPeerBanned(str_ip)) {
+        LOG_WARN("Rejecting connection from banned peer: " + str_ip);
+        socket.close();
+
+        // Chain next accept
+        if (!f_stop_requested) {
+            StartAccept();
+        }
+        return;
+    }
+
+    // Extract native socket FD (needed for RegisterInboundSocket)
+    int n_client_socket = socket.native_handle();
+
+    // Check peer limits and enforce subnet diversity
+    {
+        std::lock_guard<std::mutex> lock(cs_peers);
+        if (m_inbound_peers.size() >= static_cast<size_t>(n_max_inbound_peers)) {
+            // Don't reject - instead, drop a random peer from same subnet (if any)
+            std::string str_new_subnet = GetSubnet(str_ip);
+
+            // Find peers from the same subnet
+            std::vector<size_t> same_subnet_indices;
+            for (size_t i = 0; i < m_inbound_peers.size(); i++) {
+                if (m_inbound_peers[i] && m_inbound_peers[i]->f_connected) {
+                    std::string str_peer_subnet = GetSubnet(m_inbound_peers[i]->peer_node->GetAddress());
+                    if (str_peer_subnet == str_new_subnet) {
+                        same_subnet_indices.push_back(i);
+                    }
+                }
+            }
+
+            if (!same_subnet_indices.empty()) {
+                // Drop a random peer from the same subnet
+                std::srand(std::time(nullptr));
+                size_t random_idx = same_subnet_indices[std::rand() % same_subnet_indices.size()];
+
+                LOG_INFO("Max inbound peers reached. Dropping peer from same subnet " + str_new_subnet +
+                         " to accept new connection: " + m_inbound_peers[random_idx]->peer_node->GetIdentifier());
+
+                DisconnectPeer(m_inbound_peers[random_idx].get());
+            } else {
+                // No peer from same subnet - drop a random peer anyway for network diversity
+                std::vector<size_t> connected_indices;
+                for (size_t i = 0; i < m_inbound_peers.size(); i++) {
+                    if (m_inbound_peers[i] && m_inbound_peers[i]->f_connected) {
+                        connected_indices.push_back(i);
+                    }
+                }
+
+                if (!connected_indices.empty()) {
+                    std::srand(std::time(nullptr));
+                    size_t random_idx = connected_indices[std::rand() % connected_indices.size()];
+
+                    LOG_INFO("Max inbound peers reached. All peers from different subnets. "
+                             "Dropping random peer for network diversity: " +
+                             m_inbound_peers[random_idx]->peer_node->GetIdentifier() +
+                             " to accept new connection from " + str_ip);
+
+                    DisconnectPeer(m_inbound_peers[random_idx].get());
+                } else {
+                    // No connected peers - should not happen, but accept as fallback
+                    LOG_ERROR("Maximum inbound peers reached but no connected peers found, add peer connection from " +
+                             str_ip + ":" + std::to_string(n_peer_port));
+                }
+            }
+        }
+
+        LOG_INFO("Accepted inbound peer connection from " + str_ip + ":" + std::to_string(n_peer_port));
+
+        // Release the socket from Boost.Asio (we'll manage it manually)
+        // This is necessary because RegisterInboundSocket expects a raw FD
+        socket.release();
+
+        // Set socket keepalive
+        SetSocketKeepAlive(n_client_socket);
+
+        // Create peer connection object for inbound peer (no thread for async I/O)
+        CPeerNode node(str_ip, n_peer_port);
+        auto p_peer = std::make_unique<CPeerConnection>(node);
+        p_peer->n_socket = n_client_socket;
+        p_peer->f_active = true;
+        p_peer->f_connected = true;
+
+        // Set connection_time for inbound peer
+        int64_t n_now = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        p_peer->peer_node->SetConnectionTime(n_now);
+        p_peer->peer_node->SetInbound(true);  // Mark as inbound connection
+        LOG_INFO("Set connection_time for inbound peer " + str_ip + " to " + std::to_string(n_now));
+
+        // Add to inbound peers list BEFORE registering socket
+        m_inbound_peers.push_back(std::move(p_peer));
+    }
+
+    // Register socket with async I/O context (outside lock to avoid blocking)
+    RegisterInboundSocket(n_client_socket, str_ip, n_peer_port);
+    LOG_INFO("Registered inbound socket " + std::to_string(n_client_socket) + " with I/O context");
+
+    // Chain next async_accept (critical for continuous accepting)
+    if (!f_stop_requested) {
+        StartAccept();
     }
 }
 
@@ -580,138 +751,6 @@ void CPeerManager::PeerManagerThread() {
     }
 
     LOG_TRACE("Peer management thread stopped");
-}
-
-/**
- * @brief Listener thread function for accepting connections
- *
- * Continuously accepts incoming TCP connections until stopped.
- * For each accepted connection:
- * 1. Extracts peer IP address and port
- * 2. Enables TCP keep-alive
- * 3. Logs connection (currently closes immediately - TODO)
- *
- * Ignores EAGAIN/EWOULDBLOCK errors (non-blocking socket behavior).
- * Exits when f_stop_requested is set and listening socket is closed.
- */
-void CPeerManager::ListenerThread() {
-    // Set thread name for easier debugging and logging
-    SetThreadName("peer_listener");
-
-    LOG_INFO("Peer listener thread started");
-
-    while (!f_stop_requested) {
-        sockaddr_in client_addr{};
-        socklen_t client_len = sizeof(client_addr);
-
-        int n_client_socket = accept(n_listen_socket, (sockaddr*)&client_addr, &client_len);
-
-        if (n_client_socket < 0) {
-            if (!f_stop_requested) {
-                if (errno != EAGAIN && errno != EWOULDBLOCK) {
-                    LOG_ERROR("Peer listener accept() failed: " + std::string(strerror(errno)));
-                }
-            }
-            continue;
-        }
-
-        // Get peer address
-        char str_ip[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &client_addr.sin_addr, str_ip, INET_ADDRSTRLEN);
-        int n_peer_port = ntohs(client_addr.sin_port);
-
-        // Check if peer is banned
-        if (IsPeerBanned(std::string(str_ip))) {
-            LOG_WARN("Rejecting connection from banned peer: " + std::string(str_ip));
-            close(n_client_socket);
-            continue;
-        }
-
-        // Check if we've reached max inbound peers
-        {
-            std::lock_guard<std::mutex> lock(cs_peers);
-            if (m_inbound_peers.size() >= static_cast<size_t>(n_max_inbound_peers)) {
-                // Don't reject - instead, drop a random peer from same subnet (if any)
-                std::string str_new_subnet = GetSubnet(std::string(str_ip));
-
-                // Find peers from the same subnet
-                std::vector<size_t> same_subnet_indices;
-                for (size_t i = 0; i < m_inbound_peers.size(); i++) {
-                    if (m_inbound_peers[i] && m_inbound_peers[i]->f_connected) {
-                        std::string str_peer_subnet = GetSubnet(m_inbound_peers[i]->peer_node->GetAddress());
-                        if (str_peer_subnet == str_new_subnet) {
-                            same_subnet_indices.push_back(i);
-                        }
-                    }
-                }
-
-                if (!same_subnet_indices.empty()) {
-                    // Drop a random peer from the same subnet
-                    std::srand(std::time(nullptr));
-                    size_t random_idx = same_subnet_indices[std::rand() % same_subnet_indices.size()];
-
-                    LOG_INFO("Max inbound peers reached. Dropping peer from same subnet " + str_new_subnet +
-                             " to accept new connection: " + m_inbound_peers[random_idx]->peer_node->GetIdentifier());
-
-                    DisconnectPeer(m_inbound_peers[random_idx].get());
-                } else {
-                    // No peer from same subnet - drop a random peer anyway for network diversity
-                    std::vector<size_t> connected_indices;
-                    for (size_t i = 0; i < m_inbound_peers.size(); i++) {
-                        if (m_inbound_peers[i] && m_inbound_peers[i]->f_connected) {
-                            connected_indices.push_back(i);
-                        }
-                    }
-
-                    if (!connected_indices.empty()) {
-                        std::srand(std::time(nullptr));
-                        size_t random_idx = connected_indices[std::rand() % connected_indices.size()];
-
-                        LOG_INFO("Max inbound peers reached. All peers from different subnets. "
-                                 "Dropping random peer for network diversity: " +
-                                 m_inbound_peers[random_idx]->peer_node->GetIdentifier() +
-                                 " to accept new connection from " + std::string(str_ip));
-
-                        DisconnectPeer(m_inbound_peers[random_idx].get());
-                    } else {
-                        // No connected peers - should not happen, but reject as fallback
-                        LOG_ERROR("Maximum inbound peers reached but no connected peers found, add peer connection from " +
-                                 std::string(str_ip) + ":" + std::to_string(n_peer_port));
-                        // close(n_client_socket);
-                        // continue;
-                    }
-                }
-            }
-
-            LOG_INFO("Accepted inbound peer connection from " + std::string(str_ip) + ":" + std::to_string(n_peer_port));
-
-            // Set socket keepalive
-            SetSocketKeepAlive(n_client_socket);
-
-            // Create peer connection object for inbound peer (no thread for async I/O)
-            CPeerNode node(std::string(str_ip), n_peer_port);
-            auto p_peer = std::make_unique<CPeerConnection>(node);
-            p_peer->n_socket = n_client_socket;
-            p_peer->f_active = true;
-            p_peer->f_connected = true;
-
-            // Set connection_time for inbound peer
-            int64_t n_now = std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count();
-            p_peer->peer_node->SetConnectionTime(n_now);
-            p_peer->peer_node->SetInbound(true);  // Mark as inbound connection
-            LOG_INFO("Set connection_time for inbound peer " + std::string(str_ip) + " to " + std::to_string(n_now));
-
-            // Add to inbound peers list BEFORE registering socket
-            m_inbound_peers.push_back(std::move(p_peer));
-        }
-
-        // Register socket with async I/O context (outside lock to avoid blocking)
-        RegisterInboundSocket(n_client_socket, std::string(str_ip), n_peer_port);
-        LOG_INFO("Registered inbound socket " + std::to_string(n_client_socket) + " with I/O context");
-    }
-
-    LOG_INFO("Peer listener thread stopped");
 }
 
 /**

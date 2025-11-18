@@ -142,7 +142,7 @@ class CPeerManager : public IPeerManager {
 private:
     // Network configuration
     int n_listen_port;               ///< Port for listening to incoming connections
-    int n_listen_socket;             ///< Server socket file descriptor
+    std::unique_ptr<boost::asio::ip::tcp::acceptor> m_p_acceptor;  ///< Boost.Asio acceptor for async accept
     int n_max_inbound_peers;         ///< Maximum number of inbound peer connections
     int n_max_outbound_peers;        ///< Maximum number of outbound peer connections
     int n_peers_ping_time;           ///< Interval in seconds between PING messages
@@ -167,8 +167,7 @@ private:
 
     // Threads
     std::thread m_peer_thread;           ///< Main peer management thread
-    std::thread m_listener_thread;       ///< Listens for inbound connections
-    std::thread m_monitor_inbound_thread;///< Monitors inbound sockets via I/O multiplexing
+    std::thread m_monitor_inbound_thread;///< Monitors inbound sockets via I/O multiplexing and async accept
 
     // PING timer
     std::chrono::steady_clock::time_point m_last_ping_time;  ///< Last time PING was sent to peers
@@ -199,12 +198,24 @@ private:
     void PeerManagerThread();
 
     /**
-     * @brief Listener thread function for accepting connections
+     * @brief Start async accept chain for incoming connections
      *
-     * Accepts incoming TCP connections and registers them with
-     * I/O context for async monitoring.
+     * Initiates async_accept on the acceptor. Each successful accept
+     * triggers a callback that processes the connection and chains
+     * the next async_accept.
      */
-    void ListenerThread();
+    void StartAccept();
+
+    /**
+     * @brief Async accept completion handler
+     * @param ec Error code from async_accept
+     * @param socket Accepted socket (moved into callback)
+     *
+     * Callback invoked when async_accept completes. Processes the
+     * new connection (ban checking, peer limits, registration) and
+     * chains the next async_accept.
+     */
+    void HandleAccept(const boost::system::error_code& ec, boost::asio::ip::tcp::socket socket);
 
     /**
      * @brief Monitor thread for inbound socket I/O multiplexing
@@ -233,7 +244,7 @@ private:
      *
      * Wraps socket in Boost.Asio stream_descriptor and registers
      * async_read_some handler for non-blocking I/O monitoring.
-     * Called by ListenerThread after accepting a connection.
+     * Called by HandleAccept after accepting a connection.
      */
     void RegisterInboundSocket(int n_socket_fd, const std::string& str_address, int n_port);
 
@@ -382,20 +393,19 @@ private:
     void CleanupDisconnectedPeers();
 
     /**
-     * @brief Create and bind listening socket
-     * @return true if socket created and bound successfully
+     * @brief Create and configure Boost.Asio acceptor
+     * @return true if acceptor created and bound successfully
      *
-     * Sets up TCP server socket with SO_REUSEADDR option.
+     * Sets up Boost.Asio TCP acceptor with SO_REUSEADDR and SO_REUSEPORT options.
      */
-    bool CreateListenSocket();
+    bool CreateAcceptor();
 
     /**
-     * @brief Close listening socket
+     * @brief Close acceptor and stop accepting connections
      *
-     * Shuts down server socket, causing accept() to fail
-     * and listener thread to exit.
+     * Cancels any pending async_accept operations and closes the acceptor.
      */
-    void CloseListenSocket();
+    void CloseAcceptor();
 
     /**
      * @brief Enable TCP keep-alive on socket

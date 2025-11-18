@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <stdexcept>
 #include <cstring>
+#include <memory>
 
 // Platform-specific headers for network byte order functions (ntohs, htons)
 #ifdef _WIN32
