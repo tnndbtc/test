@@ -79,36 +79,39 @@ namespace MessageType {
 
 /**
  * @class CPeerMessage
- * @brief Message protocol class for peer-to-peer communication
+ * @brief Abstract base class for peer-to-peer communication messages
  *
- * Encapsulates messages exchanged between peers in the P2P network.
- * Provides serialization/deserialization for network transmission.
+ * This is an abstract base class that defines the interface for all P2P messages.
+ * Derived classes implement specific message types (PING, PONG, INVENTORY, etc.)
+ * with type-safe payload handling.
  *
- * Message format:
+ * Message format (wire protocol):
  * - 4 bytes: Network magic bytes (uint32_t, network byte order)
  * - 1 byte: Message type length (uint8_t)
  * - N bytes: Message type string (e.g., "ping", "get_peers")
  * - 4 bytes: Payload length (uint32_t, network byte order)
- * - M bytes: Payload data
+ * - M bytes: Payload data (format defined by derived class)
+ *
+ * Derived classes must implement:
+ * - GetType(): Return message type string
+ * - SerializePayload(): Convert message data to bytes
+ * - DeserializePayload(): Parse bytes into message data
+ * - Clone(): Create a copy of the message
  *
  * Example usage:
- *   // Create and serialize a PING message
- *   CPeerMessage ping_msg(MessageType::PING);
- *   std::string serialized = ping_msg.Serialize();
+ *   // Create a PING message
+ *   auto ping_msg = std::make_unique<CPingMessage>(nonce, magic);
+ *   std::string serialized = ping_msg->Serialize();
  *
  *   // Deserialize received message
- *   CPeerMessage received;
- *   if (received.Deserialize(data)) {
- *       if (received.GetType() == MessageType::PING) {
- *           // Handle ping...
- *       }
+ *   auto received = CPeerMessageFactory::CreateFromWireData(data, magic);
+ *   if (received && received->GetType() == MessageType::PING) {
+ *       // Handle ping...
  *   }
  */
 class CPeerMessage {
-private:
+protected:
     uint32_t m_n_magic;             ///< Network magic bytes for protocol validation
-    std::string m_str_type;         ///< Message type string
-    std::vector<uint8_t> m_payload; ///< Message payload data
 
     /**
      * @brief Convert uint32_t to network byte order (big-endian)
@@ -126,33 +129,52 @@ private:
 
 public:
     /**
-     * @brief Default constructor - creates UNKNOWN message with default magic
-     * @param n_magic Network magic bytes (default: 0 for backward compatibility)
+     * @brief Constructor with network magic
+     * @param n_magic Network magic bytes
      */
     explicit CPeerMessage(uint32_t n_magic = 0);
 
     /**
-     * @brief Construct message with specific type and magic
-     * @param str_type Message type string (e.g., MessageType::PING)
-     * @param n_magic Network magic bytes (default: 0)
+     * @brief Virtual destructor for proper cleanup of derived classes
      */
-    CPeerMessage(const std::string& str_type, uint32_t n_magic = 0);
+    virtual ~CPeerMessage() = default;
+
+    // ========== Pure Virtual Methods (must be implemented by derived classes) ==========
 
     /**
-     * @brief Construct message with type, payload, and magic
-     * @param str_type Message type string
-     * @param str_payload Payload string
-     * @param n_magic Network magic bytes (default: 0)
+     * @brief Get message type string
+     * @return Message type (e.g., "ping", "inv", "getdata")
      */
-    CPeerMessage(const std::string& str_type, const std::string& str_payload, uint32_t n_magic = 0);
+    virtual std::string GetType() const = 0;
 
     /**
-     * @brief Construct message with type, binary payload, and magic
-     * @param str_type Message type string
+     * @brief Serialize message-specific payload to bytes
+     * @return Payload bytes
+     *
+     * Derived classes implement this to convert their specific data fields
+     * into the binary format for network transmission.
+     */
+    virtual std::vector<uint8_t> SerializePayload() const = 0;
+
+    /**
+     * @brief Deserialize message-specific payload from bytes
      * @param payload Payload bytes
-     * @param n_magic Network magic bytes (default: 0)
+     * @return true if successfully parsed, false otherwise
+     *
+     * Derived classes implement this to parse their specific data fields
+     * from the binary format received from network.
      */
-    CPeerMessage(const std::string& str_type, const std::vector<uint8_t>& payload, uint32_t n_magic = 0);
+    virtual bool DeserializePayload(const std::vector<uint8_t>& payload) = 0;
+
+    /**
+     * @brief Create a copy of this message
+     * @return Unique pointer to cloned message
+     *
+     * Derived classes implement this to support polymorphic copying.
+     */
+    virtual std::unique_ptr<CPeerMessage> Clone() const = 0;
+
+    // ========== Non-Virtual Methods (wire format handling) ==========
 
     /**
      * @brief Get network magic bytes
@@ -167,81 +189,27 @@ public:
     void SetMagic(uint32_t n_magic);
 
     /**
-     * @brief Get message type
-     * @return Message type string
-     */
-    const std::string& GetType() const;
-
-    /**
-     * @brief Set message type
-     * @param str_type New message type string
-     */
-    void SetType(const std::string& str_type);
-
-    /**
-     * @brief Get payload as string
-     * @return Payload as string
-     */
-    std::string GetPayloadString() const;
-
-    /**
-     * @brief Get payload as byte vector
-     * @return Payload bytes
-     */
-    const std::vector<uint8_t>& GetPayloadBytes() const;
-
-    /**
-     * @brief Set payload from string
-     * @param str_payload Payload string
-     */
-    void SetPayload(const std::string& str_payload);
-
-    /**
-     * @brief Set payload from byte vector
-     * @param payload Payload bytes
-     */
-    void SetPayload(const std::vector<uint8_t>& payload);
-
-    /**
-     * @brief Get payload size in bytes
-     * @return Payload size
-     */
-    size_t GetPayloadSize() const;
-
-    /**
-     * @brief Serialize message to byte string for transmission
-     * @return Serialized message (magic + type_length + type + payload_length + payload)
+     * @brief Serialize complete message to wire format
+     * @return Serialized message bytes
      *
      * Format: [4 bytes magic][1 byte type_length][N bytes type][4 bytes payload_length][M bytes payload]
+     * This method is NOT virtual - it handles the wire protocol and calls SerializePayload()
      */
     std::string Serialize() const;
 
     /**
-     * @brief Deserialize message from byte string with magic validation
+     * @brief Deserialize complete message from wire format
      * @param str_data Serialized message data
      * @param n_expected_magic Expected network magic bytes (0 = don't validate)
      * @return true if deserialization successful and magic matches, false otherwise
      *
-     * Parses message format: [4 bytes magic][1 byte type_length][N bytes type][4 bytes payload_length][M bytes payload]
-     * Returns false if data is too short, length is invalid, or magic doesn't match.
+     * This method is NOT virtual - it handles the wire protocol and calls DeserializePayload()
      */
     bool Deserialize(const std::string& str_data, uint32_t n_expected_magic = 0);
 
     /**
-     * @brief Check if message is valid
-     * @return true if message has valid type and payload
-     */
-    bool IsValid() const;
-
-    /**
-     * @brief Get string representation of this message's type
-     * @return String name of message type (same as GetType())
-     */
-    std::string GetTypeString() const;
-
-    /**
-     * @brief Get minimum serialized message size (header only with smallest type)
-     * @return Minimum size in bytes (varies based on type string length)
+     * @brief Get minimum serialized message size (header only)
+     * @return Minimum size in bytes
      */
     static constexpr size_t GetMinHeaderSize() { return 9; }  // 4 bytes magic + 1 byte type_length + 0 bytes type + 4 bytes payload_length
 };

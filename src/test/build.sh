@@ -11,24 +11,37 @@
 # - Then builds and links the test executable
 #
 # Usage:
-#   ./build.sh           # Build with single process
-#   ./build.sh -j4       # Build with 4 parallel processes
-#   ./build.sh -j8       # Build with 8 parallel processes
+#   ./build.sh                # Build with single process (Release)
+#   ./build.sh -j4            # Build with 4 parallel processes (Release)
+#   ./build.sh --debug        # Build with debug symbols
+#   ./build.sh --debug -j4    # Debug build with 4 parallel processes
+#   ./build.sh --release -j8  # Release build with 8 parallel processes
 
 set -e  # Exit on error
 
 # Parse command line arguments
 MAKE_JOBS=""
+BUILD_TYPE="Release"
 while [[ $# -gt 0 ]]; do
     case $1 in
         -j*)
             MAKE_JOBS="$1"
             shift
             ;;
+        --debug)
+            BUILD_TYPE="Debug"
+            shift
+            ;;
+        --release)
+            BUILD_TYPE="Release"
+            shift
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [-jN]"
-            echo "  -jN    Use N parallel jobs for building (e.g., -j4)"
+            echo "Usage: $0 [OPTIONS]"
+            echo "  -jN         Use N parallel jobs for building (e.g., -j4)"
+            echo "  --debug     Build with debug symbols (-O3 -g)"
+            echo "  --release   Build with optimizations (-O3) (default)"
             exit 1
             ;;
     esac
@@ -67,9 +80,13 @@ if [ ! -d "$BUILD_DIR" ]; then
     fi
 
     # Run configure script
-    echo "Running configure script..."
+    echo "Running configure script with build type: $BUILD_TYPE..."
     cd "$PROJECT_ROOT"
-    ./configure --generator="Unix Makefiles"
+    if [ "$BUILD_TYPE" = "Debug" ]; then
+        ./configure --debug --generator="Unix Makefiles"
+    else
+        ./configure --release --generator="Unix Makefiles"
+    fi
     echo ""
 
     # Check if build directory was created
@@ -176,8 +193,8 @@ mkdir -p "$TEST_BUILD_DIR"
 cd "$TEST_BUILD_DIR"
 
 # Run cmake
-echo "Running cmake..."
-cmake ..
+echo "Running cmake with build type: $BUILD_TYPE..."
+cmake -DCMAKE_BUILD_TYPE="$BUILD_TYPE" ..
 echo ""
 
 # Build test executable

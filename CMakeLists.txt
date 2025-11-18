@@ -4,6 +4,36 @@ project(RestDaemon VERSION 1.0.0)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Set default build type to Release if not specified
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type (Debug or Release)" FORCE)
+endif()
+
+# Build type configuration
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    message(STATUS "Build type: Debug")
+    if(MSVC)
+        add_compile_options(/O2 /Zi)
+    else()
+        add_compile_options(-O3 -g)
+    endif()
+elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+    message(STATUS "Build type: Release")
+    if(MSVC)
+        add_compile_options(/O2)
+    else()
+        add_compile_options(-O3)
+    endif()
+else()
+    message(WARNING "Unknown build type: ${CMAKE_BUILD_TYPE}. Using Release.")
+    set(CMAKE_BUILD_TYPE Release)
+    if(MSVC)
+        add_compile_options(/O2)
+    else()
+        add_compile_options(-O3)
+    endif()
+endif()
+
 # Set policy to use <PackageName>_ROOT variables
 if(POLICY CMP0074)
     cmake_policy(SET CMP0074 NEW)
@@ -191,9 +221,30 @@ target_link_libraries(bwpeer
 # Peer Message Library (libbwpeermsg.so / .dylib / .dll)
 # Peer message format (no dependencies on bwpeer or bwblockcore)
 # This breaks the circular dependency between bwpeer and bwblockcore
+# Includes:
+# - peer_message.cpp: Abstract base class for P2P messages
+# - peer_message_legacy.cpp: Legacy concrete implementation (Phase 1)
+# - peer_message_factory.cpp: Factory for creating message instances
+# - messages/ping_message.cpp: Type-safe PING message (Phase 2)
+# - messages/pong_message.cpp: Type-safe PONG message (Phase 2)
+# - messages/inventory_message.cpp: Type-safe INVENTORY message (Phase 3)
+# - messages/getdata_message.cpp: Type-safe GETDATA message (Phase 3)
 # ============================================================
 add_library(bwpeermsg SHARED
     src/peer/peer_message.cpp
+    src/peer/peer_message_factory.cpp
+    src/peer/messages/ping_message.cpp
+    src/peer/messages/pong_message.cpp
+    src/peer/messages/inventory_message.cpp
+    src/peer/messages/getdata_message.cpp
+    src/peer/messages/version_message.cpp
+    src/peer/messages/tx_message.cpp
+    src/peer/messages/block_message.cpp
+    src/peer/messages/getpeers_message.cpp
+    src/peer/messages/peers_message.cpp
+    src/peer/messages/getchain_message.cpp
+    src/peer/messages/chaininfo_message.cpp
+    src/peer/messages/unknown_message.cpp
 )
 
 set_target_properties(bwpeermsg PROPERTIES
@@ -211,10 +262,12 @@ if(APPLE)
 endif()
 
 # Link dependencies to bwpeermsg
+# Note: Added bwblockcore dependency for CBlock and CTransaction serialization
 target_link_libraries(bwpeermsg
     PUBLIC bwutils
     PUBLIC bwlogger
     PUBLIC bwthreadname
+    PUBLIC bwblockcore
 )
 
 # Now link bwpeermsg to bwpeer
@@ -247,15 +300,17 @@ if(APPLE)
     set_target_properties(bwblockcore PROPERTIES
         INSTALL_NAME_DIR "@rpath"
         BUILD_WITH_INSTALL_RPATH TRUE
+        LINK_FLAGS "-undefined dynamic_lookup"
     )
 endif()
 
 # Link dependencies to bwblockcore
+# Note: Removed bwpeermsg dependency to break circular dependency
+# bwpeermsg now depends on bwblockcore for CBlock/CTransaction serialization
 target_link_libraries(bwblockcore
     PUBLIC bwutils
     PUBLIC bwlogger
     PUBLIC bwthreadname
-    PUBLIC bwpeermsg
 )
 
 # Now link bwblockcore to bwpeer so it can use CTransaction and CBlock

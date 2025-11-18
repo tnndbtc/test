@@ -44,32 +44,10 @@ uint32_t CPeerMessage::NetworkToHost(uint32_t n_value) {
 // ============= Constructors =============
 
 /**
- * @brief Default constructor - creates UNKNOWN message
+ * @brief Constructor - initializes magic bytes
  */
 CPeerMessage::CPeerMessage(uint32_t n_magic)
-    : m_n_magic(n_magic), m_str_type(MessageType::UNKNOWN) {
-}
-
-/**
- * @brief Construct message with specific type
- */
-CPeerMessage::CPeerMessage(const std::string& str_type, uint32_t n_magic)
-    : m_n_magic(n_magic), m_str_type(str_type) {
-}
-
-/**
- * @brief Construct message with type and string payload
- */
-CPeerMessage::CPeerMessage(const std::string& str_type, const std::string& str_payload, uint32_t n_magic)
-    : m_n_magic(n_magic), m_str_type(str_type) {
-    SetPayload(str_payload);
-}
-
-/**
- * @brief Construct message with type and binary payload
- */
-CPeerMessage::CPeerMessage(const std::string& str_type, const std::vector<uint8_t>& payload, uint32_t n_magic)
-    : m_n_magic(n_magic), m_str_type(str_type), m_payload(payload) {
+    : m_n_magic(n_magic) {
 }
 
 // ============= Getters and Setters =============
@@ -88,55 +66,6 @@ void CPeerMessage::SetMagic(uint32_t n_magic) {
     m_n_magic = n_magic;
 }
 
-/**
- * @brief Get message type
- */
-const std::string& CPeerMessage::GetType() const {
-    return m_str_type;
-}
-
-/**
- * @brief Set message type
- */
-void CPeerMessage::SetType(const std::string& str_type) {
-    m_str_type = str_type;
-}
-
-/**
- * @brief Get payload as string
- */
-std::string CPeerMessage::GetPayloadString() const {
-    return std::string(m_payload.begin(), m_payload.end());
-}
-
-/**
- * @brief Get payload as byte vector
- */
-const std::vector<uint8_t>& CPeerMessage::GetPayloadBytes() const {
-    return m_payload;
-}
-
-/**
- * @brief Set payload from string
- */
-void CPeerMessage::SetPayload(const std::string& str_payload) {
-    m_payload.assign(str_payload.begin(), str_payload.end());
-}
-
-/**
- * @brief Set payload from byte vector
- */
-void CPeerMessage::SetPayload(const std::vector<uint8_t>& payload) {
-    m_payload = payload;
-}
-
-/**
- * @brief Get payload size in bytes
- */
-size_t CPeerMessage::GetPayloadSize() const {
-    return m_payload.size();
-}
-
 // ============= Serialization =============
 
 /**
@@ -148,9 +77,13 @@ size_t CPeerMessage::GetPayloadSize() const {
 std::string CPeerMessage::Serialize() const {
     std::string str_result;
 
+    // Get message type and payload from derived class
+    std::string str_type = GetType();
+    std::vector<uint8_t> payload = SerializePayload();
+
     // Calculate total size
-    uint8_t n_type_length = static_cast<uint8_t>(m_str_type.length());
-    size_t n_total_size = 4 + 1 + n_type_length + 4 + m_payload.size();
+    uint8_t n_type_length = static_cast<uint8_t>(str_type.length());
+    size_t n_total_size = 4 + 1 + n_type_length + 4 + payload.size();
     str_result.reserve(n_total_size);
 
     // 1. Add magic bytes (4 bytes, network byte order)
@@ -162,22 +95,22 @@ std::string CPeerMessage::Serialize() const {
     str_result.push_back(static_cast<char>(n_type_length));
 
     // 3. Add type string (N bytes)
-    str_result.append(m_str_type);
+    str_result.append(str_type);
 
     // 4. Add payload length (4 bytes, network byte order)
-    uint32_t n_payload_length = static_cast<uint32_t>(m_payload.size());
+    uint32_t n_payload_length = static_cast<uint32_t>(payload.size());
     uint32_t n_length_network = HostToNetwork(n_payload_length);
 
     const char* p_length = reinterpret_cast<const char*>(&n_length_network);
     str_result.append(p_length, 4);
 
     // 5. Add payload data
-    if (!m_payload.empty()) {
-        str_result.append(reinterpret_cast<const char*>(m_payload.data()), m_payload.size());
+    if (!payload.empty()) {
+        str_result.append(reinterpret_cast<const char*>(payload.data()), payload.size());
     }
 
     // Log serialization at trace level
-    LOG_TRACE("Serialized P2P message: type='" + m_str_type + "', total_size=" + std::to_string(n_total_size) + " bytes");
+    LOG_TRACE("Serialized P2P message: type='" + str_type + "', total_size=" + std::to_string(n_total_size) + " bytes");
 
     return str_result;
 }
@@ -190,6 +123,10 @@ std::string CPeerMessage::Serialize() const {
  *
  * Parses message format: [4 bytes magic][1 byte type_length][N bytes type][4 bytes payload_length][M bytes payload]
  * Validates that the data contains enough bytes for the type and payload, and magic matches if specified.
+ *
+ * NOTE: This base class implementation only parses the wire format header (magic, type, payload length).
+ * It extracts the payload and calls the derived class's DeserializePayload() method to parse message-specific data.
+ * This should NOT be called directly - use CPeerMessageFactory::CreateFromWireData() instead.
  */
 bool CPeerMessage::Deserialize(const std::string& str_data, uint32_t n_expected_magic) {
     // Need at least 4 bytes for magic
@@ -218,24 +155,27 @@ bool CPeerMessage::Deserialize(const std::string& str_data, uint32_t n_expected_
 
     // 3. Check if we have enough data for type length
     if (str_data.size() < n_offset + 1) {
+        LOG_WARN("No enough data for type length");
         return false;
     }
 
-    // 4. Parse type length (1 byte)
+    // 4. Parse type length (1 byte) - we don't use this in base class, just skip it
     uint8_t n_type_length = static_cast<uint8_t>(str_data[n_offset]);
     n_offset += 1;
 
     // 5. Check if we have enough data for type string
     if (str_data.size() < n_offset + n_type_length) {
+        LOG_WARN("No enough data for type string");
         return false;
     }
 
-    // 6. Parse type string (N bytes)
-    m_str_type = str_data.substr(n_offset, n_type_length);
+    // 6. Skip type string (N bytes) - derived class already knows its type
+    std::string str_parsed_type = str_data.substr(n_offset, n_type_length);
     n_offset += n_type_length;
 
     // 7. Check if we have enough data for payload length
     if (str_data.size() < n_offset + 4) {
+        LOG_WARN("No enough payload length");
         return false;
     }
 
@@ -247,37 +187,28 @@ bool CPeerMessage::Deserialize(const std::string& str_data, uint32_t n_expected_
 
     // 9. Validate that we have enough data for the payload
     if (str_data.size() < n_offset + n_payload_length) {
+        LOG_WARN("No enough payload data");
         return false;
     }
 
-    // 10. Extract payload
-    m_payload.clear();
+    // 10. Extract payload and pass to derived class
+    std::vector<uint8_t> payload;
     if (n_payload_length > 0) {
         const uint8_t* p_payload = reinterpret_cast<const uint8_t*>(str_data.data() + n_offset);
-        m_payload.assign(p_payload, p_payload + n_payload_length);
+        payload.assign(p_payload, p_payload + n_payload_length);
+    }
+
+    // Call derived class to parse payload
+    if (!DeserializePayload(payload)) {
+        LOG_WARN("DeserializePayload failed");
+        return false;
     }
 
     // Log successful deserialization at trace level
-    LOG_TRACE("Deserialized P2P message: type='" + m_str_type + "', payload_size=" + std::to_string(n_payload_length) + " bytes");
+    LOG_TRACE("Deserialized P2P message: type='" + str_parsed_type + "', payload_size=" + std::to_string(n_payload_length) + " bytes");
 
     return true;
 }
 
-// ============= Validation =============
-
-/**
- * @brief Check if message is valid
- * @return true if message has valid type string
- */
-bool CPeerMessage::IsValid() const {
-    return MessageType::IsValid(m_str_type);
-}
-
-// ============= Utility Functions =============
-
-/**
- * @brief Get string representation of this message's type
- */
-std::string CPeerMessage::GetTypeString() const {
-    return m_str_type;
-}
+// IsValid() is now a virtual method with default implementation in the header
+// Derived classes can override if needed

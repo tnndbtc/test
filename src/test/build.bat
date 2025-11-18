@@ -12,10 +12,12 @@ REM - Detects Boost and OpenSSL automatically
 REM - Then builds and links the test executable
 REM
 REM Usage:
-REM   build.bat           - Build tests
-REM   build.bat clean     - Clean and rebuild
-REM   build.bat -j4       - Build with 4 parallel jobs
-REM   build.bat clean -j8 - Clean rebuild with 8 parallel jobs
+REM   build.bat                   - Build tests (Release)
+REM   build.bat clean             - Clean and rebuild (Release)
+REM   build.bat -j4               - Build with 4 parallel jobs (Release)
+REM   build.bat --debug           - Build with debug symbols
+REM   build.bat --debug -j4       - Debug build with 4 parallel jobs
+REM   build.bat clean --release -j8 - Clean Release rebuild with 8 parallel jobs
 REM
 REM Environment Variables (optional):
 REM   BOOST_ROOT          - Path to Boost installation (e.g., C:\local\boost_1_89_0)
@@ -32,12 +34,25 @@ setlocal enabledelayedexpansion
 REM Parse command line arguments
 set CLEAN_BUILD=0
 set PARALLEL_JOBS=
+set BUILD_TYPE=Release
 
 :parse_loop
 if "%~1"=="" goto :end_parse
 
 if "%~1"=="clean" (
     set CLEAN_BUILD=1
+    shift
+    goto :parse_loop
+)
+
+if "%~1"=="--debug" (
+    set BUILD_TYPE=Debug
+    shift
+    goto :parse_loop
+)
+
+if "%~1"=="--release" (
+    set BUILD_TYPE=Release
     shift
     goto :parse_loop
 )
@@ -55,13 +70,16 @@ echo Unknown option: %~1
 echo.
 echo Usage: build.bat [options]
 echo   clean       Clean and rebuild
+echo   --debug     Build with debug symbols
+echo   --release   Build with optimizations (default)
 echo   -jN         Use N parallel jobs (e.g., -j4, -j8)
 echo.
 echo Examples:
 echo   build.bat
 echo   build.bat clean
 echo   build.bat -j4
-echo   build.bat clean -j8
+echo   build.bat --debug -j4
+echo   build.bat clean --release -j8
 exit /b 1
 
 :end_parse
@@ -92,9 +110,13 @@ if not exist "%BUILD_DIR%" (
     )
 
     REM Run configure script
-    echo Running configure.bat...
+    echo Running configure.bat with build type: %BUILD_TYPE%...
     cd "%PROJECT_ROOT%"
-    call configure.bat
+    if "%BUILD_TYPE%"=="Debug" (
+        call configure.bat --debug
+    ) else (
+        call configure.bat --release
+    )
     if %ERRORLEVEL% neq 0 (
         echo Error: configure.bat failed
         exit /b 1
@@ -261,7 +283,7 @@ if not exist "%TEST_BUILD_DIR%" (
 cd "%TEST_BUILD_DIR%"
 
 REM Prepare CMake arguments
-set CMAKE_ARGS=-G "MinGW Makefiles"
+set CMAKE_ARGS=-G "MinGW Makefiles" -DCMAKE_BUILD_TYPE="%BUILD_TYPE%"
 
 if %BOOST_FOUND% equ 1 (
     set CMAKE_ARGS=!CMAKE_ARGS! -DBoost_ROOT="%BOOST_ROOT%"

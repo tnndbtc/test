@@ -2,6 +2,10 @@
 #include "unit_test.h"
 #include "peer/peer_manager.h"
 #include "peer/peer_message.h"
+#include "peer/messages/ping_message.h"
+#include "peer/messages/pong_message.h"
+#include "peer/messages/inventory_message.h"
+#include "peer/messages/getpeers_message.h"
 #include <thread>
 #include <chrono>
 #include <atomic>
@@ -161,7 +165,7 @@ TEST(PeerManager_BroadcastMessage_EmptyPayload) {
     CPeerManager manager(8337);
 
     // Create INVENTORY message with empty payload
-    CPeerMessage inv_msg(MessageType::INVENTORY, "");
+    CInventoryMessage inv_msg(0);
 
     // Should not crash with empty payload
     size_t sent_count = manager.BroadcastMessage(inv_msg);
@@ -175,18 +179,10 @@ TEST(PeerManager_BroadcastMessage_EmptyPayload) {
 TEST(PeerManager_BroadcastMessage_InventoryPayload) {
     CPeerManager manager(8338);
 
-    // Create INVENTORY message with binary payload
-    std::string inv_payload;
-    // Count (4 bytes)
-    uint32_t count = htonl(1);
-    inv_payload.append(reinterpret_cast<const char*>(&count), 4);
-    // Type (2 bytes)
-    uint16_t type = htons(2);  // TRANSACTION
-    inv_payload.append(reinterpret_cast<const char*>(&type), 2);
-    // Hash (32 bytes)
-    inv_payload.append(32, '\0');
-
-    CPeerMessage inv_msg(MessageType::INVENTORY, inv_payload);
+    // Create INVENTORY message with inventory item
+    CInventoryMessage inv_msg(0);
+    std::string hash(32, '\0');
+    inv_msg.AddItem(2, hash);  // Type 2 = TRANSACTION
 
     // Should not crash with no peers
     size_t sent_count = manager.BroadcastMessage(inv_msg);
@@ -390,7 +386,7 @@ TEST(PeerManager_SendMessageToPeer_NoPeers) {
     CPeerManager manager(8344);
 
     // Create a PING message
-    CPeerMessage ping_msg(MessageType::PING);
+    CPingMessage ping_msg(0, 0);
 
     // Try to send to non-existent peer
     bool result = manager.SendMessageToPeer("192.168.1.100", 8333, ping_msg);
@@ -405,7 +401,7 @@ TEST(PeerManager_BroadcastMessage_NoPeers) {
     CPeerManager manager(8345);
 
     // Create a GET_PEERS message
-    CPeerMessage get_peers_msg(MessageType::GET_PEERS);
+    CGetPeersMessage get_peers_msg(0);
 
     // Broadcast to no peers
     size_t sent_count = manager.BroadcastMessage(get_peers_msg);
@@ -420,10 +416,10 @@ TEST(PeerManager_BroadcastMessage_DifferentTypes) {
     CPeerManager manager(8346);
 
     // Test different message types
-    CPeerMessage ping(MessageType::PING);
-    CPeerMessage pong(MessageType::PONG);
-    CPeerMessage get_peers(MessageType::GET_PEERS);
-    CPeerMessage inventory(MessageType::INVENTORY);
+    CPingMessage ping(0, 0);
+    CPongMessage pong(0, 0);
+    CGetPeersMessage get_peers(0);
+    CInventoryMessage inventory(0);
 
     // All should return 0 with no peers
     ASSERT_EQUAL(manager.BroadcastMessage(ping), (size_t)0, "PING should send to 0 peers");
