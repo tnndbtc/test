@@ -4,6 +4,11 @@ project(RestDaemon VERSION 1.0.0)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Force DWARF-4 for compatibility between Apple Clang and Homebrew LLVM
+if(APPLE AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_compile_options(-gdwarf-4)
+endif()
+
 # Set default build type to Release if not specified
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type (Debug or Release)" FORCE)
@@ -13,9 +18,11 @@ endif()
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     message(STATUS "Build type: Debug")
     if(MSVC)
-        add_compile_options(/O2 /Zi)
+        add_compile_options(/Od /Zi /RTC1)
     else()
-        add_compile_options(-O3 -g)
+        # Let CMake's default Debug flags handle optimization: -g -O0 -fno-omit-frame-pointer
+        # Add additional flags for better debugging experience
+        add_compile_options(-fno-optimize-sibling-calls)
     endif()
 elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
     message(STATUS "Build type: Release")
