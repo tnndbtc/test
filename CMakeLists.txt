@@ -352,6 +352,7 @@ endif()
 # Link dependencies to bwrest
 target_link_libraries(bwrest
     PUBLIC bwblockcore
+    PUBLIC bwpeer
     PUBLIC bwutils
     PUBLIC bwlogger
     PUBLIC bwthreadname

@@ -232,9 +232,23 @@ class BlockweaveNode:
                 if platform.system() == "Windows":
                     # Windows: Create new process group for graceful shutdown
                     # CREATE_NEW_PROCESS_GROUP (0x00000200) - Process is root of new process group
-                    #   This allows us to send CTRL_BREAK_EVENT to the process group for graceful shutdown
-                    # NOTE: We do NOT use CREATE_NEW_CONSOLE because GenerateConsoleCtrlEvent
-                    #   only works when processes share the same console. The child inherits our console.
+                    #
+                    # Why we use this flag:
+                    # 1. Makes the child process the leader of a new process group
+                    # 2. The process group ID equals the child's PID
+                    # 3. Allows us to send CTRL_BREAK_EVENT to this specific process group
+                    # 4. Enables graceful shutdown via GenerateConsoleCtrlEvent()
+                    #
+                    # Why we do NOT use CREATE_NEW_CONSOLE (0x00000010):
+                    # - GenerateConsoleCtrlEvent only works when processes share the same console
+                    # - The child must inherit our console for the event to be delivered
+                    # - Creating a new console would prevent console control events from working
+                    #
+                    # Why we do NOT use CREATE_NO_WINDOW (0x08000000):
+                    # - The process needs a console for the ConsoleCtrlHandler to work
+                    # - Without a console, CTRL_BREAK_EVENT cannot be received
+                    #
+                    # See: https://docs.microsoft.com/en-us/windows/console/generateconsolectrlevent
                     CREATE_NEW_PROCESS_GROUP = 0x00000200
 
                     self.process = subprocess.Popen(
@@ -244,8 +258,14 @@ class BlockweaveNode:
                         stderr=stderr_f,
                         creationflags=CREATE_NEW_PROCESS_GROUP
                     )
+
+                    self.logger.debug(
+                        f"Created Windows process with CREATE_NEW_PROCESS_GROUP "
+                        f"(process group ID = {self.process.pid})"
+                    )
                 else:
                     # Unix: Start new session to detach from terminal
+                    # This makes the process a session leader and detaches it from the controlling terminal
                     self.process = subprocess.Popen(
                         cmd,
                         cwd=run_dir,
@@ -302,53 +322,111 @@ class BlockweaveNode:
             self.logger.info("Node process not found (already stopped or never started)")
             return True
 
+        # Check if process is already terminated
+        if self.process.poll() is not None:
+            self.logger.info(f"Process already exited with code {self.process.returncode}")
+            return True
+
         try:
+            pid = self.process.pid
+            self.logger.info(f"Initiating graceful shutdown of process {pid}")
+
             if platform.system() == "Windows":
                 # Windows: Send Ctrl+Break event for graceful shutdown
                 # This triggers the ConsoleCtrlHandler in the C++ code, allowing
                 # proper cleanup of resources (unlike TerminateProcess which kills immediately)
                 import ctypes
-                kernel32 = ctypes.windll.kernel32
+
+                # Load kernel32.dll
+                try:
+                    kernel32 = ctypes.windll.kernel32
+                except Exception as e:
+                    self.logger.error(f"Failed to load kernel32.dll: {e}")
+                    self.logger.warning("Falling back to terminate()")
+                    self.process.terminate()
+                    self.process.wait(timeout=timeout)
+                    return True
 
                 # CTRL_BREAK_EVENT = 1 (can be sent to any process group)
                 # Use process PID as process group ID (set by CREATE_NEW_PROCESS_GROUP)
                 CTRL_BREAK_EVENT = 1
 
-                self.logger.info(f"Sending CTRL_BREAK to process group {self.process.pid}")
-                success = kernel32.GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, self.process.pid)
+                self.logger.info(f"Sending CTRL_BREAK_EVENT to process group {pid}")
+
+                # GenerateConsoleCtrlEvent returns non-zero on success
+                success = kernel32.GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid)
 
                 if not success:
+                    # Get the error code for diagnostics
                     error_code = kernel32.GetLastError()
-                    self.logger.warning(f"GenerateConsoleCtrlEvent failed with error {error_code}, falling back to terminate()")
+                    error_messages = {
+                        0: "ERROR_SUCCESS (should not happen)",
+                        6: "ERROR_INVALID_HANDLE",
+                        87: "ERROR_INVALID_PARAMETER (process group not found or not attached to console)",
+                        5: "ERROR_ACCESS_DENIED"
+                    }
+                    error_msg = error_messages.get(error_code, f"Unknown error {error_code}")
+
+                    self.logger.warning(
+                        f"GenerateConsoleCtrlEvent failed: {error_msg}. "
+                        f"This may happen if the process is not attached to a console. "
+                        f"Falling back to terminate()"
+                    )
+
+                    # Fall back to terminate() which uses TerminateProcess
+                    # This is less graceful but necessary if console control event fails
                     self.process.terminate()
+                else:
+                    self.logger.info("CTRL_BREAK_EVENT sent successfully")
 
             else:
                 # Unix: Send SIGTERM for graceful shutdown
                 import signal
-                self.logger.info(f"Sending SIGTERM to process {self.process.pid}")
+                self.logger.info(f"Sending SIGTERM to process {pid}")
                 self.process.terminate()
 
             # Wait for process to exit gracefully
             try:
+                start_time = time.time()
                 self.process.wait(timeout=timeout)
-                self.logger.info("Process terminated gracefully")
-                return True
-            except subprocess.TimeoutExpired:
-                # Force kill if it doesn't stop gracefully
-                self.logger.warning(f"Process didn't stop gracefully within {timeout}s, force killing")
-                self.process.kill()
-                self.process.wait(timeout=5)
-                self.logger.info("Process force killed")
+                elapsed = time.time() - start_time
+                returncode = self.process.returncode
+
+                self.logger.info(
+                    f"Process terminated gracefully in {elapsed:.2f}s with exit code {returncode}"
+                )
                 return True
 
-        except Exception as e:
-            self.logger.error(f"Error stopping node: {e}")
-            # Try to kill it anyway
-            try:
+            except subprocess.TimeoutExpired:
+                # Force kill if it doesn't stop gracefully
+                self.logger.warning(
+                    f"Process {pid} didn't stop gracefully within {timeout}s. "
+                    f"Forcing termination with kill()..."
+                )
+
                 self.process.kill()
-                self.process.wait(timeout=5)
-            except:
-                pass
+
+                try:
+                    self.process.wait(timeout=5)
+                    self.logger.info(f"Process force killed (exit code: {self.process.returncode})")
+                    return True
+                except subprocess.TimeoutExpired:
+                    self.logger.error(f"Process {pid} did not respond to kill() after 5s!")
+                    return False
+
+        except Exception as e:
+            self.logger.error(f"Unexpected error stopping node: {e}", exc_info=True)
+
+            # Last resort: try to kill the process
+            try:
+                if self.process and self.process.poll() is None:
+                    self.logger.warning("Attempting emergency kill...")
+                    self.process.kill()
+                    self.process.wait(timeout=5)
+                    self.logger.info("Emergency kill successful")
+            except Exception as kill_error:
+                self.logger.error(f"Emergency kill failed: {kill_error}")
+
             return False
 
     def is_ready(self):
