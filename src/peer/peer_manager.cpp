@@ -50,13 +50,22 @@
 
 // ============= CPeerConnection Implementation =============
 
+// Initialize static connection ID counter
+std::atomic<uint64_t> CPeerConnection::s_next_connection_id{1};
+
 /**
  * @brief Default constructor - creates disconnected peer
  *
  * Initializes all fields to default values (no socket, no connection).
+ * Assigns unique connection ID.
  */
 CPeerConnection::CPeerConnection()
-    : n_socket(-1), peer_node(std::make_shared<CPeerNode>()), f_connected(false), f_active(false), n_last_ping_nonce(0) {}
+    : n_connection_id(s_next_connection_id.fetch_add(1)),
+      p_socket(nullptr),
+      peer_node(std::make_shared<CPeerNode>()),
+      f_connected(false),
+      f_active(false),
+      n_last_ping_nonce(0) {}
 
 /**
  * @brief Construct peer with CPeerNode
@@ -64,25 +73,50 @@ CPeerConnection::CPeerConnection()
  *
  * Creates peer connection object from existing CPeerNode.
  * Does not establish connection - call ConnectToPeer() to actually connect.
+ * Assigns unique connection ID.
  */
 CPeerConnection::CPeerConnection(const CPeerNode& node)
-    : n_socket(-1), peer_node(std::make_shared<CPeerNode>(node)), f_connected(false), f_active(false), n_last_ping_nonce(0) {}
+    : n_connection_id(s_next_connection_id.fetch_add(1)),
+      p_socket(nullptr),
+      peer_node(std::make_shared<CPeerNode>(node)),
+      f_connected(false),
+      f_active(false),
+      n_last_ping_nonce(0) {}
+
+/**
+ * @brief Construct peer with CPeerNode and socket
+ * @param node Peer node information
+ * @param socket Boost.Asio socket (shared ownership)
+ *
+ * Creates peer connection with existing socket (typically from HandleAccept).
+ * Socket lifetime is managed via shared_ptr - connection and async operations share ownership.
+ * Assigns unique connection ID.
+ */
+CPeerConnection::CPeerConnection(const CPeerNode& node, std::shared_ptr<boost::asio::ip::tcp::socket> socket)
+    : n_connection_id(s_next_connection_id.fetch_add(1)),
+      p_socket(socket),
+      peer_node(std::make_shared<CPeerNode>(node)),
+      f_connected(false),
+      f_active(false),
+      n_last_ping_nonce(0) {}
 
 /**
  * @brief Destructor - closes connection and cleans up resources
  *
  * Performs cleanup:
  * 1. Signal connection should stop (f_active = false)
- * 2. Close socket and mark invalid
+ * 2. Close socket via Boost.Asio (RAII - shared_ptr handles cleanup)
  *
- * Note: Actual I/O is handled by Boost.Asio async infrastructure,
- * not per-connection threads.
+ * Socket is closed gracefully using Boost.Asio shutdown/close.
+ * shared_ptr ensures socket remains valid until all async operations complete.
  */
 CPeerConnection::~CPeerConnection() {
     f_active = false;
-    if (n_socket >= 0) {
-        close_socket(n_socket);
-        n_socket = -1;
+    if (p_socket && p_socket->is_open()) {
+        boost::system::error_code ec;
+        p_socket->shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
+        p_socket->close(ec);
+        // Errors during shutdown/close are non-fatal (connection may already be closed)
     }
 }
 
@@ -90,18 +124,19 @@ CPeerConnection::~CPeerConnection() {
  * @brief Move constructor for transferring ownership
  * @param other Peer connection to move from
  *
- * Transfers all resources (socket, peer node, flags) from other.
- * Resets other to disconnected state to prevent double-close.
+ * Transfers all resources (connection ID, socket, peer node, flags) from other.
+ * shared_ptr socket moves naturally - no manual reset needed.
  * Uses atomic load() to safely copy f_active flag.
  */
 CPeerConnection::CPeerConnection(CPeerConnection&& other) noexcept
-    : n_socket(other.n_socket),
+    : n_connection_id(other.n_connection_id),
+      p_socket(std::move(other.p_socket)),
       peer_node(std::move(other.peer_node)),
       f_connected(other.f_connected),
       f_active(other.f_active.load()),
       n_last_ping_nonce(other.n_last_ping_nonce),
       m_last_ping_send_time(other.m_last_ping_send_time) {
-    other.n_socket = -1;
+    // Reset other to safe state
     other.f_connected = false;
     other.f_active = false;
     other.n_last_ping_nonce = 0;
@@ -113,21 +148,24 @@ CPeerConnection::CPeerConnection(CPeerConnection&& other) noexcept
  * @return Reference to this
  *
  * Safely transfers resources by:
- * 1. Cleaning up existing resources (close socket)
- * 2. Moving resources from other
- * 3. Resetting other to prevent double-free
+ * 1. Cleaning up existing resources (close socket via Boost.Asio)
+ * 2. Moving resources from other (shared_ptr handles correctly)
+ * 3. Resetting other to prevent issues
  *
  * Self-assignment check prevents resource destruction when this == &other.
  */
 CPeerConnection& CPeerConnection::operator=(CPeerConnection&& other) noexcept {
     if (this != &other) {
         // Clean up existing resources
-        if (n_socket >= 0) {
-            close_socket(n_socket);
+        if (p_socket && p_socket->is_open()) {
+            boost::system::error_code ec;
+            p_socket->shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
+            p_socket->close(ec);
         }
 
         // Move from other
-        n_socket = other.n_socket;
+        n_connection_id = other.n_connection_id;
+        p_socket = std::move(other.p_socket);
         peer_node = std::move(other.peer_node);
         f_connected = other.f_connected;
         f_active = other.f_active.load();
@@ -135,7 +173,6 @@ CPeerConnection& CPeerConnection::operator=(CPeerConnection&& other) noexcept {
         m_last_ping_send_time = other.m_last_ping_send_time;
 
         // Reset other
-        other.n_socket = -1;
         other.f_connected = false;
         other.f_active = false;
         other.n_last_ping_nonce = 0;
@@ -273,54 +310,46 @@ void CPeerManager::Stop() {
 
     // Stop all peer connections (both inbound and outbound)
 
-    // First, cancel all async operations on inbound peers and close stream descriptors
+    // First, cancel all async operations and close sockets
     {
-        std::lock_guard<std::mutex> lock(cs_inbound_descriptors);
-        for (auto& [socket_fd, p_descriptor] : map_inbound_descriptors) {
-            if (p_descriptor) {
+        std::lock_guard<std::mutex> lock(cs_socket_descriptors);
+        for (auto& [conn_id, weak_socket] : map_socket_descriptors) {
+            auto p_socket = weak_socket.lock();
+            if (p_socket && p_socket->is_open()) {
                 // Cancel pending async operations (will trigger operation_aborted)
                 boost::system::error_code cancel_ec;
-                p_descriptor->cancel(cancel_ec);
+                p_socket->cancel(cancel_ec);
 
-                // Close the descriptor
+                // Close the socket
                 boost::system::error_code close_ec;
-                p_descriptor->close(close_ec);
+                p_socket->shutdown(boost::asio::ip::tcp::socket::shutdown_both, close_ec);
+                p_socket->close(close_ec);
 
-                LOG_TRACE("Cancelled and closed async operations on socket " + std::to_string(socket_fd));
+                LOG_TRACE("Cancelled and closed async operations on connection_id: " + std::to_string(conn_id));
             }
         }
-        map_inbound_descriptors.clear();
+        map_socket_descriptors.clear();
     }
 
-    // Then close sockets and mark peers as inactive
+    // Then mark peers as inactive
     {
         std::lock_guard<std::mutex> lock(cs_peers);
 
-        // Stop inbound peers (async I/O - descriptors already closed above)
+        // Stop inbound peers
         for (auto& p_peer : m_inbound_peers) {
             if (p_peer) {
                 p_peer->f_active = false;
                 p_peer->f_connected = false;
-                if (p_peer->n_socket >= 0) {
-                    // Socket may already be closed by descriptor, but ensure it's done
-                    shutdown(p_peer->n_socket, SHUT_RDWR);
-                    close(p_peer->n_socket);
-                    p_peer->n_socket = -1;
-                }
+                // Socket already closed via descriptor map above
             }
         }
 
-        // Stop outbound peers (async I/O - descriptors already closed above)
+        // Stop outbound peers
         for (auto& p_peer : m_outbound_peers) {
             if (p_peer) {
                 p_peer->f_active = false;
                 p_peer->f_connected = false;
-                if (p_peer->n_socket >= 0) {
-                    // Socket may already be closed by descriptor, but ensure it's done
-                    shutdown(p_peer->n_socket, SHUT_RDWR);
-                    close(p_peer->n_socket);
-                    p_peer->n_socket = -1;
-                }
+                // Socket already closed via descriptor map above
             }
         }
     }
@@ -508,8 +537,8 @@ void CPeerManager::HandleAccept(const boost::system::error_code& ec, boost::asio
         return;
     }
 
-    // Extract native socket FD (needed for RegisterInboundSocket)
-    int n_client_socket = socket.native_handle();
+    // Create shared_ptr from moved socket (keep socket in Boost.Asio, no release)
+    auto p_socket = std::make_shared<boost::asio::ip::tcp::socket>(std::move(socket));
 
     // Check peer limits and enforce subnet diversity
     {
@@ -567,17 +596,12 @@ void CPeerManager::HandleAccept(const boost::system::error_code& ec, boost::asio
 
         LOG_INFO("Accepted inbound peer connection from " + str_ip + ":" + std::to_string(n_peer_port));
 
-        // Release the socket from Boost.Asio (we'll manage it manually)
-        // This is necessary because RegisterInboundSocket expects a raw FD
-        socket.release();
+        // Set socket keepalive on shared_ptr socket
+        SetSocketKeepAlive(p_socket);
 
-        // Set socket keepalive
-        SetSocketKeepAlive(n_client_socket);
-
-        // Create peer connection object for inbound peer (no thread for async I/O)
+        // Create peer connection object for inbound peer using new constructor with socket
         CPeerNode node(str_ip, n_peer_port);
-        auto p_peer = std::make_unique<CPeerConnection>(node);
-        p_peer->n_socket = n_client_socket;
+        auto p_peer = std::make_unique<CPeerConnection>(node, p_socket);
         p_peer->f_active = true;
         p_peer->f_connected = true;
 
@@ -588,13 +612,16 @@ void CPeerManager::HandleAccept(const boost::system::error_code& ec, boost::asio
         p_peer->peer_node->SetInbound(true);  // Mark as inbound connection
         LOG_INFO("Set connection_time for inbound peer " + str_ip + " to " + std::to_string(n_now));
 
+        // Store connection ID for use outside lock
+        uint64_t n_connection_id = p_peer->n_connection_id;
+
         // Add to inbound peers list BEFORE registering socket
         m_inbound_peers.push_back(std::move(p_peer));
-    }
 
-    // Register socket with async I/O context (outside lock to avoid blocking)
-    RegisterInboundSocket(n_client_socket, str_ip, n_peer_port);
-    LOG_INFO("Registered inbound socket " + std::to_string(n_client_socket) + " with I/O context");
+        // Register socket with async I/O context (inside lock to ensure atomicity)
+        RegisterInboundSocket(p_socket, n_connection_id, str_ip, n_peer_port);
+        LOG_INFO("Registered inbound socket (connection_id: " + std::to_string(n_connection_id) + ") with I/O context");
+    }
 
     // Chain next async_accept (critical for continuous accepting)
     if (!f_stop_requested) {
@@ -620,7 +647,15 @@ void CPeerManager::HandleAccept(const boost::system::error_code& ec, boost::asio
  * Returns false only if SO_KEEPALIVE fails; other options failing
  * generate warnings but don't prevent operation.
  */
-bool CPeerManager::SetSocketKeepAlive(int n_socket) {
+bool CPeerManager::SetSocketKeepAlive(std::shared_ptr<boost::asio::ip::tcp::socket> p_socket) {
+    if (!p_socket || !p_socket->is_open()) {
+        LOG_ERROR("Cannot set keepalive on invalid or closed socket");
+        return false;
+    }
+
+    // Extract native handle for platform-specific socket options
+    int n_socket = p_socket->native_handle();
+
 #ifdef _WIN32
     // Windows: Enable keepalive and configure timing
     BOOL n_keepalive = TRUE;
@@ -822,27 +857,24 @@ void CPeerManager::MonitorInboundSocketThread() {
  * inbound connection. The async I/O allows monitoring many sockets
  * with a single thread using select/epoll/poll.
  */
-void CPeerManager::RegisterInboundSocket(int n_socket_fd, const std::string& str_address, int n_port) {
+void CPeerManager::RegisterInboundSocket(std::shared_ptr<boost::asio::ip::tcp::socket> p_socket,
+                                         uint64_t n_connection_id,
+                                         const std::string& str_address,
+                                         int n_port) {
     try {
-        // Create async socket descriptor to wrap the socket
-        // This transfers ownership of the socket FD to Boost.Asio
-#ifdef _WIN32
-        // Windows: Use tcp::socket and assign native handle
-        auto p_descriptor = std::make_shared<AsyncSocketDescriptor>(m_io_context);
-        p_descriptor->assign(boost::asio::ip::tcp::v4(), n_socket_fd);
-#else
-        // POSIX: Use stream_descriptor with file descriptor
-        auto p_descriptor = std::make_shared<AsyncSocketDescriptor>(m_io_context, n_socket_fd);
-#endif
-
-        // Store descriptor in map for later access
-        {
-            std::lock_guard<std::mutex> lock(cs_inbound_descriptors);
-            map_inbound_descriptors[n_socket_fd] = p_descriptor;
+        if (!p_socket || !p_socket->is_open()) {
+            LOG_ERROR("Cannot register invalid or closed socket");
+            return;
         }
 
-        LOG_INFO("Registered inbound socket " + std::to_string(n_socket_fd) +
-                 " for async I/O (" + str_address + ":" + std::to_string(n_port) + ")");
+        // Store socket in descriptor map keyed by connection ID
+        {
+            std::lock_guard<std::mutex> lock(cs_socket_descriptors);
+            map_socket_descriptors[n_connection_id] = p_socket;
+        }
+
+        LOG_INFO("Registered inbound socket (connection_id: " + std::to_string(n_connection_id) +
+                 ") for async I/O (" + str_address + ":" + std::to_string(n_port) + ")");
 
         // Allocate read buffer (8KB for P2P messages)
         auto p_buffer = std::make_shared<std::vector<uint8_t>>(8192);
@@ -850,21 +882,24 @@ void CPeerManager::RegisterInboundSocket(int n_socket_fd, const std::string& str
         // Start async read operation
         // When data arrives, HandleAsyncRead will be called
         // async_read_some() is NON-BLOCKING registration, not actual I/O
-        // it registers read handler (non-blocking)
-        p_descriptor->async_read_some(
+        // Capture shared_ptr in lambda to ensure socket stays alive during async operation
+        p_socket->async_read_some(
             boost::asio::buffer(*p_buffer),
-            [this, n_socket_fd, p_buffer](const boost::system::error_code& ec, size_t n_bytes_transferred) {
-                HandleAsyncRead(ec, n_bytes_transferred, n_socket_fd, p_buffer);
+            [this, n_connection_id, p_socket, p_buffer](const boost::system::error_code& ec, size_t n_bytes_transferred) {
+                HandleAsyncRead(ec, n_bytes_transferred, p_socket, n_connection_id, p_buffer);
             }
         );
 
-        LOG_TRACE("Started async_read_some on socket " + std::to_string(n_socket_fd));
+        LOG_TRACE("Started async_read_some on connection_id: " + std::to_string(n_connection_id));
     }
     catch (const std::exception& e) {
-        LOG_ERROR("Failed to register inbound socket " + std::to_string(n_socket_fd) + ": " + std::string(e.what()));
+        LOG_ERROR("Failed to register inbound socket (connection_id: " + std::to_string(n_connection_id) + "): " + std::string(e.what()));
 
-        // Clean up socket if registration failed
-        close(n_socket_fd);
+        // Close socket if registration failed
+        if (p_socket && p_socket->is_open()) {
+            boost::system::error_code ec;
+            p_socket->close(ec);
+        }
     }
 }
 
@@ -882,51 +917,14 @@ void CPeerManager::RegisterInboundSocket(int n_socket_fd, const std::string& str
  * outbound connection. The async I/O allows monitoring both inbound
  * and outbound sockets with the same monitor thread.
  */
+/*
 void CPeerManager::RegisterOutboundSocket(int n_socket_fd, const std::string& str_address, int n_port) {
-    try {
-        // Create async socket descriptor to wrap the socket
-        // This transfers ownership of the socket FD to Boost.Asio
-#ifdef _WIN32
-        // Windows: Use tcp::socket and assign native handle
-        auto p_descriptor = std::make_shared<AsyncSocketDescriptor>(m_io_context);
-        p_descriptor->assign(boost::asio::ip::tcp::v4(), n_socket_fd);
-#else
-        // POSIX: Use stream_descriptor with file descriptor
-        auto p_descriptor = std::make_shared<AsyncSocketDescriptor>(m_io_context, n_socket_fd);
-#endif
-
-        // Store descriptor in map for later access
-        {
-            std::lock_guard<std::mutex> lock(cs_inbound_descriptors);
-            map_inbound_descriptors[n_socket_fd] = p_descriptor;
-        }
-
-        LOG_INFO("Registered outbound socket " + std::to_string(n_socket_fd) +
-                 " for async I/O (" + str_address + ":" + std::to_string(n_port) + ")");
-
-        // Allocate read buffer (8KB for P2P messages)
-        auto p_buffer = std::make_shared<std::vector<uint8_t>>(8192);
-
-        // Start async read operation
-        // When data arrives, HandleAsyncRead will be called
-        // async_read_some() is NON-BLOCKING registration, not actual I/O
-        p_descriptor->async_read_some(
-            boost::asio::buffer(*p_buffer),
-            [this, n_socket_fd, p_buffer](const boost::system::error_code& ec, size_t n_bytes_transferred) {
-                HandleAsyncRead(ec, n_bytes_transferred, n_socket_fd, p_buffer);
-            }
-        );
-
-        LOG_TRACE("Started async_read_some on outbound socket " + std::to_string(n_socket_fd));
-    }
-    catch (const std::exception& e) {
-        LOG_ERROR("Failed to register outbound socket " + std::to_string(n_socket_fd) + ": " + std::string(e.what()));
-
-        // Clean up socket if registration failed
-        close(n_socket_fd);
-    }
+    // TODO Phase 4: Update this function to accept shared_ptr<tcp::socket> and connection_id
+    // For now, this function is disabled until Phase 4 updates ConnectToPeer
+    LOG_ERROR("RegisterOutboundSocket not yet updated for Phase 4 - outbound connections not supported in Phase 2");
+    close(n_socket_fd);
 }
-
+*/
 /**
  * @brief Async read completion handler for inbound sockets
  * @param ec Boost error code from async operation
@@ -944,73 +942,42 @@ void CPeerManager::RegisterOutboundSocket(int n_socket_fd, const std::string& st
  */
 void CPeerManager::HandleAsyncRead(const boost::system::error_code& ec,
                                     size_t n_bytes_transferred,
-                                    int n_socket_fd,
+                                    std::shared_ptr<boost::asio::ip::tcp::socket> p_socket,
+                                    uint64_t n_connection_id,
                                     std::shared_ptr<std::vector<uint8_t>> p_buffer) {
 
-    // Check if socket descriptor still exists
-    std::shared_ptr<AsyncSocketDescriptor> p_descriptor;
-    {
-        std::lock_guard<std::mutex> lock(cs_inbound_descriptors);
-        auto it = map_inbound_descriptors.find(n_socket_fd);
-        if (it == map_inbound_descriptors.end()) {
-            // Socket already removed (disconnected)
-            LOG_TRACE("HandleAsyncRead: Socket " + std::to_string(n_socket_fd) + " already removed");
-            return;
-        }
-        p_descriptor = it->second;
+    // Check if socket is still valid
+    if (!p_socket || !p_socket->is_open()) {
+        LOG_TRACE("HandleAsyncRead: Socket (connection_id: " + std::to_string(n_connection_id) + ") already closed");
+        return;
     }
 
     // Handle error cases
     if (ec) {
         if (ec == boost::asio::error::eof) {
-            LOG_INFO("Peer disconnected (EOF) on socket " + std::to_string(n_socket_fd));
+            LOG_INFO("Peer disconnected (EOF) on connection_id: " + std::to_string(n_connection_id));
         }
         else if (ec == boost::asio::error::operation_aborted) {
-            LOG_TRACE("Async read aborted on socket " + std::to_string(n_socket_fd) + " (shutdown)");
+            LOG_TRACE("Async read aborted on connection_id: " + std::to_string(n_connection_id) + " (shutdown)");
         }
         else {
-            LOG_ERROR("Async read error on socket " + std::to_string(n_socket_fd) + ": " + ec.message());
+            LOG_ERROR("Async read error on connection_id: " + std::to_string(n_connection_id) + ": " + ec.message());
         }
 
-        // Cleanup: Cancel pending operations, remove descriptor, close socket, and mark peer disconnected
-        {
-            std::lock_guard<std::mutex> lock(cs_inbound_descriptors);
-            map_inbound_descriptors.erase(n_socket_fd);
-        }
-
-        // Cancel any pending async operations on this descriptor
-        boost::system::error_code cancel_ec;
-        p_descriptor->cancel(cancel_ec);
-
-        // Close the descriptor (will close underlying socket)
-        boost::system::error_code close_ec;
-        p_descriptor->close(close_ec);
-
-        // Mark the peer as disconnected so CleanupDisconnectedPeers() can remove it
-        {
-            std::lock_guard<std::mutex> lock(cs_peers);
-            for (auto& p_peer : m_inbound_peers) {
-                if (p_peer && p_peer->n_socket == n_socket_fd) {
-                    p_peer->f_connected = false;
-                    p_peer->f_active = false;
-                    p_peer->n_socket = -1;
-                    LOG_INFO("Marked inbound peer " + p_peer->peer_node->GetIdentifier() + " as disconnected");
-                    break;
-                }
-            }
-        }
-
+        // Cleanup: Remove from descriptor map and close connection
+        CloseConnection(n_connection_id);
         return;
     }
 
     // Success: Data received
     if (n_bytes_transferred > 0) {
         LOG_TRACE("Received " + std::to_string(n_bytes_transferred) +
-                  " bytes on socket " + std::to_string(n_socket_fd));
+                  " bytes on connection_id: " + std::to_string(n_connection_id));
 
         // Post work to thread pool to process the received data
-        boost::asio::post(*m_thread_pool, [this, n_socket_fd, p_buffer, n_bytes_transferred]() {
-            ProcessReceivedMessage(n_socket_fd, p_buffer, n_bytes_transferred);
+        // Capture socket to keep it alive during processing
+        boost::asio::post(*m_thread_pool, [this, p_socket, n_connection_id, p_buffer, n_bytes_transferred]() {
+            ProcessReceivedMessage(p_socket, n_connection_id, p_buffer, n_bytes_transferred);
         });
     }
 
@@ -1019,44 +986,22 @@ void CPeerManager::HandleAsyncRead(const boost::system::error_code& ec,
         // Allocate new buffer for next read
         auto p_new_buffer = std::make_shared<std::vector<uint8_t>>(8192);
 
-        p_descriptor->async_read_some(
+        // Capture socket in lambda to keep it alive during async operation
+        p_socket->async_read_some(
             boost::asio::buffer(*p_new_buffer),
-            [this, n_socket_fd, p_new_buffer](const boost::system::error_code& ec, size_t n_bytes) {
-                HandleAsyncRead(ec, n_bytes, n_socket_fd, p_new_buffer);
+            [this, p_socket, n_connection_id, p_new_buffer](const boost::system::error_code& ec, size_t n_bytes) {
+                HandleAsyncRead(ec, n_bytes, p_socket, n_connection_id, p_new_buffer);
             }
         );
 
-        LOG_TRACE("Re-registered async_read_some on socket " + std::to_string(n_socket_fd));
+        LOG_TRACE("Re-registered async_read_some on connection_id: " + std::to_string(n_connection_id));
     }
     catch (const std::exception& e) {
-        LOG_ERROR("Failed to re-register async read on socket " + std::to_string(n_socket_fd) +
+        LOG_ERROR("Failed to re-register async read on connection_id: " + std::to_string(n_connection_id) +
                   ": " + std::string(e.what()));
 
-        // Cleanup on failure: Cancel, remove, close, and mark disconnected
-        {
-            std::lock_guard<std::mutex> lock(cs_inbound_descriptors);
-            map_inbound_descriptors.erase(n_socket_fd);
-        }
-
-        boost::system::error_code cancel_ec;
-        p_descriptor->cancel(cancel_ec);
-
-        boost::system::error_code close_ec;
-        p_descriptor->close(close_ec);
-
-        // Mark peer as disconnected
-        {
-            std::lock_guard<std::mutex> lock(cs_peers);
-            for (auto& p_peer : m_inbound_peers) {
-                if (p_peer && p_peer->n_socket == n_socket_fd) {
-                    p_peer->f_connected = false;
-                    p_peer->f_active = false;
-                    p_peer->n_socket = -1;
-                    LOG_INFO("Marked inbound peer " + p_peer->peer_node->GetIdentifier() + " as disconnected (re-register failed)");
-                    break;
-                }
-            }
-        }
+        // Cleanup on failure
+        CloseConnection(n_connection_id);
     }
 }
 
@@ -1069,24 +1014,19 @@ void CPeerManager::HandleAsyncRead(const boost::system::error_code& ec,
  * This is used ONLY for inbound peers (outbound peers use sync send).
  * Thread-safe operation with mutex protection.
  */
-void CPeerManager::SendMessageAsync(int n_socket_fd, const CPeerMessage& message) {
-    // Get descriptor for this socket
-    std::shared_ptr<AsyncSocketDescriptor> p_descriptor;
-    {
-        std::lock_guard<std::mutex> lock(cs_inbound_descriptors);
-        auto it = map_inbound_descriptors.find(n_socket_fd);
-        if (it == map_inbound_descriptors.end()) {
-            LOG_WARN("SendMessageAsync: Socket " + std::to_string(n_socket_fd) + " not found");
-            return;
-        }
-        p_descriptor = it->second;
+void CPeerManager::SendMessageAsync(std::shared_ptr<boost::asio::ip::tcp::socket> p_socket,
+                                    uint64_t n_connection_id,
+                                    const CPeerMessage& message) {
+    if (!p_socket || !p_socket->is_open()) {
+        LOG_WARN("SendMessageAsync: Socket for connection_id " + std::to_string(n_connection_id) + " is closed");
+        return;
     }
 
     // Serialize message
     std::string str_serialized = message.Serialize();
 
     if (str_serialized.empty()) {
-        LOG_ERROR("Failed to serialize message for socket " + std::to_string(n_socket_fd));
+        LOG_ERROR("Failed to serialize message for connection_id: " + std::to_string(n_connection_id));
         return;
     }
 
@@ -1094,17 +1034,17 @@ void CPeerManager::SendMessageAsync(int n_socket_fd, const CPeerMessage& message
     // Convert string to vector<uint8_t>
     auto p_buffer = std::make_shared<std::vector<uint8_t>>(str_serialized.begin(), str_serialized.end());
 
-    // Send asynchronously
+    // Send asynchronously, capture socket to keep it alive
     boost::asio::async_write(
-        *p_descriptor,
+        *p_socket,
         boost::asio::buffer(*p_buffer),
-        [this, n_socket_fd, p_buffer](const boost::system::error_code& ec, size_t n_bytes_transferred) {
-            HandleAsyncWrite(ec, n_bytes_transferred, n_socket_fd);
+        [this, p_socket, n_connection_id, p_buffer](const boost::system::error_code& ec, size_t n_bytes_transferred) {
+            HandleAsyncWrite(ec, n_bytes_transferred, n_connection_id);
         }
     );
 
     LOG_TRACE("Queued async write of " + std::to_string(p_buffer->size()) +
-              " bytes to socket " + std::to_string(n_socket_fd));
+              " bytes to connection_id: " + std::to_string(n_connection_id));
 }
 
 /**
@@ -1118,54 +1058,24 @@ void CPeerManager::SendMessageAsync(int n_socket_fd, const CPeerMessage& message
  */
 void CPeerManager::HandleAsyncWrite(const boost::system::error_code& ec,
                                      size_t n_bytes_transferred,
-                                     int n_socket_fd) {
+                                     // std::shared_ptr<boost::asio::ip::tcp::socket> p_socket,
+                                     uint64_t n_connection_id) {
     if (ec) {
         if (ec == boost::asio::error::operation_aborted) {
-            LOG_TRACE("Async write aborted on socket " + std::to_string(n_socket_fd) + " (shutdown)");
+            LOG_TRACE("Async write aborted on connection_id: " + std::to_string(n_connection_id) + " (shutdown)");
         }
         else {
-            LOG_ERROR("Async write error on socket " + std::to_string(n_socket_fd) + ": " + ec.message());
+            LOG_ERROR("Async write error on connection_id: " + std::to_string(n_connection_id) + ": " + ec.message());
         }
 
-        // On error: Cancel pending operations, remove descriptor, close socket, and mark peer disconnected
-        std::shared_ptr<AsyncSocketDescriptor> p_descriptor;
-        {
-            std::lock_guard<std::mutex> lock(cs_inbound_descriptors);
-            auto it = map_inbound_descriptors.find(n_socket_fd);
-            if (it != map_inbound_descriptors.end()) {
-                p_descriptor = it->second;
-                map_inbound_descriptors.erase(it);
-            }
-        }
-
-        if (p_descriptor) {
-            boost::system::error_code cancel_ec;
-            p_descriptor->cancel(cancel_ec);
-
-            boost::system::error_code close_ec;
-            p_descriptor->close(close_ec);
-        }
-
-        // Mark peer as disconnected
-        {
-            std::lock_guard<std::mutex> lock(cs_peers);
-            for (auto& p_peer : m_inbound_peers) {
-                if (p_peer && p_peer->n_socket == n_socket_fd) {
-                    p_peer->f_connected = false;
-                    p_peer->f_active = false;
-                    p_peer->n_socket = -1;
-                    LOG_INFO("Marked inbound peer " + p_peer->peer_node->GetIdentifier() + " as disconnected (write error)");
-                    break;
-                }
-            }
-        }
-
+        // On error: Close connection
+        CloseConnection(n_connection_id);
         return;
     }
 
     // Success
     LOG_TRACE("Async write completed: " + std::to_string(n_bytes_transferred) +
-              " bytes sent on socket " + std::to_string(n_socket_fd));
+              " bytes sent on connection_id: " + std::to_string(n_connection_id));
 }
 
 /**
@@ -1178,7 +1088,8 @@ void CPeerManager::HandleAsyncWrite(const boost::system::error_code& ec,
  * Handles PING, PONG, and other message types.
  * Posted to thread pool for parallel processing.
  */
-void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
+void CPeerManager::ProcessReceivedMessage(std::shared_ptr<boost::asio::ip::tcp::socket> p_socket,
+                                          uint64_t n_connection_id,
                                           std::shared_ptr<std::vector<uint8_t>> p_buffer,
                                           size_t n_bytes_received) {
     // Set thread name for worker thread using integer ID (like rest_worker0, rest_worker1, etc.)
@@ -1186,22 +1097,22 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
     static thread_local int s_worker_id = s_worker_id_counter.fetch_add(1);
     static thread_local bool thread_name_set = false;
     if (!thread_name_set) {
-        // at process level, the thread name can only be changed when boost 
+        // at process level, the thread name can only be changed when boost
         // calls this function, because this thread is maintained by boost
         SetThreadName("p2p_worker" + std::to_string(s_worker_id));
         thread_name_set = true;
     }
 
-    LOG_TRACE("Processing " + std::to_string(n_bytes_received) + " bytes from socket " + std::to_string(n_socket_fd));
+    LOG_TRACE("Processing " + std::to_string(n_bytes_received) + " bytes from connection_id: " + std::to_string(n_connection_id));
 
-    // Find the peer connection for this socket (search both inbound and outbound lists)
+    // Find the peer connection for this connection_id (search both inbound and outbound lists)
     CPeerConnection* p_peer = nullptr;
     {
         std::lock_guard<std::mutex> lock(cs_peers);
 
         // Search inbound peers first
         for (auto& peer : m_inbound_peers) {
-            if (peer && peer->n_socket == n_socket_fd) {
+            if (peer && peer->n_connection_id == n_connection_id) {
                 p_peer = peer.get();
                 break;
             }
@@ -1210,7 +1121,7 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
         // If not found in inbound, search outbound peers
         if (!p_peer) {
             for (auto& peer : m_outbound_peers) {
-                if (peer && peer->n_socket == n_socket_fd) {
+                if (peer && peer->n_connection_id == n_connection_id) {
                     p_peer = peer.get();
                     break;
                 }
@@ -1219,7 +1130,7 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
     }
 
     if (!p_peer) {
-        LOG_WARN("ProcessReceivedMessage: Could not find peer for socket " + std::to_string(n_socket_fd));
+        LOG_WARN("ProcessReceivedMessage: Could not find peer for connection_id: " + std::to_string(n_connection_id));
         return;
     }
 
@@ -1247,15 +1158,15 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
 
             // Handle different message types
             if (msg_type == MessageType::PING) {
-                HandlePingMessage(p_peer, *p_received_msg, n_socket_fd);
+                HandlePingMessage(p_peer, *p_received_msg, p_socket, n_connection_id);
             } else if (msg_type == MessageType::PONG) {
                 HandlePongMessage(p_peer, *p_received_msg);
             } else if (msg_type == MessageType::INVENTORY) {
-                HandleInventoryMessage(p_peer, *p_received_msg);
+                HandleInventoryMessage(p_peer, *p_received_msg, p_socket, n_connection_id);
             } else if (msg_type == MessageType::VERSION) {
                 HandleVersionMessage(p_peer, *p_received_msg);
             } else if (msg_type == MessageType::GETDATA) {
-                HandleGetDataMessage(p_peer, *p_received_msg);
+                HandleGetDataMessage(p_peer, *p_received_msg, p_socket, n_connection_id);
             } else if (msg_type == MessageType::TX) {
                 HandleTxMessage(p_peer, *p_received_msg);
             } else if (msg_type == MessageType::BLOCK) {
@@ -1266,7 +1177,7 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
         } else {
             // Not enough data yet for a complete message, wait for more
             // Note: In production, we should buffer this partial data per-socket
-            LOG_TRACE("Incomplete or incorrect message in buffer, waiting for more data (socket " + std::to_string(n_socket_fd) + ")");
+            LOG_TRACE("Incomplete or incorrect message in buffer, waiting for more data (connection_id: " + std::to_string(n_connection_id) + ")");
             break;
         }
     }
@@ -1276,7 +1187,10 @@ void CPeerManager::ProcessReceivedMessage(int n_socket_fd,
 // Message Handler Helper Methods
 // ============================================================================
 
-void CPeerManager::HandlePingMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg, int n_socket_fd) {
+void CPeerManager::HandlePingMessage(CPeerConnection* p_peer,
+                                     const CPeerMessage& received_msg,
+                                     std::shared_ptr<boost::asio::ip::tcp::socket> p_socket,
+                                     uint64_t n_connection_id) {
     // Cast to CPingMessage for type-safe access
     const auto& ping_msg = static_cast<const CPingMessage&>(received_msg);
     uint32_t n_nonce = ping_msg.GetNonce();
@@ -1288,7 +1202,7 @@ void CPeerManager::HandlePingMessage(CPeerConnection* p_peer, const CPeerMessage
     CPongMessage pong_msg(n_nonce, m_n_network_magic);
 
     // Send PONG via async I/O
-    SendMessageAsync(n_socket_fd, pong_msg);
+    SendMessageAsync(p_socket, n_connection_id, pong_msg);
 
     LOG_TRACE("Queued PONG response with nonce " + std::to_string(n_nonce) +
              " to peer " + p_peer->peer_node->GetIdentifier());
@@ -1320,7 +1234,10 @@ void CPeerManager::HandlePongMessage(CPeerConnection* p_peer, const CPeerMessage
     }
 }
 
-void CPeerManager::HandleInventoryMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg) {
+void CPeerManager::HandleInventoryMessage(CPeerConnection* p_peer,
+                                         const CPeerMessage& received_msg,
+                                         std::shared_ptr<boost::asio::ip::tcp::socket> p_socket,
+                                         uint64_t n_connection_id) {
     // Cast to CInventoryMessage for type-safe access
     const auto& inv_msg = static_cast<const CInventoryMessage&>(received_msg);
     const auto& items = inv_msg.GetItems();
@@ -1378,13 +1295,13 @@ void CPeerManager::HandleInventoryMessage(CPeerConnection* p_peer, const CPeerMe
 
     // Request missing items via GETDATA (scheduled asynchronously)
     if (!vec_missing_items.empty()) {
-        int socket = p_peer->n_socket;
         std::vector<std::pair<ObjectType::Type, std::string>> items = vec_missing_items;
         size_t item_count = items.size();
         std::string peer_addr = p_peer->peer_node->GetIdentifier();
 
-        boost::asio::post(*m_thread_pool, [this, socket, items, item_count, peer_addr]() {
-            ScheduleGetDataMessage(socket, items);
+        // Capture socket to keep it alive during async operation
+        boost::asio::post(*m_thread_pool, [this, p_socket, n_connection_id, items, item_count, peer_addr]() {
+            ScheduleGetDataMessage(p_socket, n_connection_id, items);
             LOG_INFO("Sent GETDATA request for " + std::to_string(item_count) +
                      " items to peer " + peer_addr);
         });
@@ -1415,7 +1332,10 @@ void CPeerManager::HandleVersionMessage(CPeerConnection* p_peer, const CPeerMess
     LOG_INFO("Peer " + p_peer->peer_node->GetIdentifier() + " version handshake received");
 }
 
-void CPeerManager::HandleGetDataMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg) {
+void CPeerManager::HandleGetDataMessage(CPeerConnection* p_peer,
+                                       const CPeerMessage& received_msg,
+                                       std::shared_ptr<boost::asio::ip::tcp::socket> p_socket,
+                                       uint64_t n_connection_id) {
     // Cast to CGetDataMessage for type-safe access
     const auto& getdata_msg = static_cast<const CGetDataMessage&>(received_msg);
     const auto& items = getdata_msg.GetItems();
@@ -1437,11 +1357,11 @@ void CPeerManager::HandleGetDataMessage(CPeerConnection* p_peer, const CPeerMess
              std::to_string(vec_requested_items.size()) + " items via GETDATA");
 
     // Schedule response asynchronously to avoid blocking
-    int socket = p_peer->n_socket;
     std::string peer_addr = p_peer->peer_node->GetIdentifier();
     std::vector<std::pair<ObjectType::Type, std::string>> requested_items = vec_requested_items;
 
-    boost::asio::post(*m_thread_pool, [this, socket, peer_addr, requested_items]() {
+    // Capture socket to keep it alive during async operation
+    boost::asio::post(*m_thread_pool, [this, p_socket, n_connection_id, peer_addr, requested_items]() {
         // Send each block and transaction individually in the loop
         for (const auto& item : requested_items) {
             ObjectType::Type obj_type = item.first;
@@ -1456,7 +1376,7 @@ void CPeerManager::HandleGetDataMessage(CPeerConnection* p_peer, const CPeerMess
                     if (p_tx) {
                         // Send individual TX message
                         CTxMessage tx_msg(p_tx, m_n_network_magic);
-                        SendMessageAsync(socket, tx_msg);
+                        SendMessageAsync(p_socket, n_connection_id, tx_msg);
                         LOG_TRACE("Sent TX message with transaction " + hash.GetData() + "... to peer " + peer_addr);
                     } else {
                         LOG_TRACE("Transaction " + hash.GetData() + "... not found in mempool for peer " + peer_addr);
@@ -1469,7 +1389,7 @@ void CPeerManager::HandleGetDataMessage(CPeerConnection* p_peer, const CPeerMess
                     if (p_block) {
                         // Send individual BLOCK message
                         CBlockMessage block_msg(p_block, m_n_network_magic);
-                        SendMessageAsync(socket, block_msg);
+                        SendMessageAsync(p_socket, n_connection_id, block_msg);
                         LOG_TRACE("Sent BLOCK message with block " + hash.GetData() + "... to peer " + peer_addr);
                     } else {
                         LOG_TRACE("Block " + hash.GetData() + "... not found for peer " + peer_addr);
@@ -1579,75 +1499,73 @@ void CPeerManager::HandleBlockMessage(CPeerConnection* p_peer, const CPeerMessag
  * infrastructure as inbound peers (no dedicated thread per connection).
  */
 bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
-    // Create socket
-    int n_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if (n_socket < 0) {
-        LOG_ERROR("Failed to create socket for peer " + str_address);
-        return false;
-    }
+    try {
+        // Create Boost.Asio socket
+        auto p_socket = std::make_shared<boost::asio::ip::tcp::socket>(m_io_context);
 
-    // Set socket keepalive
-    if (!SetSocketKeepAlive(n_socket)) {
-        LOG_WARN("Failed to set keepalive for peer " + str_address);
-    }
+        // Create endpoint
+        boost::system::error_code addr_ec;
+        auto addr = boost::asio::ip::make_address(str_address, addr_ec);
+        if (addr_ec) {
+            LOG_ERROR("Invalid peer address: " + str_address + " - " + addr_ec.message());
+            return false;
+        }
+        boost::asio::ip::tcp::endpoint endpoint(addr, n_port);
 
-    // Connect to peer
-    sockaddr_in peer_addr{};
-    peer_addr.sin_family = AF_INET;
-    peer_addr.sin_port = htons(n_port);
+        // Connect to peer (synchronous for now)
+        boost::system::error_code ec;
+        p_socket->connect(endpoint, ec);
 
-    if (inet_pton(AF_INET, str_address.c_str(), &peer_addr.sin_addr) <= 0) {
-        LOG_ERROR("Invalid peer address: " + str_address);
-        close_socket(n_socket);
-        return false;
-    }
+        if (ec) {
+            LOG_ERROR("Failed to connect to peer " + str_address + ":" + std::to_string(n_port) + " - " + ec.message());
+            return false;
+        }
 
-    if (connect(n_socket, (sockaddr*)&peer_addr, sizeof(peer_addr)) < 0) {
-        LOG_ERROR("Failed to connect to peer " + str_address + ":" + std::to_string(n_port) + " - " + strerror(errno));
-        close_socket(n_socket);
-        return false;
-    }
+        // Set socket keepalive
+        if (!SetSocketKeepAlive(p_socket)) {
+            LOG_WARN("Failed to set keepalive for peer " + str_address);
+        }
 
-    // Set socket to non-blocking mode (required for Boost.Asio async I/O)
-    if (!SetSocketNonBlocking(n_socket, true)) {
-        LOG_ERROR("Failed to set non-blocking mode for peer " + str_address);
-        close_socket(n_socket);
-        return false;
-    }
+        // Create peer connection object with socket
+        CPeerNode node(str_address, n_port);
+        auto p_peer = std::make_unique<CPeerConnection>(node, p_socket);
+        p_peer->f_connected = true;
+        p_peer->f_active = true;
 
-    // Create peer connection object
-    CPeerNode node(str_address, n_port);
-    auto p_peer = std::make_unique<CPeerConnection>(node);
-    p_peer->n_socket = n_socket;
-    p_peer->f_connected = true;
-    p_peer->f_active = true;
+        // Set connection_time to current timestamp
+        int64_t n_now = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        p_peer->peer_node->SetConnectionTime(n_now);
+        p_peer->peer_node->SetInbound(false);  // Mark as outbound connection
+        LOG_INFO("Set connection_time for outbound peer " + str_address + " to " + std::to_string(n_now));
 
-    // Set connection_time to current timestamp
-    int64_t n_now = std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-    p_peer->peer_node->SetConnectionTime(n_now);
-    p_peer->peer_node->SetInbound(false);  // Mark as outbound connection
-    LOG_INFO("Set connection_time for outbound peer " + str_address + " to " + std::to_string(n_now));
+        // Store connection ID for registration
+        uint64_t n_connection_id = p_peer->n_connection_id;
 
-    // Register outbound socket with async I/O context (same infrastructure as inbound)
-    RegisterOutboundSocket(n_socket, str_address, n_port);
-
-    // Replace the placeholder (nullptr) in the outbound peers list with the actual peer
-    // The placeholder was added by AddPeer() to reserve the slot
-    {
-        std::lock_guard<std::mutex> lock(cs_peers);
-        // Find the first nullptr (placeholder) and replace it
-        for (auto& p : m_outbound_peers) {
-            if (p == nullptr) {
-                p = std::move(p_peer);
-                break;
+        // Replace the placeholder (nullptr) in the outbound peers list with the actual peer
+        // The placeholder was added by AddPeer() to reserve the slot
+        {
+            std::lock_guard<std::mutex> lock(cs_peers);
+            // Find the first nullptr (placeholder) and replace it
+            for (auto& p : m_outbound_peers) {
+                if (p == nullptr) {
+                    p = std::move(p_peer);
+                    break;
+                }
             }
         }
+
+        // Register outbound socket with async I/O context (same infrastructure as inbound)
+        RegisterInboundSocket(p_socket, n_connection_id, str_address, n_port);
+
+        LOG_INFO("Successfully connected to peer " + str_address + ":" + std::to_string(n_port));
+
+        return true;
     }
-
-    LOG_INFO("Successfully connected to peer " + str_address + ":" + std::to_string(n_port));
-
-    return true;
+    catch (const std::exception& e) {
+        LOG_ERROR("Exception connecting to peer " + str_address + ":" + std::to_string(n_port) + " - " + std::string(e.what()));
+        return false;
+    }
 }
 
 /**
@@ -1671,11 +1589,8 @@ void CPeerManager::DisconnectPeer(CPeerConnection* p_peer) {
     p_peer->f_active = false;
     p_peer->f_connected = false;
 
-    if (p_peer->n_socket >= 0) {
-        shutdown(p_peer->n_socket, SHUT_RDWR);
-        close(p_peer->n_socket);
-        p_peer->n_socket = -1;
-    }
+    // Close connection using connection ID
+    CloseConnection(p_peer->n_connection_id);
 
     LOG_INFO("Disconnected peer " + p_peer->peer_node->GetIdentifier());
 }
@@ -1693,30 +1608,23 @@ void CPeerManager::DisconnectPeer(CPeerConnection* p_peer) {
  * For outbound peers, assumes connection threads have already been joined.
  */
 void CPeerManager::CleanupDisconnectedPeers() {
-    // First, cancel and close async descriptors for disconnected inbound peers
+    // First, close connections for disconnected peers
     {
         std::lock_guard<std::mutex> lock_peers(cs_peers);
-        std::lock_guard<std::mutex> lock_descriptors(cs_inbound_descriptors);
 
         for (const auto& p_peer : m_inbound_peers) {
-            if (p_peer && !p_peer->f_connected && p_peer->n_socket >= 0) {
-                // Find and cleanup the descriptor
-                auto it = map_inbound_descriptors.find(p_peer->n_socket);
-                if (it != map_inbound_descriptors.end()) {
-                    auto& p_descriptor = it->second;
-                    if (p_descriptor) {
-                        // Cancel pending async operations
-                        boost::system::error_code cancel_ec;
-                        p_descriptor->cancel(cancel_ec);
+            if (p_peer && !p_peer->f_connected) {
+                // Close connection if not already closed
+                // Use Internal version since we already hold cs_peers
+                CloseConnectionInternal(p_peer->n_connection_id);
+            }
+        }
 
-                        // Close the descriptor
-                        boost::system::error_code close_ec;
-                        p_descriptor->close(close_ec);
-
-                        LOG_TRACE("Cleaned up async descriptor for socket " + std::to_string(p_peer->n_socket));
-                    }
-                    map_inbound_descriptors.erase(it);
-                }
+        for (const auto& p_peer : m_outbound_peers) {
+            if (p_peer && !p_peer->f_connected) {
+                // Close connection if not already closed
+                // Use Internal version since we already hold cs_peers
+                CloseConnectionInternal(p_peer->n_connection_id);
             }
         }
     }
@@ -1895,8 +1803,9 @@ bool CPeerManager::SendMessageToPeer(const std::string& str_address, int n_port,
         return false;
     }
 
-    // Find the peer and get socket while holding the lock
-    int n_target_socket = -1;
+    // Find the peer and get socket + connection_id while holding the lock
+    std::shared_ptr<boost::asio::ip::tcp::socket> p_socket;
+    uint64_t n_connection_id = 0;
     std::string str_peer_id;
 
     {
@@ -1905,8 +1814,9 @@ bool CPeerManager::SendMessageToPeer(const std::string& str_address, int n_port,
         // Search in outbound peers
         for (const auto& p_peer : m_outbound_peers) {
             if (p_peer && p_peer->peer_node->GetAddress() == str_address && p_peer->peer_node->GetPort() == n_port) {
-                if (p_peer->f_connected && p_peer->n_socket >= 0) {
-                    n_target_socket = p_peer->n_socket;
+                if (p_peer->f_connected && p_peer->p_socket) {
+                    p_socket = p_peer->p_socket;
+                    n_connection_id = p_peer->n_connection_id;
                     str_peer_id = p_peer->peer_node->GetIdentifier();
                 }
                 break;
@@ -1914,11 +1824,12 @@ bool CPeerManager::SendMessageToPeer(const std::string& str_address, int n_port,
         }
 
         // If not found in outbound, search in inbound peers
-        if (n_target_socket == -1) {
+        if (!p_socket) {
             for (const auto& p_peer : m_inbound_peers) {
                 if (p_peer && p_peer->peer_node->GetAddress() == str_address && p_peer->peer_node->GetPort() == n_port) {
-                    if (p_peer->f_connected && p_peer->n_socket >= 0) {
-                        n_target_socket = p_peer->n_socket;
+                    if (p_peer->f_connected && p_peer->p_socket) {
+                        p_socket = p_peer->p_socket;
+                        n_connection_id = p_peer->n_connection_id;
                         str_peer_id = p_peer->peer_node->GetIdentifier();
                     }
                     break;
@@ -1928,13 +1839,13 @@ bool CPeerManager::SendMessageToPeer(const std::string& str_address, int n_port,
     }
 
     // Check if peer was found
-    if (n_target_socket == -1) {
+    if (!p_socket) {
         LOG_WARN("Cannot send message to " + str_address + ":" + std::to_string(n_port) + " - peer not connected");
         return false;
     }
 
     // Send the message using async I/O (works for both inbound and outbound peers)
-    SendMessageAsync(n_target_socket, message);
+    SendMessageAsync(p_socket, n_connection_id, message);
     LOG_TRACE("Queued async " + message.GetType() + " message (" + std::to_string(str_serialized.length()) +
               " bytes) to peer " + str_peer_id);
     return true;
@@ -1956,10 +1867,9 @@ size_t CPeerManager::BroadcastMessage(const CPeerMessage& message) {
         std::lock_guard<std::mutex> lock(cs_peers);
 
         // Send to outbound peers using async I/O
-        // (outbound sockets are registered in map_inbound_descriptors via RegisterOutboundSocket)
         for (const auto& p_peer : m_outbound_peers) {
-            if (p_peer && p_peer->f_connected && p_peer->n_socket >= 0) {
-                SendMessageAsync(p_peer->n_socket, message);
+            if (p_peer && p_peer->f_connected && p_peer->p_socket) {
+                SendMessageAsync(p_peer->p_socket, p_peer->n_connection_id, message);
                 n_sent++;
                 LOG_TRACE("Queued async " + message.GetType() + " to outbound peer " +
                          p_peer->peer_node->GetIdentifier());
@@ -1968,8 +1878,8 @@ size_t CPeerManager::BroadcastMessage(const CPeerMessage& message) {
 
         // Send to inbound peers using async I/O
         for (const auto& p_peer : m_inbound_peers) {
-            if (p_peer && p_peer->f_connected && p_peer->n_socket >= 0) {
-                SendMessageAsync(p_peer->n_socket, message);
+            if (p_peer && p_peer->f_connected && p_peer->p_socket) {
+                SendMessageAsync(p_peer->p_socket, p_peer->n_connection_id, message);
                 n_sent++;
                 LOG_TRACE("Queued async " + message.GetType() + " to inbound peer " +
                          p_peer->peer_node->GetIdentifier());
@@ -2000,9 +1910,8 @@ size_t CPeerManager::SendPingToAllPeers() {
         std::lock_guard<std::mutex> lock(cs_peers);
 
         // Send PING to outbound peers using async I/O
-        // (outbound sockets are registered in map_inbound_descriptors via RegisterOutboundSocket)
         for (auto& p_peer : m_outbound_peers) {
-            if (p_peer && p_peer->f_connected && p_peer->n_socket >= 0) {
+            if (p_peer && p_peer->f_connected && p_peer->p_socket) {
                 // Create PING message (nonce is auto-generated)
                 CPingMessage ping_message(m_n_network_magic);
                 uint32_t n_nonce = ping_message.GetNonce();
@@ -2011,8 +1920,8 @@ size_t CPeerManager::SendPingToAllPeers() {
                 p_peer->n_last_ping_nonce = n_nonce;
                 p_peer->m_last_ping_send_time = ping_send_time;
 
-                // Send via async I/O (for outbound peers)
-                SendMessageAsync(p_peer->n_socket, ping_message);
+                // Send via async I/O
+                SendMessageAsync(p_peer->p_socket, p_peer->n_connection_id, ping_message);
                 n_sent++;
                 LOG_TRACE("Queued async " + ping_message.GetType() + " with nonce " + std::to_string(n_nonce) + " to outbound peer " +
                          p_peer->peer_node->GetIdentifier());
@@ -2021,7 +1930,7 @@ size_t CPeerManager::SendPingToAllPeers() {
 
         // Send PING to inbound peers (using async I/O)
         for (auto& p_peer : m_inbound_peers) {
-            if (p_peer && p_peer->f_connected && p_peer->n_socket >= 0) {
+            if (p_peer && p_peer->f_connected && p_peer->p_socket) {
                 // Create PING message (nonce is auto-generated)
                 CPingMessage ping_message(m_n_network_magic);
                 uint32_t n_nonce = ping_message.GetNonce();
@@ -2030,8 +1939,8 @@ size_t CPeerManager::SendPingToAllPeers() {
                 p_peer->n_last_ping_nonce = n_nonce;
                 p_peer->m_last_ping_send_time = ping_send_time;
 
-                // Send via async I/O (for inbound peers)
-                SendMessageAsync(p_peer->n_socket, ping_message);
+                // Send via async I/O
+                SendMessageAsync(p_peer->p_socket, p_peer->n_connection_id, ping_message);
                 n_sent++;
                 LOG_TRACE("Queued async " + ping_message.GetType() + " with nonce " + std::to_string(n_nonce) + " to inbound peer " +
                          p_peer->peer_node->GetIdentifier());
@@ -2041,6 +1950,94 @@ size_t CPeerManager::SendPingToAllPeers() {
 
     LOG_INFO("Sent " + MessageType::PING + " to " + std::to_string(n_sent) + " peers");
     return n_sent;
+}
+
+// ============= Helper Methods =============
+
+/**
+ * @brief Get socket by connection ID
+ * @param n_connection_id Connection identifier
+ * @return shared_ptr to socket if found and still alive, nullptr otherwise
+ *
+ * Thread-safe lookup via mutex. Returns locked shared_ptr from weak_ptr in map.
+ */
+std::shared_ptr<boost::asio::ip::tcp::socket> CPeerManager::GetSocketByConnectionId(uint64_t n_connection_id) {
+    std::lock_guard<std::mutex> lock(cs_socket_descriptors);
+
+    auto it = map_socket_descriptors.find(n_connection_id);
+    if (it == map_socket_descriptors.end()) {
+        return nullptr;  // Not found
+    }
+
+    // Try to lock weak_ptr
+    auto p_socket = it->second.lock();
+    if (!p_socket) {
+        // Socket was destroyed, remove stale entry
+        map_socket_descriptors.erase(it);
+    }
+
+    return p_socket;
+}
+
+/**
+ * @brief Internal helper to close connection without locking cs_peers
+ * @param n_connection_id Connection identifier
+ *
+ * Closes socket gracefully, removes from descriptor map, and marks peer disconnected.
+ * MUST be called with cs_peers already locked by the caller.
+ */
+void CPeerManager::CloseConnectionInternal(uint64_t n_connection_id) {
+    std::shared_ptr<boost::asio::ip::tcp::socket> p_socket;
+
+    // Remove from descriptor map
+    {
+        std::lock_guard<std::mutex> lock(cs_socket_descriptors);
+        auto it = map_socket_descriptors.find(n_connection_id);
+        if (it != map_socket_descriptors.end()) {
+            p_socket = it->second.lock();
+            map_socket_descriptors.erase(it);
+        }
+    }
+
+    // Close socket if still alive
+    if (p_socket && p_socket->is_open()) {
+        boost::system::error_code ec;
+        p_socket->shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
+        p_socket->close(ec);
+        LOG_TRACE("Closed connection " + std::to_string(n_connection_id));
+    }
+
+    // Mark peer as disconnected (cs_peers already locked by caller)
+    // Search inbound peers
+    for (auto& peer : m_inbound_peers) {
+        if (peer && peer->n_connection_id == n_connection_id) {
+            peer->f_connected = false;
+            peer->f_active = false;
+            LOG_INFO("Marked inbound peer disconnected (connection_id: " + std::to_string(n_connection_id) + ")");
+            return;
+        }
+    }
+
+    // Search outbound peers
+    for (auto& peer : m_outbound_peers) {
+        if (peer && peer->n_connection_id == n_connection_id) {
+            peer->f_connected = false;
+            peer->f_active = false;
+            LOG_INFO("Marked outbound peer disconnected (connection_id: " + std::to_string(n_connection_id) + ")");
+            return;
+        }
+    }
+}
+
+/**
+ * @brief Close connection by connection ID
+ * @param n_connection_id Connection identifier
+ *
+ * Thread-safe public wrapper that locks cs_peers and calls CloseConnectionInternal.
+ */
+void CPeerManager::CloseConnection(uint64_t n_connection_id) {
+    std::lock_guard<std::mutex> lock(cs_peers);
+    CloseConnectionInternal(n_connection_id);
 }
 
 void CPeerManager::MarkInventoryKnown(std::shared_ptr<IPeerNode> p_peer_node, ObjectType::Type obj_type, const std::string& str_inventory_hash) {
@@ -2121,7 +2118,7 @@ void CPeerManager::BroadcastInventoryByPeerKnowledge(const std::vector<std::pair
         }
 
         // Send message
-        SendMessageAsync(p_peer->n_socket, inv_message);
+        SendMessageAsync(p_peer->p_socket, p_peer->n_connection_id, inv_message);
 
         /*
         // Mark all items as known by this peer
@@ -2137,7 +2134,9 @@ void CPeerManager::BroadcastInventoryByPeerKnowledge(const std::vector<std::pair
              " items to " + std::to_string(n_total_sent) + " peers");
 }
 
-void CPeerManager::ScheduleGetDataMessage(int n_socket, const std::vector<std::pair<ObjectType::Type, std::string>>& vec_items) {
+void CPeerManager::ScheduleGetDataMessage(std::shared_ptr<boost::asio::ip::tcp::socket> p_socket,
+                                          uint64_t n_connection_id,
+                                          const std::vector<std::pair<ObjectType::Type, std::string>>& vec_items) {
     if (vec_items.empty()) {
         return;  // Nothing to request
     }
@@ -2153,7 +2152,7 @@ void CPeerManager::ScheduleGetDataMessage(int n_socket, const std::vector<std::p
     }
 
     // Send message
-    SendMessageAsync(n_socket, getdata_message);
+    SendMessageAsync(p_socket, n_connection_id, getdata_message);
 
     LOG_TRACE("Sent GETDATA request for " + std::to_string(vec_items.size()) + " items");
 }

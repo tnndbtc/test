@@ -18,7 +18,8 @@ using namespace UnitTest;
 TEST(PeerConnection_DefaultConstructor) {
     CPeerConnection peer;
 
-    ASSERT_EQUAL(peer.n_socket, -1, "Default socket should be -1");
+    ASSERT_TRUE(peer.p_socket == nullptr, "Default socket should be nullptr");
+    ASSERT_TRUE(peer.n_connection_id > 0, "Connection ID should be assigned");
     ASSERT_TRUE(peer.peer_node->GetAddress().empty(), "Default address should be empty");
     ASSERT_EQUAL(peer.peer_node->GetPort(), 0, "Default port should be 0");
     ASSERT_FALSE(peer.f_connected, "Default connection status should be false");
@@ -34,7 +35,8 @@ TEST(PeerConnection_ParameterizedConstructor) {
 
     ASSERT_EQUAL(peer.peer_node->GetAddress(), std::string("127.0.0.1"), "Address should be set");
     ASSERT_EQUAL(peer.peer_node->GetPort(), 8333, "Port should be set");
-    ASSERT_EQUAL(peer.n_socket, -1, "Socket should initially be -1");
+    ASSERT_TRUE(peer.p_socket == nullptr, "Socket should initially be nullptr");
+    ASSERT_TRUE(peer.n_connection_id > 0, "Connection ID should be assigned");
     ASSERT_FALSE(peer.f_connected, "Should not be connected initially");
     ASSERT_FALSE(peer.f_active, "Should not be active initially");
 }
