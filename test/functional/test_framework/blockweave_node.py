@@ -228,13 +228,31 @@ class BlockweaveNode:
                 run_dir = str(self.project_root)  # Run from project root on Unix
 
             with open(stdout_log, 'w') as stdout_f, open(stderr_log, 'w') as stderr_f:
-                self.process = subprocess.Popen(
-                    cmd,
-                    cwd=run_dir,
-                    stdout=stdout_f,
-                    stderr=stderr_f,
-                    start_new_session=True  # Detach from terminal
-                )
+                # Platform-specific process creation
+                if platform.system() == "Windows":
+                    # Windows: Create new process group for graceful shutdown
+                    # CREATE_NEW_PROCESS_GROUP (0x00000200) - Process is root of new process group
+                    #   This allows us to send CTRL_BREAK_EVENT to the process group for graceful shutdown
+                    # NOTE: We do NOT use CREATE_NEW_CONSOLE because GenerateConsoleCtrlEvent
+                    #   only works when processes share the same console. The child inherits our console.
+                    CREATE_NEW_PROCESS_GROUP = 0x00000200
+
+                    self.process = subprocess.Popen(
+                        cmd,
+                        cwd=run_dir,
+                        stdout=stdout_f,
+                        stderr=stderr_f,
+                        creationflags=CREATE_NEW_PROCESS_GROUP
+                    )
+                else:
+                    # Unix: Start new session to detach from terminal
+                    self.process = subprocess.Popen(
+                        cmd,
+                        cwd=run_dir,
+                        stdout=stdout_f,
+                        stderr=stderr_f,
+                        start_new_session=True
+                    )
 
             self.logger.info(f"Started bweave process (PID: {self.process.pid})")
             self.logger.info(f"Stdout log: {stdout_log}")
@@ -269,7 +287,10 @@ class BlockweaveNode:
 
     def stop(self, timeout=10):
         """
-        Stop the blockweave node.
+        Stop the blockweave node gracefully.
+
+        On Windows, sends Ctrl+Break event for graceful shutdown.
+        On Unix, sends SIGTERM signal.
 
         Args:
             timeout: Maximum time to wait for node to stop (seconds)
@@ -282,27 +303,52 @@ class BlockweaveNode:
             return True
 
         try:
-            import signal
+            if platform.system() == "Windows":
+                # Windows: Send Ctrl+Break event for graceful shutdown
+                # This triggers the ConsoleCtrlHandler in the C++ code, allowing
+                # proper cleanup of resources (unlike TerminateProcess which kills immediately)
+                import ctypes
+                kernel32 = ctypes.windll.kernel32
 
-            # Send SIGTERM for graceful shutdown
-            self.logger.info(f"Sending SIGTERM to process {self.process.pid}")
-            self.process.terminate()
+                # CTRL_BREAK_EVENT = 1 (can be sent to any process group)
+                # Use process PID as process group ID (set by CREATE_NEW_PROCESS_GROUP)
+                CTRL_BREAK_EVENT = 1
 
-            # Wait for process to exit
+                self.logger.info(f"Sending CTRL_BREAK to process group {self.process.pid}")
+                success = kernel32.GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, self.process.pid)
+
+                if not success:
+                    error_code = kernel32.GetLastError()
+                    self.logger.warning(f"GenerateConsoleCtrlEvent failed with error {error_code}, falling back to terminate()")
+                    self.process.terminate()
+
+            else:
+                # Unix: Send SIGTERM for graceful shutdown
+                import signal
+                self.logger.info(f"Sending SIGTERM to process {self.process.pid}")
+                self.process.terminate()
+
+            # Wait for process to exit gracefully
             try:
                 self.process.wait(timeout=timeout)
                 self.logger.info("Process terminated gracefully")
                 return True
             except subprocess.TimeoutExpired:
                 # Force kill if it doesn't stop gracefully
-                self.logger.warning(f"Process didn't stop gracefully, sending SIGKILL")
+                self.logger.warning(f"Process didn't stop gracefully within {timeout}s, force killing")
                 self.process.kill()
                 self.process.wait(timeout=5)
-                self.logger.info("Process killed")
+                self.logger.info("Process force killed")
                 return True
 
         except Exception as e:
             self.logger.error(f"Error stopping node: {e}")
+            # Try to kill it anyway
+            try:
+                self.process.kill()
+                self.process.wait(timeout=5)
+            except:
+                pass
             return False
 
     def is_ready(self):
