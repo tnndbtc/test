@@ -5,6 +5,7 @@
 #include "peer/messages/ping_message.h"
 #include "peer/messages/pong_message.h"
 #include "peer/messages/version_message.h"
+#include "peer/messages/verack_message.h"
 #include "peer/messages/inventory_message.h"
 #include "peer/messages/getdata_message.h"
 #include "peer/messages/tx_message.h"
@@ -406,6 +407,73 @@ TEST(VersionMessage_NetworkAddress) {
     const CNetworkAddress& retrieved_addr = version.GetAddressFrom();
     ASSERT_EQUAL(retrieved_addr.n_services, 1ULL, "Services should match");
     ASSERT_EQUAL(retrieved_addr.n_port, (uint16_t)8333, "Port should match");
+}
+
+// ==================== VERACK MESSAGE TESTS ====================
+
+/**
+ * @brief Test VERACK message construction
+ */
+TEST(VerackMessage_Construction) {
+    CVerackMessage verack(0);
+    ASSERT_EQUAL(verack.GetType(), MessageType::VERACK, "Type should be 'verack'");
+}
+
+/**
+ * @brief Test VERACK message GetType
+ */
+TEST(VerackMessage_GetType) {
+    CVerackMessage verack(0);
+    ASSERT_EQUAL(verack.GetType(), MessageType::VERACK, "Type should be 'verack'");
+}
+
+/**
+ * @brief Test VERACK message serialization empty
+ */
+TEST(VerackMessage_SerializePayload_Empty) {
+    CVerackMessage verack(0);
+    std::vector<uint8_t> payload = verack.SerializePayload();
+
+    ASSERT_EQUAL(payload.size(), (size_t)0, "VERACK payload should be empty");
+}
+
+/**
+ * @brief Test VERACK message deserialization empty
+ */
+TEST(VerackMessage_DeserializePayload_Empty) {
+    CVerackMessage verack(0);
+
+    std::vector<uint8_t> payload;
+    bool result = verack.DeserializePayload(payload);
+
+    ASSERT_TRUE(result, "Deserialization of empty payload should succeed");
+}
+
+/**
+ * @brief Test VERACK message round-trip
+ */
+TEST(VerackMessage_RoundTrip) {
+    CVerackMessage original(0);
+
+    std::vector<uint8_t> payload = original.SerializePayload();
+    CVerackMessage deserialized(0);
+    bool result = deserialized.DeserializePayload(payload);
+
+    ASSERT_TRUE(result, "Deserialization should succeed");
+    ASSERT_EQUAL(deserialized.GetType(), original.GetType(), "Type should match");
+}
+
+/**
+ * @brief Test VERACK message Clone
+ */
+TEST(VerackMessage_Clone) {
+    CVerackMessage original(0);
+
+    auto p_clone = original.Clone();
+    auto* p_verack_clone = dynamic_cast<CVerackMessage*>(p_clone.get());
+
+    ASSERT_TRUE(p_verack_clone != nullptr, "Clone should be a CVerackMessage");
+    ASSERT_EQUAL(p_verack_clone->GetType(), MessageType::VERACK, "Cloned type should match");
 }
 
 // ==================== INVENTORY MESSAGE TESTS ====================

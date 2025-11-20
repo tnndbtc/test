@@ -22,6 +22,7 @@ bool MessageType::IsValid(const std::string& str_type) {
            str_type == CHAIN_INFO ||
            str_type == INVENTORY ||
            str_type == VERSION ||
+           str_type == VERACK ||
            str_type == GETDATA;
 }
 
@@ -83,6 +84,11 @@ std::string CPeerMessage::Serialize() const {
 
     // Calculate total size
     uint8_t n_type_length = static_cast<uint8_t>(str_type.length());
+    // 4 bytes: magic bytes
+    // 1 bytes: type length
+    // n_type_length: type string
+    // 4 bytes: payload size
+    // payload.size(): actual payload
     size_t n_total_size = 4 + 1 + n_type_length + 4 + payload.size();
     str_result.reserve(n_total_size);
 

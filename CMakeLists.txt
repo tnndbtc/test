@@ -238,6 +238,7 @@ add_library(bwpeermsg SHARED
     src/peer/messages/inventory_message.cpp
     src/peer/messages/getdata_message.cpp
     src/peer/messages/version_message.cpp
+    src/peer/messages/verack_message.cpp
     src/peer/messages/tx_message.cpp
     src/peer/messages/block_message.cpp
     src/peer/messages/getpeers_message.cpp

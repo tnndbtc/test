@@ -67,6 +67,7 @@ namespace MessageType {
     const std::string CHAIN_INFO = "chain_info";   ///< Blockchain info response
     const std::string INVENTORY = "inv";           ///< Inventory - broadcast hashes of transactions/blocks
     const std::string VERSION = "version";         ///< Version handshake message
+    const std::string VERACK = "verack";           ///< Verack handshake message
     const std::string GETDATA = "getdata";         ///< Request full transaction/block by hash
     const std::string UNKNOWN = "unknown";         ///< Unknown/invalid message type
 

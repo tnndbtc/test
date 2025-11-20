@@ -5,6 +5,7 @@
 #include "messages/inventory_message.h"
 #include "messages/getdata_message.h"
 #include "messages/version_message.h"
+#include "messages/verack_message.h"
 #include "messages/tx_message.h"
 #include "messages/block_message.h"
 #include "messages/getpeers_message.h"
@@ -70,6 +71,8 @@ std::unique_ptr<CPeerMessage> CPeerMessageFactory::CreateFromWireData(
         p_msg = std::make_unique<CGetDataMessage>(n_expected_magic);
     } else if (str_type == MessageType::VERSION) {
         p_msg = std::make_unique<CVersionMessage>(n_expected_magic);
+    } else if (str_type == MessageType::VERACK) {
+        p_msg = std::make_unique<CVerackMessage>(n_expected_magic);
     } else if (str_type == MessageType::TX) {
         p_msg = std::make_unique<CTxMessage>(nullptr, n_expected_magic);
     } else if (str_type == MessageType::BLOCK) {
