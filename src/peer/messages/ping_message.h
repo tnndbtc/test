@@ -12,25 +12,26 @@
  *
  * PING messages are sent periodically (every 30 seconds) to maintain connections
  * and verify peer liveness. The nonce allows matching PING with PONG responses.
+ * The nonce is automatically generated in the constructor.
  *
  * Payload format: 4 bytes (uint32_t nonce in big-endian)
  *
  * Usage:
- *   auto ping = std::make_unique<CPingMessage>(12345, LOCALNET_MAGIC);
+ *   auto ping = std::make_unique<CPingMessage>(LOCALNET_MAGIC);
+ *   uint32_t nonce = ping->GetNonce();  // Get auto-generated nonce
  *   std::string serialized = ping->Serialize();
  *   send_to_peer(serialized);
  */
 class CPingMessage : public CPeerMessage {
 private:
-    uint32_t m_n_nonce;  ///< Random nonce for matching with PONG response
+    uint64_t m_n_nonce;  ///< Random nonce for matching with PONG response
 
 public:
     /**
-     * @brief Constructor with nonce and magic
-     * @param n_nonce Random nonce value
+     * @brief Constructor with magic - auto-generates random nonce
      * @param n_magic Network magic bytes
      */
-    CPingMessage(uint32_t n_nonce, uint32_t n_magic);
+    CPingMessage(uint32_t n_magic);
 
     /**
      * @brief Get message type (always returns "ping")
@@ -61,11 +62,6 @@ public:
      * @brief Get nonce value
      */
     uint32_t GetNonce() const;
-
-    /**
-     * @brief Set nonce value
-     */
-    void SetNonce(uint32_t n_nonce);
 };
 
 #endif // PING_MESSAGE_H

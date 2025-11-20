@@ -5,6 +5,7 @@
 #include <string>
 #include <memory>
 #include <cstdint>
+#include <mutex>
 
 /**
  * @interface IPeerNode
@@ -81,11 +82,14 @@ public:
  */
 class CPeerNode : public IPeerNode {
 private:
-    std::string str_address;      ///< Peer IP address or hostname
-    int n_port;                   ///< Peer listening port
-    int64_t n_connection_time;    ///< UNIX UTC timestamp when addpeer request is first sent
-    double d_ping_roundtrip_time; ///< Ping round-trip time in milliseconds
-    bool f_inbound;               ///< true if this is an inbound connection, false if outbound
+    mutable std::mutex cs_peer_node;  ///< Mutex for thread-safe access to peer node data
+    std::string str_address;          ///< Peer IP address or hostname
+    int n_port;                       ///< Peer listening port
+    int64_t n_connection_time;        ///< UNIX UTC timestamp when addpeer request is first sent
+    double d_ping_roundtrip_time;     ///< Ping round-trip time in milliseconds
+    bool f_inbound;                   ///< true if this is an inbound connection, false if outbound
+    int32_t n_protocol_version;       ///< Protocol version learned through VERSION/VERACK handshakes
+    uint64_t n_services;              ///< 64-bit bitmap of services, learned through VERSION/VERACK handshakes
 
 public:
     /**
@@ -99,6 +103,32 @@ public:
      * @param n_port_num Peer listening port
      */
     CPeerNode(const std::string& str_addr, int n_port_num);
+
+    /**
+     * @brief Copy constructor - copies all data members except mutex
+     * @param other Peer node to copy from
+     */
+    CPeerNode(const CPeerNode& other);
+
+    /**
+     * @brief Copy assignment operator - copies all data members except mutex
+     * @param other Peer node to copy from
+     * @return Reference to this object
+     */
+    CPeerNode& operator=(const CPeerNode& other);
+
+    /**
+     * @brief Move constructor - moves all data members except mutex
+     * @param other Peer node to move from
+     */
+    CPeerNode(CPeerNode&& other) noexcept;
+
+    /**
+     * @brief Move assignment operator - moves all data members except mutex
+     * @param other Peer node to move from
+     * @return Reference to this object
+     */
+    CPeerNode& operator=(CPeerNode&& other) noexcept;
 
     /**
      * @brief Virtual destructor
@@ -207,6 +237,30 @@ public:
      * @param f_is_inbound true for inbound, false for outbound
      */
     void SetInbound(bool f_is_inbound);
+
+    /**
+     * @brief Get protocol version
+     * @return Protocol version number learned through VERSION/VERACK handshakes
+     */
+    int32_t GetProtocolVersion() const;
+
+    /**
+     * @brief Set protocol version
+     * @param n_version Protocol version number
+     */
+    void SetProtocolVersion(int32_t n_version);
+
+    /**
+     * @brief Get services bitmap
+     * @return 64-bit services bitmap learned through VERSION/VERACK handshakes
+     */
+    uint64_t GetServices() const;
+
+    /**
+     * @brief Set services bitmap
+     * @param n_service_flags 64-bit services bitmap
+     */
+    void SetServices(uint64_t n_service_flags);
 };
 
 #endif // PEER_NODE_H

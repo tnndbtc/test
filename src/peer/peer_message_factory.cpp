@@ -61,7 +61,7 @@ std::unique_ptr<CPeerMessage> CPeerMessageFactory::CreateFromWireData(
 
     // Phase 2, 3, 4 & 6: Use specific message classes
     if (str_type == MessageType::PING) {
-        p_msg = std::make_unique<CPingMessage>(0, n_expected_magic);
+        p_msg = std::make_unique<CPingMessage>(n_expected_magic);
     } else if (str_type == MessageType::PONG) {
         p_msg = std::make_unique<CPongMessage>(0, n_expected_magic);
     } else if (str_type == MessageType::INVENTORY) {
@@ -69,7 +69,7 @@ std::unique_ptr<CPeerMessage> CPeerMessageFactory::CreateFromWireData(
     } else if (str_type == MessageType::GETDATA) {
         p_msg = std::make_unique<CGetDataMessage>(n_expected_magic);
     } else if (str_type == MessageType::VERSION) {
-        p_msg = std::make_unique<CVersionMessage>("", n_expected_magic);
+        p_msg = std::make_unique<CVersionMessage>(n_expected_magic);
     } else if (str_type == MessageType::TX) {
         p_msg = std::make_unique<CTxMessage>(nullptr, n_expected_magic);
     } else if (str_type == MessageType::BLOCK) {

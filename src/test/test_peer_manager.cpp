@@ -386,7 +386,7 @@ TEST(PeerManager_SendMessageToPeer_NoPeers) {
     CPeerManager manager(8344);
 
     // Create a PING message
-    CPingMessage ping_msg(0, 0);
+    CPingMessage ping_msg(0);
 
     // Try to send to non-existent peer
     bool result = manager.SendMessageToPeer("192.168.1.100", 8333, ping_msg);
@@ -416,7 +416,7 @@ TEST(PeerManager_BroadcastMessage_DifferentTypes) {
     CPeerManager manager(8346);
 
     // Test different message types
-    CPingMessage ping(0, 0);
+    CPingMessage ping(0);
     CPongMessage pong(0, 0);
     CGetPeersMessage get_peers(0);
     CInventoryMessage inventory(0);

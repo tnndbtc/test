@@ -1,6 +1,8 @@
 // ============= ping_message.cpp =============
 #include "ping_message.h"
 #include <cstring>
+#include <cstdlib>
+#include "utils/generate_nonce.h"
 
 // Include network byte order functions
 #ifdef _WIN32
@@ -10,10 +12,11 @@
 #endif
 
 /**
- * @brief Constructor with nonce and magic
+ * @brief Constructor with magic - auto-generates random nonce
  */
-CPingMessage::CPingMessage(uint32_t n_nonce, uint32_t n_magic)
-    : CPeerMessage(n_magic), m_n_nonce(n_nonce) {
+CPingMessage::CPingMessage(uint32_t n_magic)
+    : CPeerMessage(n_magic), m_n_nonce(0) {
+    m_n_nonce = GenerateNonce();
 }
 
 /**
@@ -57,7 +60,9 @@ bool CPingMessage::DeserializePayload(const std::vector<uint8_t>& payload) {
  * @brief Create a copy of this message
  */
 std::unique_ptr<CPeerMessage> CPingMessage::Clone() const {
-    return std::make_unique<CPingMessage>(m_n_nonce, GetMagic());
+    auto p_clone = std::make_unique<CPingMessage>(GetMagic());
+    p_clone->m_n_nonce = m_n_nonce;  // Copy the nonce value
+    return p_clone;
 }
 
 
@@ -66,11 +71,4 @@ std::unique_ptr<CPeerMessage> CPingMessage::Clone() const {
  */
 uint32_t CPingMessage::GetNonce() const {
     return m_n_nonce;
-}
-
-/**
- * @brief Set nonce value
- */
-void CPingMessage::SetNonce(uint32_t n_nonce) {
-    m_n_nonce = n_nonce;
 }

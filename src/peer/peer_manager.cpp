@@ -1397,12 +1397,20 @@ void CPeerManager::HandleInventoryMessage(CPeerConnection* p_peer, const CPeerMe
 void CPeerManager::HandleVersionMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg) {
     // Cast to CVersionMessage for type-safe access
     const auto& version_msg = static_cast<const CVersionMessage&>(received_msg);
-    std::string str_version_info = version_msg.GetVersionInfo();
-    LOG_INFO("Received VERSION from peer " + p_peer->peer_node->GetIdentifier() + ": " +
-             str_version_info);
 
-    // Store version info in peer node
-    // p_peer->peer_node->SetVersion(str_version_info);
+    // Extract version information
+    int32_t n_protocol_version = version_msg.GetProtocolVersion();
+    uint64_t n_services = version_msg.GetAddressFrom().n_services;
+    int32_t n_chain_tip_height = version_msg.GetChainTipHeight();
+
+    LOG_INFO("Received VERSION from peer " + p_peer->peer_node->GetIdentifier() +
+             ": protocol=" + std::to_string(n_protocol_version) +
+             ", services=" + std::to_string(n_services) +
+             ", chain_height=" + std::to_string(n_chain_tip_height));
+
+    // Store protocol version and services in peer node
+    p_peer->peer_node->SetProtocolVersion(n_protocol_version);
+    p_peer->peer_node->SetServices(n_services);
 
     LOG_INFO("Peer " + p_peer->peer_node->GetIdentifier() + " version handshake received");
 }
@@ -1995,11 +2003,9 @@ size_t CPeerManager::SendPingToAllPeers() {
         // (outbound sockets are registered in map_inbound_descriptors via RegisterOutboundSocket)
         for (auto& p_peer : m_outbound_peers) {
             if (p_peer && p_peer->f_connected && p_peer->n_socket >= 0) {
-                // Generate random nonce
-                uint32_t n_nonce = static_cast<uint32_t>(rand());
-
-                // Create PING message with nonce
-                CPingMessage ping_message(n_nonce, m_n_network_magic);
+                // Create PING message (nonce is auto-generated)
+                CPingMessage ping_message(m_n_network_magic);
+                uint32_t n_nonce = ping_message.GetNonce();
 
                 // Store nonce and send time for verification when PONG arrives
                 p_peer->n_last_ping_nonce = n_nonce;
@@ -2016,11 +2022,9 @@ size_t CPeerManager::SendPingToAllPeers() {
         // Send PING to inbound peers (using async I/O)
         for (auto& p_peer : m_inbound_peers) {
             if (p_peer && p_peer->f_connected && p_peer->n_socket >= 0) {
-                // Generate random nonce
-                uint32_t n_nonce = static_cast<uint32_t>(rand());
-
-                // Create PING message with nonce
-                CPingMessage ping_message(n_nonce, m_n_network_magic);
+                // Create PING message (nonce is auto-generated)
+                CPingMessage ping_message(m_n_network_magic);
+                uint32_t n_nonce = ping_message.GetNonce();
 
                 // Store nonce and send time for verification when PONG arrives
                 p_peer->n_last_ping_nonce = n_nonce;
