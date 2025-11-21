@@ -18,11 +18,27 @@ endif()
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     message(STATUS "Build type: Debug")
     if(MSVC)
+        # MSVC Debug flags
         add_compile_options(/Od /Zi /RTC1)
+        # Generate PDB files for debugging
+        add_link_options(/DEBUG /INCREMENTAL)
+        message(STATUS "MSVC Debug: Enabled /Od /Zi /RTC1 /DEBUG")
     else()
-        # Let CMake's default Debug flags handle optimization: -g -O0 -fno-omit-frame-pointer
-        # Add additional flags for better debugging experience
-        add_compile_options(-fno-optimize-sibling-calls)
+        # GCC/MinGW Debug flags
+        # -g: Generate debug information in OS native format
+        # -O0: Disable optimization
+        # -ggdb: Generate debug info for GDB (on Windows, useful for GDB debugging)
+        # -fno-omit-frame-pointer: Keep frame pointer for better stack traces
+        # -fno-optimize-sibling-calls: Better debugging experience
+        add_compile_options(-g -ggdb -O0 -fno-omit-frame-pointer -fno-optimize-sibling-calls)
+
+        if(WIN32)
+            # Windows-specific: Generate DWARF debug info for MinGW
+            # This creates proper debug symbols for tools like GDB on Windows
+            message(STATUS "MinGW Debug: Enabled -g -ggdb -O0 (DWARF debug symbols)")
+        else()
+            message(STATUS "GCC/Clang Debug: Enabled -g -ggdb -O0")
+        endif()
     endif()
 elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
     message(STATUS "Build type: Release")

@@ -144,9 +144,19 @@ struct CPeerConnection {
  */
 class CPeerManager : public IPeerManager {
 private:
+    // Boost.Asio I/O infrastructure for all connections (inbound and outbound)
+    // IMPORTANT: These MUST be declared BEFORE m_p_acceptor to ensure correct destruction order!
+    // Destruction happens in reverse order: acceptor destructs first, then io_context.
+    // If io_context destructs first, acceptor destructor will access destroyed io_context internals.
+    boost::asio::io_context m_io_context;                              ///< I/O context for async socket monitoring
+    std::unique_ptr<boost::asio::executor_work_guard<boost::asio::io_context::executor_type>> m_io_work;  ///< Work guard to keep io_context running
+    std::unique_ptr<boost::asio::thread_pool> m_thread_pool;           ///< Thread pool (MAX_INBOUND_PEERS workers) for message processing
+    std::map<uint64_t, std::weak_ptr<boost::asio::ip::tcp::socket>> map_socket_descriptors;  ///< Map of connection ID to socket (weak_ptr allows cleanup)
+    mutable std::mutex cs_socket_descriptors;                          ///< Mutex protecting socket descriptors map
+
     // Network configuration
     int n_listen_port;               ///< Port for listening to incoming connections
-    std::unique_ptr<boost::asio::ip::tcp::acceptor> m_p_acceptor;  ///< Boost.Asio acceptor for async accept
+    std::unique_ptr<boost::asio::ip::tcp::acceptor> m_p_acceptor;  ///< Boost.Asio acceptor for async accept (destructs BEFORE io_context)
     int n_max_inbound_peers;         ///< Maximum number of inbound peer connections
     int n_max_outbound_peers;        ///< Maximum number of outbound peer connections
     int n_peers_ping_time;           ///< Interval in seconds between PING messages
@@ -161,13 +171,6 @@ private:
     std::atomic<bool> f_running;         ///< Whether peer manager is running
     std::atomic<bool> f_stop_requested;  ///< Signal to stop all threads
     std::atomic<bool> f_stop_monitor;    ///< Signal to stop monitor thread
-
-    // Boost.Asio I/O infrastructure for all connections (inbound and outbound)
-    boost::asio::io_context m_io_context;                              ///< I/O context for async socket monitoring
-    std::unique_ptr<boost::asio::executor_work_guard<boost::asio::io_context::executor_type>> m_io_work;  ///< Work guard to keep io_context running
-    std::unique_ptr<boost::asio::thread_pool> m_thread_pool;           ///< Thread pool (MAX_INBOUND_PEERS workers) for message processing
-    std::map<uint64_t, std::weak_ptr<boost::asio::ip::tcp::socket>> map_socket_descriptors;  ///< Map of connection ID to socket (weak_ptr allows cleanup)
-    mutable std::mutex cs_socket_descriptors;                          ///< Mutex protecting socket descriptors map
 
     // Threads
     std::thread m_peer_thread;           ///< Main peer management thread

@@ -285,6 +285,11 @@ bool CPeerManager::Start() {
  * access peer list during shutdown.
  */
 void CPeerManager::Stop() {
+    // Close and destroy acceptor FIRST, before stopping io_context
+    // This prevents the acceptor destructor from accessing io_context internals during shutdown
+    CloseAcceptor();
+    m_p_acceptor.reset();  // Explicitly destroy acceptor before io_context cleanup
+
     // Always clean up Boost.Asio resources, even if never started
     // This prevents hangs when CPeerManager is constructed but not started
     if (m_io_work) {
@@ -304,9 +309,6 @@ void CPeerManager::Stop() {
     f_stop_requested = true;
     f_stop_monitor = true;
     f_running = false;
-
-    // Close acceptor (cancels pending async_accept operations)
-    CloseAcceptor();
 
     // Stop all peer connections (both inbound and outbound)
 
