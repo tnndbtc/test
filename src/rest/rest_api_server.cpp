@@ -1033,7 +1033,7 @@ std::tuple<int, std::string> CRestApiServer::HandleRpcGetPeer() {
     LOG_INFO("HandleRpcGetPeer");
     try {
         // Get connected peers from peer manager
-        std::vector<CPeerNode> vec_peers = p_peer_manager->GetConnectedPeers();
+        std::vector<std::shared_ptr<CPeerNode>> vec_peers = p_peer_manager->GetConnectedPeers();
         size_t n_outbound_count = p_peer_manager->GetOutboundPeerCount();
         size_t n_inbound_count = p_peer_manager->GetInboundPeerCount();
 
@@ -1048,7 +1048,7 @@ std::tuple<int, std::string> CRestApiServer::HandleRpcGetPeer() {
 
         for (size_t i = 0; i < vec_peers.size(); i++) {
             // Use GetInfo() to get peer information as JSON
-            std::string str_peer_info = vec_peers[i].GetInfo();
+            std::string str_peer_info = vec_peers[i]->GetInfo();
             // Indent the peer info by 4 spaces
             size_t pos = 0;
             while ((pos = str_peer_info.find("\n", pos)) != std::string::npos) {

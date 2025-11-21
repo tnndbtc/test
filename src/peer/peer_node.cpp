@@ -4,47 +4,59 @@
 // CPeerNode implementation
 
 CPeerNode::CPeerNode()
-    : str_address(""), n_port(0), n_connection_time(0), d_ping_roundtrip_time(0.0), f_inbound(false), n_protocol_version(0), n_services(0) {
+    : p_socket(nullptr),
+      f_connected(false),
+      n_last_ping_nonce(0),
+      m_last_ping_send_time(),
+      str_address(""),
+      n_port(0),
+      n_connection_time(0),
+      d_ping_roundtrip_time(0.0),
+      f_inbound(false),
+      n_protocol_version(0),
+      n_services(0) {
 }
 
 CPeerNode::CPeerNode(const std::string& str_addr, int n_port_num)
-    : str_address(str_addr), n_port(n_port_num), n_connection_time(0), d_ping_roundtrip_time(0.0), f_inbound(false), n_protocol_version(0), n_services(0) {
+    : p_socket(nullptr),
+      f_connected(false),
+      n_last_ping_nonce(0),
+      m_last_ping_send_time(),
+      str_address(str_addr),
+      n_port(n_port_num),
+      n_connection_time(0),
+      d_ping_roundtrip_time(0.0),
+      f_inbound(false),
+      n_protocol_version(0),
+      n_services(0) {
 }
 
-// Copy constructor
-CPeerNode::CPeerNode(const CPeerNode& other) {
-    std::lock_guard<std::mutex> lock(other.cs_peer_node);
-    str_address = other.str_address;
-    n_port = other.n_port;
-    n_connection_time = other.n_connection_time;
-    d_ping_roundtrip_time = other.d_ping_roundtrip_time;
-    f_inbound = other.f_inbound;
-    n_protocol_version = other.n_protocol_version;
-    n_services = other.n_services;
+CPeerNode::CPeerNode(const std::string& str_addr, int n_port_num,
+                     std::shared_ptr<boost::asio::ip::tcp::socket> socket)
+    : p_socket(socket),
+      f_connected(socket && socket->is_open()),
+      n_last_ping_nonce(0),
+      m_last_ping_send_time(),
+      str_address(str_addr),
+      n_port(n_port_num),
+      n_connection_time(0),
+      d_ping_roundtrip_time(0.0),
+      f_inbound(false),
+      n_protocol_version(0),
+      n_services(0) {
 }
-
-// Copy assignment operator
-CPeerNode& CPeerNode::operator=(const CPeerNode& other) {
-    if (this != &other) {
-        // Lock both mutexes to avoid deadlock (lock in consistent order)
-        std::lock(cs_peer_node, other.cs_peer_node);
-        std::lock_guard<std::mutex> lock1(cs_peer_node, std::adopt_lock);
-        std::lock_guard<std::mutex> lock2(other.cs_peer_node, std::adopt_lock);
-
-        str_address = other.str_address;
-        n_port = other.n_port;
-        n_connection_time = other.n_connection_time;
-        d_ping_roundtrip_time = other.d_ping_roundtrip_time;
-        f_inbound = other.f_inbound;
-        n_protocol_version = other.n_protocol_version;
-        n_services = other.n_services;
-    }
-    return *this;
-}
-
+/* not needed for now
 // Move constructor
 CPeerNode::CPeerNode(CPeerNode&& other) noexcept {
     std::lock_guard<std::mutex> lock(other.cs_peer_node);
+
+    // Move socket and connection state
+    p_socket = std::move(other.p_socket);
+    f_connected = other.f_connected;
+    n_last_ping_nonce = other.n_last_ping_nonce;
+    m_last_ping_send_time = other.m_last_ping_send_time;
+
+    // Move peer metadata
     str_address = std::move(other.str_address);
     n_port = other.n_port;
     n_connection_time = other.n_connection_time;
@@ -52,16 +64,36 @@ CPeerNode::CPeerNode(CPeerNode&& other) noexcept {
     f_inbound = other.f_inbound;
     n_protocol_version = other.n_protocol_version;
     n_services = other.n_services;
-}
 
+    // Reset other to safe state
+    other.f_connected = false;
+    other.n_last_ping_nonce = 0;
+    other.n_port = 0;
+}
+*/
+/* not needed for now
 // Move assignment operator
 CPeerNode& CPeerNode::operator=(CPeerNode&& other) noexcept {
     if (this != &other) {
+        // Close existing socket before moving
+        if (p_socket && p_socket->is_open()) {
+            boost::system::error_code ec;
+            p_socket->shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
+            p_socket->close(ec);
+        }
+
         // Lock both mutexes to avoid deadlock
         std::lock(cs_peer_node, other.cs_peer_node);
         std::lock_guard<std::mutex> lock1(cs_peer_node, std::adopt_lock);
         std::lock_guard<std::mutex> lock2(other.cs_peer_node, std::adopt_lock);
 
+        // Move socket and connection state
+        p_socket = std::move(other.p_socket);
+        f_connected = other.f_connected;
+        n_last_ping_nonce = other.n_last_ping_nonce;
+        m_last_ping_send_time = other.m_last_ping_send_time;
+
+        // Move peer metadata
         str_address = std::move(other.str_address);
         n_port = other.n_port;
         n_connection_time = other.n_connection_time;
@@ -69,8 +101,23 @@ CPeerNode& CPeerNode::operator=(CPeerNode&& other) noexcept {
         f_inbound = other.f_inbound;
         n_protocol_version = other.n_protocol_version;
         n_services = other.n_services;
+
+        // Reset other to safe state
+        other.f_connected = false;
+        other.n_last_ping_nonce = 0;
+        other.n_port = 0;
     }
     return *this;
+}
+*/
+// Destructor - close socket if still open
+CPeerNode::~CPeerNode() {
+    if (p_socket && p_socket->is_open()) {
+        boost::system::error_code ec;
+        p_socket->shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
+        p_socket->close(ec);
+        // Errors during shutdown are non-fatal (connection may already be closed)
+    }
 }
 
 std::string CPeerNode::GetAddress() const {
@@ -195,4 +242,39 @@ uint64_t CPeerNode::GetServices() const {
 void CPeerNode::SetServices(uint64_t n_service_flags) {
     std::lock_guard<std::mutex> lock(cs_peer_node);
     n_services = n_service_flags;
+}
+
+std::shared_ptr<boost::asio::ip::tcp::socket> CPeerNode::GetSocket() const {
+    std::lock_guard<std::mutex> lock(cs_peer_node);
+    return p_socket;
+}
+
+bool CPeerNode::IsConnected() const {
+    std::lock_guard<std::mutex> lock(cs_peer_node);
+    return f_connected;
+}
+
+void CPeerNode::SetConnected(bool f_is_connected) {
+    std::lock_guard<std::mutex> lock(cs_peer_node);
+    f_connected = f_is_connected;
+}
+
+uint32_t CPeerNode::GetLastPingNonce() const {
+    std::lock_guard<std::mutex> lock(cs_peer_node);
+    return n_last_ping_nonce;
+}
+
+void CPeerNode::SetLastPingNonce(uint32_t n_nonce) {
+    std::lock_guard<std::mutex> lock(cs_peer_node);
+    n_last_ping_nonce = n_nonce;
+}
+
+std::chrono::steady_clock::time_point CPeerNode::GetLastPingSendTime() const {
+    std::lock_guard<std::mutex> lock(cs_peer_node);
+    return m_last_ping_send_time;
+}
+
+void CPeerNode::SetLastPingSendTime(std::chrono::steady_clock::time_point time) {
+    std::lock_guard<std::mutex> lock(cs_peer_node);
+    m_last_ping_send_time = time;
 }

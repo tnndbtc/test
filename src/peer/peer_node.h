@@ -6,6 +6,8 @@
 #include <memory>
 #include <cstdint>
 #include <mutex>
+#include <chrono>
+#include <boost/asio.hpp>
 
 /**
  * @interface IPeerNode
@@ -62,30 +64,43 @@ public:
 
 /**
  * @class CPeerNode
- * @brief Concrete implementation of peer node information
+ * @brief Unified peer representation with socket, connection state, and metadata
  *
- * Wraps peer address and port information in a convenient class.
+ * Consolidates all peer-related functionality (previously split between CPeerConnection and CPeerNode).
+ * Owns the TCP socket, manages connection state, and stores peer metadata.
  * Implements IPeerNode interface for future extensibility.
  *
  * Features:
- * - Immutable peer information (const members)
- * - Value semantics (copyable and movable)
- * - Validation of peer information
- * - Convenient identifier generation
+ * - Owns TCP socket (shared_ptr for async operation lifetime)
+ * - Manages connection state (connected, PING tracking)
+ * - Move-only semantics (non-copyable to prevent socket duplication)
+ * - Thread-safe access to all members via mutex
+ * - Always used via shared_ptr<CPeerNode>
  *
  * Example usage:
- *   CPeerNode peer("192.168.1.100", 1984);
- *   std::string addr = peer.GetAddress();      // "192.168.1.100"
- *   int port = peer.GetPort();                 // 1984
- *   std::string id = peer.GetIdentifier();     // "192.168.1.100:1984"
- *   bool valid = peer.IsValid();               // true
+ *   auto p_peer = std::make_shared<CPeerNode>("192.168.1.100", 1984, socket);
+ *   std::string addr = p_peer->GetAddress();      // "192.168.1.100"
+ *   auto socket = p_peer->GetSocket();            // Access socket for I/O
+ *   bool connected = p_peer->IsConnected();       // Check connection status
  */
 class CPeerNode : public IPeerNode {
 private:
     mutable std::mutex cs_peer_node;  ///< Mutex for thread-safe access to peer node data
+
+    // Network connection (socket ownership)
+    std::shared_ptr<boost::asio::ip::tcp::socket> p_socket;  ///< TCP socket for this peer connection
+
+    // Connection state
+    bool f_connected;                 ///< Whether peer is currently connected
+
+    // PING/PONG tracking
+    uint32_t n_last_ping_nonce;       ///< Nonce of last sent PING message for round-trip tracking
+    std::chrono::steady_clock::time_point m_last_ping_send_time;  ///< Timestamp when last PING was sent
+
+    // Peer metadata
     std::string str_address;          ///< Peer IP address or hostname
     int n_port;                       ///< Peer listening port
-    int64_t n_connection_time;        ///< UNIX UTC timestamp when addpeer request is first sent
+    int64_t n_connection_time;        ///< UNIX UTC timestamp when connection was established
     double d_ping_roundtrip_time;     ///< Ping round-trip time in milliseconds
     bool f_inbound;                   ///< true if this is an inbound connection, false if outbound
     int32_t n_protocol_version;       ///< Protocol version learned through VERSION/VERACK handshakes
@@ -93,47 +108,64 @@ private:
 
 public:
     /**
-     * @brief Default constructor - creates invalid peer
+     * @brief Default constructor - creates invalid peer without socket
      */
     CPeerNode();
 
     /**
-     * @brief Construct peer node with address and port
+     * @brief Construct peer node with address and port (no socket)
      * @param str_addr Peer IP address or hostname
      * @param n_port_num Peer listening port
      */
     CPeerNode(const std::string& str_addr, int n_port_num);
 
     /**
-     * @brief Copy constructor - copies all data members except mutex
-     * @param other Peer node to copy from
+     * @brief Construct peer node with address, port, and socket
+     * @param str_addr Peer IP address or hostname
+     * @param n_port_num Peer listening port
+     * @param socket Shared pointer to TCP socket for this connection
      */
-    CPeerNode(const CPeerNode& other);
+    CPeerNode(const std::string& str_addr, int n_port_num,
+              std::shared_ptr<boost::asio::ip::tcp::socket> socket);
 
     /**
-     * @brief Copy assignment operator - copies all data members except mutex
-     * @param other Peer node to copy from
+     * @brief Copy constructor - DELETED (move-only semantics)
+     *
+     * CPeerNode is move-only to prevent socket duplication.
+     * Use shared_ptr<CPeerNode> for sharing peer objects.
+     */
+    CPeerNode(const CPeerNode& other) = delete;
+
+    /**
+     * @brief Copy assignment operator - DELETED (move-only semantics)
+     *
+     * CPeerNode is move-only to prevent socket duplication.
+     * Use shared_ptr<CPeerNode> for sharing peer objects.
+     */
+    CPeerNode& operator=(const CPeerNode& other) = delete;
+
+    /**
+     * Not needed for now
+     * @brief Move constructor - transfers ownership of socket and all members
+     * @param other Peer node to move from (leaves other in valid but empty state)
+     */
+    // CPeerNode(CPeerNode&& other) noexcept;
+
+    /**
+     * Not needed for now
+     * @brief Move assignment operator - transfers ownership of socket and all members
+     * @param other Peer node to move from (leaves other in valid but empty state)
      * @return Reference to this object
      */
-    CPeerNode& operator=(const CPeerNode& other);
+    // CPeerNode& operator=(CPeerNode&& other) noexcept;
 
     /**
-     * @brief Move constructor - moves all data members except mutex
-     * @param other Peer node to move from
+     * @brief Destructor - closes socket if still open
+     *
+     * Performs graceful shutdown of TCP socket (shutdown + close).
+     * Ignores errors during shutdown as connection may already be closed.
      */
-    CPeerNode(CPeerNode&& other) noexcept;
-
-    /**
-     * @brief Move assignment operator - moves all data members except mutex
-     * @param other Peer node to move from
-     * @return Reference to this object
-     */
-    CPeerNode& operator=(CPeerNode&& other) noexcept;
-
-    /**
-     * @brief Virtual destructor
-     */
-    virtual ~CPeerNode() override = default;
+    virtual ~CPeerNode() override;
 
     /**
      * @brief Get peer IP address or hostname
@@ -261,6 +293,48 @@ public:
      * @param n_service_flags 64-bit services bitmap
      */
     void SetServices(uint64_t n_service_flags);
+
+    /**
+     * @brief Get the TCP socket for this peer connection
+     * @return Shared pointer to socket (may be nullptr if no connection)
+     */
+    std::shared_ptr<boost::asio::ip::tcp::socket> GetSocket() const;
+
+    /**
+     * @brief Check if peer is currently connected
+     * @return true if connected, false otherwise
+     */
+    bool IsConnected() const;
+
+    /**
+     * @brief Set connection status
+     * @param f_is_connected true if connected, false otherwise
+     */
+    void SetConnected(bool f_is_connected);
+
+    /**
+     * @brief Get the nonce of the last sent PING message
+     * @return PING nonce value
+     */
+    uint32_t GetLastPingNonce() const;
+
+    /**
+     * @brief Set the nonce of the last sent PING message
+     * @param n_nonce PING nonce value
+     */
+    void SetLastPingNonce(uint32_t n_nonce);
+
+    /**
+     * @brief Get the timestamp when last PING was sent
+     * @return Timestamp of last PING
+     */
+    std::chrono::steady_clock::time_point GetLastPingSendTime() const;
+
+    /**
+     * @brief Set the timestamp when last PING was sent
+     * @param time Timestamp of last PING
+     */
+    void SetLastPingSendTime(std::chrono::steady_clock::time_point time);
 };
 
 #endif // PEER_NODE_H

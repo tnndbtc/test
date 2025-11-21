@@ -100,7 +100,7 @@ public:
      * Thread-safe snapshot of currently connected peers (both inbound and outbound).
      * Each CPeerNode can be queried for address, port, identifier, and info.
      */
-    virtual std::vector<CPeerNode> GetConnectedPeers() const = 0;
+    virtual std::vector<std::shared_ptr<CPeerNode>> GetConnectedPeers() const = 0;
 
     /**
      * @brief Send a message to a specific peer

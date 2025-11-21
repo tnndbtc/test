@@ -46,78 +46,6 @@ struct PeerNodePtrComparator {
 };
 
 /**
- * @struct CPeerConnection
- * @brief Represents a single P2P network connection
- *
- * Encapsulates a TCP socket connection to another blockweave node.
- * I/O is handled by Boost.Asio async infrastructure (not per-connection threads).
- * Supports move semantics but not copying.
- *
- * Features:
- * - Async I/O model using Boost.Asio
- * - Atomic flags for thread-safe status checking
- * - Move-only semantics for safe transfer of ownership
- * - Automatic resource cleanup in destructor
- */
-struct CPeerConnection {
-    static std::atomic<uint64_t> s_next_connection_id;            ///< Global connection ID counter
-
-    uint64_t n_connection_id;                                     ///< Unique connection identifier
-    std::shared_ptr<boost::asio::ip::tcp::socket> p_socket;       ///< Boost.Asio socket (shared ownership with async operations)
-    std::shared_ptr<CPeerNode> peer_node;                         ///< Peer node information (address and port) - shared pointer for inventory tracking
-    bool f_connected;                                             ///< Current connection status
-    std::atomic<bool> f_active;                                   ///< Whether connection is active
-    uint32_t n_last_ping_nonce;                                   ///< Nonce of last sent PING message
-    std::chrono::steady_clock::time_point m_last_ping_send_time;  ///< Time when last PING was sent
-
-    /**
-     * @brief Default constructor - creates disconnected peer
-     */
-    CPeerConnection();
-
-    /**
-     * @brief Construct peer with CPeerNode
-     * @param node Peer node information
-     */
-    CPeerConnection(const CPeerNode& node);
-
-    /**
-     * @brief Construct peer with CPeerNode and socket
-     * @param node Peer node information
-     * @param socket Boost.Asio socket (ownership transferred)
-     */
-    CPeerConnection(const CPeerNode& node, std::shared_ptr<boost::asio::ip::tcp::socket> socket);
-
-    /**
-     * @brief Destructor - closes connection and joins thread
-     */
-    ~CPeerConnection();
-
-    /**
-     * @brief Deleted copy constructor (non-copyable due to thread)
-     */
-    CPeerConnection(const CPeerConnection&) = delete;
-
-    /**
-     * @brief Deleted copy assignment (non-copyable due to thread)
-     */
-    CPeerConnection& operator=(const CPeerConnection&) = delete;
-
-    /**
-     * @brief Move constructor for transferring ownership
-     * @param other Peer connection to move from
-     */
-    CPeerConnection(CPeerConnection&& other) noexcept;
-
-    /**
-     * @brief Move assignment for transferring ownership
-     * @param other Peer connection to move from
-     * @return Reference to this
-     */
-    CPeerConnection& operator=(CPeerConnection&& other) noexcept;
-};
-
-/**
  * @class CPeerManager
  * @brief Manages peer-to-peer network connections for blockweave node
  *
@@ -151,8 +79,6 @@ private:
     boost::asio::io_context m_io_context;                              ///< I/O context for async socket monitoring
     std::unique_ptr<boost::asio::executor_work_guard<boost::asio::io_context::executor_type>> m_io_work;  ///< Work guard to keep io_context running
     std::unique_ptr<boost::asio::thread_pool> m_thread_pool;           ///< Thread pool (MAX_INBOUND_PEERS workers) for message processing
-    std::map<uint64_t, std::weak_ptr<boost::asio::ip::tcp::socket>> map_socket_descriptors;  ///< Map of connection ID to socket (weak_ptr allows cleanup)
-    mutable std::mutex cs_socket_descriptors;                          ///< Mutex protecting socket descriptors map
 
     // Network configuration
     int n_listen_port;               ///< Port for listening to incoming connections
@@ -163,8 +89,8 @@ private:
     uint32_t m_n_network_magic;      ///< Network magic bytes for P2P message validation
 
     // Peer connections (separate inbound and outbound tracking)
-    std::vector<std::unique_ptr<CPeerConnection>> m_inbound_peers;   ///< Inbound peer connections (peers connecting to us)
-    std::vector<std::unique_ptr<CPeerConnection>> m_outbound_peers;  ///< Outbound peer connections (we connect to them)
+    std::vector<std::shared_ptr<CPeerNode>> m_inbound_peers;   ///< Inbound peer connections (peers connecting to us)
+    std::vector<std::shared_ptr<CPeerNode>> m_outbound_peers;  ///< Outbound peer connections (we connect to them)
     mutable std::mutex cs_peers;     ///< Mutex protecting both peer lists
 
     // Control flags
@@ -245,18 +171,12 @@ private:
 
     /**
      * @brief Register inbound socket with async I/O context
-     * @param n_socket_fd Socket file descriptor
-     * @param str_address Peer IP address
-     * @param n_port Peer port
+     * @param p_peer Shared pointer to peer node
      *
-     * Wraps socket in Boost.Asio stream_descriptor and registers
-     * async_read_some handler for non-blocking I/O monitoring.
+     * Registers async_read_some handler for non-blocking I/O monitoring.
      * Called by HandleAccept after accepting a connection.
      */
-    void RegisterInboundSocket(std::shared_ptr<boost::asio::ip::tcp::socket> p_socket,
-                               uint64_t n_connection_id,
-                               const std::string& str_address,
-                               int n_port);
+    void RegisterInboundSocket(std::shared_ptr<CPeerNode> p_peer);
 
     /**
      * @brief Register outbound socket with async I/O context
@@ -275,7 +195,7 @@ private:
      * @brief Async read completion handler for inbound sockets
      * @param ec Boost error code from async operation
      * @param n_bytes_transferred Number of bytes read
-     * @param n_socket_fd Socket file descriptor
+     * @param p_peer Shared pointer to peer node
      * @param p_buffer Shared pointer to read buffer
      *
      * Called by io_context when async_read_some completes.
@@ -285,14 +205,12 @@ private:
      */
     void HandleAsyncRead(const boost::system::error_code& ec,
                          size_t n_bytes_transferred,
-                         std::shared_ptr<boost::asio::ip::tcp::socket> p_socket,
-                         uint64_t n_connection_id,
+                         std::shared_ptr<CPeerNode> p_peer,
                          std::shared_ptr<std::vector<uint8_t>> p_buffer);
 
     /**
      * @brief Process received message from inbound peer
-     * @param p_socket Shared pointer to socket
-     * @param n_connection_id Connection ID
+     * @param p_peer Shared pointer to peer node
      * @param p_buffer Shared pointer to buffer containing received data
      * @param n_bytes_received Number of bytes in buffer
      *
@@ -300,101 +218,86 @@ private:
      * Handles PING, PONG, and other message types.
      * Posted to thread pool for parallel processing.
      */
-    void ProcessReceivedMessage(std::shared_ptr<boost::asio::ip::tcp::socket> p_socket,
-                                uint64_t n_connection_id,
+    void ProcessReceivedMessage(std::shared_ptr<CPeerNode> p_peer,
                                 std::shared_ptr<std::vector<uint8_t>> p_buffer,
                                 size_t n_bytes_received);
 
     /**
      * @brief Handle PING message from peer
-     * @param p_peer Peer connection pointer
+     * @param p_peer_shared Shared pointer to peer (used for async operations)
      * @param received_msg The received PING message
-     * @param p_socket Shared pointer to socket
-     * @param n_connection_id Connection ID
      */
-    void HandlePingMessage(CPeerConnection* p_peer,
-                          const CPeerMessage& received_msg,
-                          std::shared_ptr<boost::asio::ip::tcp::socket> p_socket,
-                          uint64_t n_connection_id);
+    void HandlePingMessage(std::shared_ptr<CPeerNode> p_peer_shared,
+                          const CPeerMessage& received_msg);
 
     /**
      * @brief Handle PONG message from peer
      * @param p_peer Peer connection pointer
      * @param received_msg The received PONG message
      */
-    void HandlePongMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg);
+    void HandlePongMessage(std::shared_ptr<CPeerNode> p_peer_shared, const CPeerMessage& received_msg);
 
     /**
      * @brief Handle INVENTORY message from peer
-     * @param p_peer Peer connection pointer
+     * @param p_peer_shared Shared pointer to peer (used for async operations)
      * @param received_msg The received INVENTORY message
-     * @param p_socket Shared pointer to socket
-     * @param n_connection_id Connection ID
      */
-    void HandleInventoryMessage(CPeerConnection* p_peer,
-                               const CPeerMessage& received_msg,
-                               std::shared_ptr<boost::asio::ip::tcp::socket> p_socket,
-                               uint64_t n_connection_id);
+    void HandleInventoryMessage(std::shared_ptr<CPeerNode> p_peer_shared,
+                               const CPeerMessage& received_msg);
 
     /**
      * @brief Handle VERSION message from peer
      * @param p_peer Peer connection pointer
      * @param received_msg The received VERSION message
      */
-    void HandleVersionMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg);
+    void HandleVersionMessage(std::shared_ptr<CPeerNode> p_peer_shared, const CPeerMessage& received_msg);
 
     /**
      * @brief Handle GETDATA message from peer
-     * @param p_peer Peer connection pointer
+     * @param p_peer_shared Shared pointer to peer (used for async operations)
      * @param received_msg The received GETDATA message
-     * @param p_socket Shared pointer to socket
-     * @param n_connection_id Connection ID
      */
-    void HandleGetDataMessage(CPeerConnection* p_peer,
-                             const CPeerMessage& received_msg,
-                             std::shared_ptr<boost::asio::ip::tcp::socket> p_socket,
-                             uint64_t n_connection_id);
+    void HandleGetDataMessage(std::shared_ptr<CPeerNode> p_peer_shared,
+                             const CPeerMessage& received_msg);
 
     /**
      * @brief Handle TX message from peer
      * @param p_peer Peer connection pointer
      * @param received_msg The received TX message
      */
-    void HandleTxMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg);
+    void HandleTxMessage(std::shared_ptr<CPeerNode> p_peer_shared, const CPeerMessage& received_msg);
 
     /**
      * @brief Handle BLOCK message from peer
      * @param p_peer Peer connection pointer
      * @param received_msg The received BLOCK message
      */
-    void HandleBlockMessage(CPeerConnection* p_peer, const CPeerMessage& received_msg);
+    void HandleBlockMessage(std::shared_ptr<CPeerNode> p_peer_shared, const CPeerMessage& received_msg);
 
     /**
      * @brief Send message asynchronously to inbound peer
-     * @param n_socket_fd Socket file descriptor
+     * @param p_peer Peer node to send message to
      * @param message CPeerMessage to send
      *
      * Serializes and sends message to inbound peer using async_write.
      * Thread-safe operation. Handles errors and disconnection.
      * Used only for inbound peers (outbound peers use synchronous send in ConnectionThread).
      */
-    void SendMessageAsync(std::shared_ptr<boost::asio::ip::tcp::socket> p_socket,
-                          uint64_t n_connection_id,
+    void SendMessageAsync(std::shared_ptr<CPeerNode> p_peer,
                           const CPeerMessage& message);
 
     /**
      * @brief Async write completion handler for inbound sockets
      * @param ec Boost error code from async operation
      * @param n_bytes_transferred Number of bytes written
-     * @param p_socket Shared pointer to socket
-     * @param n_connection_id Connection ID
+     * @param p_peer Peer node for this connection
      *
      * Called when async_write completes.
      * Handles write errors and logs completion.
      */
     void HandleAsyncWrite(const boost::system::error_code& ec,
                           size_t n_bytes_transferred,
-                          uint64_t n_connection_id);
+                          std::shared_ptr<CPeerNode> p_peer);
 
     /**
      * @brief Initiate outbound connection to peer
@@ -412,7 +315,7 @@ private:
      *
      * Closes socket, stops thread, and marks peer inactive.
      */
-    void DisconnectPeer(CPeerConnection* p_peer);
+    void DisconnectPeer(std::shared_ptr<CPeerNode> p_peer_shared);
 
     /**
      * @brief Remove disconnected peers from peer list
@@ -458,26 +361,6 @@ private:
     // Helper methods
 
     /**
-     * @brief Get socket by connection ID
-     * @param n_connection_id Connection identifier
-     * @return shared_ptr to socket if found and still alive, nullptr otherwise
-     *
-     * Looks up socket in descriptor map by connection ID.
-     * Returns shared_ptr if weak_ptr can be locked (socket still exists).
-     * Thread-safe via mutex lock.
-     */
-    std::shared_ptr<boost::asio::ip::tcp::socket> GetSocketByConnectionId(uint64_t n_connection_id);
-
-    /**
-     * @brief Close connection by connection ID
-     * @param n_connection_id Connection identifier
-     *
-     * Closes socket, removes from descriptor map, marks peer as disconnected.
-     * Thread-safe cleanup of connection resources.
-     */
-    void CloseConnection(uint64_t n_connection_id);
-
-    /**
      * @brief Mark inventory as known by a peer
      * @param p_peer_node Shared pointer to peer node
      * @param obj_type Object type (ObjectType::TRANSACTION or ObjectType::BLOCK)
@@ -505,15 +388,14 @@ private:
 
     /**
      * @brief Schedule GETDATA message to request missing inventory items
-     * @param n_socket Socket to send to
+     * @param p_peer Peer to send message to
      * @param vec_items Vector of (type, hash) pairs to request
      *
      * Format: [count][type][hash][type][hash]... (same as inventory format)
      * Note: This method schedules the GETDATA message to be sent asynchronously
      *       via the thread pool to avoid blocking the caller.
      */
-    void ScheduleGetDataMessage(std::shared_ptr<boost::asio::ip::tcp::socket> p_socket,
-                                uint64_t n_connection_id,
+    void ScheduleGetDataMessage(std::shared_ptr<CPeerNode> p_peer,
                                 const std::vector<std::pair<ObjectType::Type, std::string>>& vec_items);
 
     /**
@@ -561,16 +443,6 @@ private:
      * @return Subnet string (e.g., "192.168.1" for /24)
      */
     std::string GetSubnet(const std::string& str_address);
-
-    /**
-     * @brief Internal helper to close connection without locking cs_peers
-     * @param n_connection_id Connection identifier
-     *
-     * Closes socket, removes from descriptor map, marks peer as disconnected.
-     * MUST be called with cs_peers already locked by the caller.
-     * This prevents deadlock when called from functions that already hold cs_peers.
-     */
-    void CloseConnectionInternal(uint64_t n_connection_id);
 
 public:
     /**
@@ -647,7 +519,7 @@ public:
      * Thread-safe snapshot of currently connected peers (both inbound and outbound).
      * Each CPeerNode can be queried for address, port, identifier, and info.
      */
-    virtual std::vector<CPeerNode> GetConnectedPeers() const override;
+    virtual std::vector<std::shared_ptr<CPeerNode>> GetConnectedPeers() const override;
 
     /**
      * @brief Send a message to a specific peer

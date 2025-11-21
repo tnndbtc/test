@@ -252,7 +252,7 @@ class P2PRelayTest(TestFramework):
             mempool = chain_info.get('mempool_size', -1)
 
             self.log_info(f"Node{i} blocks: {blocks}, mempool: {mempool}")
-            self.assert_equal(blocks, 3, f"Node{i} should have 1 blocks after relay (genesis block)")
+            self.assert_equal(blocks, 3, f"Node{i} should have 3 blocks after relay (genesis block)")
             self.assert_equal(mempool, 1, f"Node{i} should have 1 transaction in mempool after relay")
 
         # # Next: trigger mining on node3 Verify all nodes have blocks: 4 and mempool_size: 0
@@ -285,8 +285,8 @@ class P2PRelayTest(TestFramework):
             mempool = chain_info.get('mempool_size', -1)
 
             self.log_info(f"Node{i} blocks: {blocks}, mempool: {mempool}")
-            self.assert_equal(blocks, 4, f"Node{i} should have 1 blocks after relay (genesis block)")
-            self.assert_equal(mempool, 0, f"Node{i} should have 1 transaction in mempool after relay")
+            self.assert_equal(blocks, 4, f"Node{i} should have 4 blocks after relay (genesis block)")
+            self.assert_equal(mempool, 0, f"Node{i} should have 0 transaction in mempool after relay")
         self.log_info("test_2_block_transaction_broadcast: Block+tx relay test completed successfully!")
 
 

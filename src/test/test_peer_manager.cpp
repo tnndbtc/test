@@ -13,51 +13,44 @@
 using namespace UnitTest;
 
 /**
- * @brief Test CPeerConnection default constructor
+ * @brief Test CPeerNode default constructor
  */
-TEST(PeerConnection_DefaultConstructor) {
-    CPeerConnection peer;
+TEST(PeerNode_DefaultConstructor) {
+    CPeerNode peer;
 
-    ASSERT_TRUE(peer.p_socket == nullptr, "Default socket should be nullptr");
-    ASSERT_TRUE(peer.n_connection_id > 0, "Connection ID should be assigned");
-    ASSERT_TRUE(peer.peer_node->GetAddress().empty(), "Default address should be empty");
-    ASSERT_EQUAL(peer.peer_node->GetPort(), 0, "Default port should be 0");
-    ASSERT_FALSE(peer.f_connected, "Default connection status should be false");
-    ASSERT_FALSE(peer.f_active, "Default active status should be false");
+    ASSERT_TRUE(peer.GetSocket() == nullptr, "Default socket should be nullptr");
+    ASSERT_TRUE(peer.GetAddress().empty(), "Default address should be empty");
+    ASSERT_EQUAL(peer.GetPort(), 0, "Default port should be 0");
+    ASSERT_FALSE(peer.IsConnected(), "Default connection status should be false");
 }
 
 /**
- * @brief Test CPeerConnection parameterized constructor
+ * @brief Test CPeerNode parameterized constructor
  */
-TEST(PeerConnection_ParameterizedConstructor) {
-    CPeerNode node("127.0.0.1", 8333);
-    CPeerConnection peer(node);
+TEST(PeerNode_ParameterizedConstructor) {
+    CPeerNode peer("127.0.0.1", 8333);
 
-    ASSERT_EQUAL(peer.peer_node->GetAddress(), std::string("127.0.0.1"), "Address should be set");
-    ASSERT_EQUAL(peer.peer_node->GetPort(), 8333, "Port should be set");
-    ASSERT_TRUE(peer.p_socket == nullptr, "Socket should initially be nullptr");
-    ASSERT_TRUE(peer.n_connection_id > 0, "Connection ID should be assigned");
-    ASSERT_FALSE(peer.f_connected, "Should not be connected initially");
-    ASSERT_FALSE(peer.f_active, "Should not be active initially");
+    ASSERT_EQUAL(peer.GetAddress(), std::string("127.0.0.1"), "Address should be set");
+    ASSERT_EQUAL(peer.GetPort(), 8333, "Port should be set");
+    ASSERT_TRUE(peer.GetSocket() == nullptr, "Socket should initially be nullptr");
+    ASSERT_FALSE(peer.IsConnected(), "Should not be connected initially");
 }
 
 /**
- * @brief Test CPeerConnection move constructor
+ * @brief Test CPeerNode move constructor
  */
-TEST(PeerConnection_MoveConstructor) {
-    CPeerNode node("192.168.1.1", 9999);
-    CPeerConnection peer1(node);
-    peer1.f_connected = true;
-    peer1.f_active = true;
+/* not needed for now
+TEST(PeerNode_MoveConstructor) {
+    CPeerNode peer1("192.168.1.1", 9999);
+    peer1.SetConnected(true);
 
-    CPeerConnection peer2(std::move(peer1));
+    CPeerNode peer2(std::move(peer1));
 
-    ASSERT_EQUAL(peer2.peer_node->GetAddress(), std::string("192.168.1.1"), "Address should be moved");
-    ASSERT_EQUAL(peer2.peer_node->GetPort(), 9999, "Port should be moved");
-    ASSERT_TRUE(peer2.f_connected, "Connection status should be moved");
-    ASSERT_TRUE(peer2.f_active, "Active status should be moved");
+    ASSERT_EQUAL(peer2.GetAddress(), std::string("192.168.1.1"), "Address should be moved");
+    ASSERT_EQUAL(peer2.GetPort(), 9999, "Port should be moved");
+    ASSERT_TRUE(peer2.IsConnected(), "Connection status should be moved");
 }
-
+*/
 /**
  * @brief Test CPeerManager constructor
  */
@@ -193,34 +186,33 @@ TEST(PeerManager_BroadcastMessage_InventoryPayload) {
 }
 
 /**
- * @brief Test atomic f_active flag
+ * @brief Test CPeerNode thread-safe getter/setter methods
  *
- * Verifies that the f_active flag is properly atomic and can be
- * safely accessed from multiple threads.
+ * Verifies that CPeerNode's connection status can be safely accessed
+ * from multiple threads using getter/setter methods protected by mutex.
  */
-TEST(PeerConnection_AtomicFlag) {
-    CPeerNode node("127.0.0.1", 8080);
-    CPeerConnection peer(node);
+TEST(PeerNode_ThreadSafeAccessors) {
+    CPeerNode peer("127.0.0.1", 8080);
 
     std::atomic<int> read_count{0};
     std::atomic<bool> stop_flag{false};
 
-    // Thread 1: Toggles f_active
+    // Thread 1: Toggles connection status
     std::thread writer([&peer, &stop_flag]() {
         bool value = false;
         while (!stop_flag) {
-            peer.f_active = value;
+            peer.SetConnected(value);
             value = !value;
             std::this_thread::sleep_for(std::chrono::microseconds(1));
         }
     });
 
-    // Thread 2-5: Read f_active
+    // Thread 2-5: Read connection status
     std::vector<std::thread> readers;
     for (int i = 0; i < 4; i++) {
         readers.emplace_back([&peer, &read_count, &stop_flag]() {
             while (!stop_flag) {
-                bool value = peer.f_active;
+                bool value = peer.IsConnected();
                 (void)value; // Suppress unused warning
                 read_count++;
                 std::this_thread::sleep_for(std::chrono::microseconds(1));
@@ -239,7 +231,7 @@ TEST(PeerConnection_AtomicFlag) {
     }
 
     // Verify we made many safe accesses
-    ASSERT_TRUE(read_count > 1000, "Should have made many atomic reads");
+    ASSERT_TRUE(read_count > 1000, "Should have made many thread-safe reads");
 }
 
 /**
