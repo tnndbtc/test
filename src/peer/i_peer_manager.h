@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <utility>
+#include <memory>
 #include "blockcore/object_type.h"
 
 // Forward declarations to avoid circular dependency
