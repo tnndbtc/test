@@ -481,6 +481,7 @@ if(WIN32)
     endif()
 
     # Link Windows socket library (ws2_32), mswsock for AcceptEx, and service library (advapi32)
+    target_link_libraries(bwutils PUBLIC ws2_32)  # For get_public_ip.cpp network functions
     target_link_libraries(bwpeermsg PUBLIC ws2_32)
     target_link_libraries(bwpeer PUBLIC ws2_32 mswsock)
     target_link_libraries(bwblockcore PUBLIC ws2_32 advapi32)  # For network functions and Windows Service APIs
