@@ -258,6 +258,7 @@ class P2PRelayTest(TestFramework):
         # # Next: trigger mining on node3 Verify all nodes have blocks: 4 and mempool_size: 0
         # self.log_info("Step 11: Verifying final block counts and mempool sizes...")
         #
+        self.log_info(f"trigger mining on node2")
         self.assert_true(node2.trigger_mining(), "Block mining triggered successfully on node2")
 
         # Wait for blocks and transactions to propagate
@@ -266,12 +267,12 @@ class P2PRelayTest(TestFramework):
         relay_start = time.time()
 
         while time.time() - relay_start < max_relay_wait:
-            # Check if all nodes have the block
-            chain = node1.get_chain_info()
+            # Check if all nodes have the block, since node0 is the last one receive the broadcast, check node0 should be good
+            chain = node0.get_chain_info()
 
             mempool_size = chain.get('mempool_size', -1)
 
-            self.log_info(f"Relay progress: Node2 mempool={mempool_size}")
+            self.log_info(f"Relay progress: Node0 mempool={mempool_size}")
 
             if mempool_size == 0:
                 self.log_info("transactions in mempool should be deleted after node2 mined it and relayed to all nodes!")

@@ -1388,6 +1388,12 @@ bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
             return false;
         }
 
+        // Log connection details
+        auto local_ep = p_socket->local_endpoint();
+        auto remote_ep = p_socket->remote_endpoint();
+        LOG_INFO("Socket connected: " + local_ep.address().to_string() + ":" + std::to_string(local_ep.port()) +
+                  " -> " + remote_ep.address().to_string() + ":" + std::to_string(remote_ep.port()));
+
         // Set socket keepalive
         if (!SetSocketKeepAlive(p_socket)) {
             LOG_WARN("Failed to set keepalive for peer " + str_address);
