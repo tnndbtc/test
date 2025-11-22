@@ -122,6 +122,11 @@ private:
     // Blockweave integration
     std::shared_ptr<IBlockweave> p_blockweave;                  ///< Shared pointer to blockweave for querying mempool/blockchain
 
+    // Public IP discovery
+    std::string m_str_public_ip;                                ///< Current public IP address (default: "127.0.0.1")
+    std::vector<std::string> m_vec_stun_addresses;               ///< STUN server addresses for periodic IP updates
+    std::chrono::steady_clock::time_point m_last_public_ip_check;///< Last time public IP was checked
+
     /**
      * @brief Main peer management thread function (renamed from PeerThread)
      *
@@ -454,7 +459,7 @@ public:
      * @param n_ping_time Interval in seconds between PING messages (default: PEERS_PING_TIME from settings.h)
      * @param n_magic Network magic bytes for P2P message validation (default: MAINNET_MAGIC from settings.h)
      */
-    CPeerManager(int n_port = P2P_PORT, int n_max_outbound = MAX_OUTBOUND_PEERS, int n_max_inbound = MAX_INBOUND_PEERS, int n_max_workers = MAX_INBOUND_WORKER_THREADS, int n_ping_time = PEERS_PING_TIME, uint32_t n_magic = MAINNET_MAGIC);
+    CPeerManager(int n_port = P2P_PORT, int n_max_outbound = MAX_OUTBOUND_PEERS, int n_max_inbound = MAX_INBOUND_PEERS, int n_max_workers = MAX_INBOUND_WORKER_THREADS, int n_ping_time = PEERS_PING_TIME, uint32_t n_magic = LOCALNET_MAGIC);
 
     /**
      * @brief Destructor - stops networking and cleans up resources
@@ -570,6 +575,15 @@ public:
      * before requesting them from peers. Uses shared_ptr for safe ownership.
      */
     void SetBlockweave(std::shared_ptr<IBlockweave> p_bw);
+
+    /**
+     * @brief Get current public IP address
+     * @return Public IP as string (e.g., "203.0.113.42" or "127.0.0.1")
+     *
+     * Returns the public IP address discovered via STUN, manually configured,
+     * or "127.0.0.1" if in LOCALNET mode or discovery failed.
+     */
+    std::string GetPublicIP() const;
 };
 
 #endif // PEER_MANAGER_H

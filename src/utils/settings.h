@@ -109,4 +109,21 @@ constexpr size_t BLOCK_UINT8_SIZE = 1;
 // Default network type (mainnet, testnet, or localnet)
 const std::string DEFAULT_NETWORK = "mainnet";
 
+// ============================================================
+// STUN Configuration (for public IP discovery)
+// ============================================================
+
+// Default STUN server addresses for NAT traversal and public IP discovery
+const std::string DEFAULT_STUN_ADDRESSES =
+    "stun.l.google.com:19302,"
+    "stun1.l.google.com:19302,"
+    "stun2.l.google.com:19302,"
+    "stun3.l.google.com:19302,"
+    "stun4.l.google.com:19302,"
+    "stun.stunprotocol.org:3478,"
+    "stun.services.mozilla.com:3478";
+
+// Default public IP address (127.0.0.1 means auto-detect via STUN)
+const std::string DEFAULT_PUBLIC_IP = "127.0.0.1";
+
 #endif // SETTINGS_H

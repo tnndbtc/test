@@ -158,6 +158,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         test_block_file.cpp
         test_logger.cpp
         test_network.cpp
+        test_get_public_ip.cpp
         ${PROJECT_ROOT}/src/wallet/wallet.cpp
     )
 
@@ -214,6 +215,7 @@ else()
         test_block_file.cpp
         test_logger.cpp
         test_network.cpp
+        test_get_public_ip.cpp
         ../wallet/wallet.cpp
     )
 

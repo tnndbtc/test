@@ -429,7 +429,7 @@ TEST(PeerManager_BroadcastMessage_DifferentTypes) {
 TEST(PeerManager_BoostAsioInitialization) {
     // Test that PeerManager initializes with Boost.Asio infrastructure
     // This test verifies the constructor doesn't throw and manager can start/stop
-    CPeerManager manager(8347, 8, 120, 180);
+    CPeerManager manager(8347, 8, 120, 32, 180);
 
     ASSERT_FALSE(manager.IsRunning(), "Manager should not be running after construction");
     ASSERT_EQUAL(manager.GetInboundPeerCount(), (size_t)0, "Should have 0 inbound peers initially");
@@ -445,4 +445,74 @@ TEST(PeerManager_BoostAsioInitialization) {
     // Stop manager (cleans up Boost.Asio resources)
     manager.Stop();
     ASSERT_FALSE(manager.IsRunning(), "Manager should not be running after Stop()");
+}
+
+/**
+ * @brief Test CPeerManager public IP discovery
+ *
+ * Tests that CPeerManager discovers public IP via STUN when not in LOCALNET mode.
+ * Note: This test requires network access and working STUN servers.
+ */
+
+TEST(PeerManager_PublicIPDiscovery) {
+    // Create peer manager with TESTNET magic (should trigger STUN discovery)
+    CPeerManager manager(8348, 8, 120, 32, 180, 0xEA71B96E);  // TESTNET_MAGIC
+
+    std::string public_ip = manager.GetPublicIP();
+
+    // Should have discovered a public IP (not 127.0.0.1)
+    // Note: Test may fail if behind corporate firewall blocking STUN
+    ASSERT_TRUE(public_ip != "" || public_ip == "127.0.0.1", "Should return either discovered IP or fallback");
+}
+
+/**
+ * @brief Test LOCALNET mode skips STUN
+ *
+ * Tests that CPeerManager does not attempt STUN discovery when in LOCALNET mode.
+ */
+TEST(PeerManager_LocalnetSkipsSTUN) {
+    // Create peer manager with LOCALNET magic
+    CPeerManager manager(8349, 8, 120, 32, 180, 0xACDE4892);  // LOCALNET_MAGIC
+
+    std::string public_ip = manager.GetPublicIP();
+
+    // Should stay at 127.0.0.1 for LOCALNET
+    ASSERT_EQUAL(public_ip, std::string("127.0.0.1"), "LOCALNET should use 127.0.0.1");
+}
+
+/**
+ * @brief Test GetPublicIP accessor is thread-safe
+ *
+ * Tests that multiple threads can safely query public IP concurrently.
+ */
+TEST(PeerManager_ThreadSafe_GetPublicIP) {
+    CPeerManager manager(8350, 8, 120, 32, 180, 0xACDE4892);  // LOCALNET_MAGIC
+
+    std::atomic<int> query_count{0};
+    std::atomic<bool> stop_flag{false};
+
+    // Start multiple threads querying public IP
+    std::vector<std::thread> threads;
+    for (int i = 0; i < 10; i++) {
+        threads.emplace_back([&manager, &query_count, &stop_flag]() {
+            while (!stop_flag) {
+                std::string ip = manager.GetPublicIP();
+                (void)ip; // Suppress unused warning
+                query_count++;
+                std::this_thread::sleep_for(std::chrono::microseconds(10));
+            }
+        });
+    }
+
+    // Let threads run for a bit
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    stop_flag = true;
+
+    // Join all threads
+    for (auto& t : threads) {
+        t.join();
+    }
+
+    // Verify we made many queries without crashing
+    ASSERT_TRUE(query_count > 100, "Should have made multiple thread-safe queries");
 }

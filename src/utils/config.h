@@ -4,6 +4,7 @@
 
 #include <string>
 #include <map>
+#include <vector>
 #include "utils/settings.h"
 
 /**
@@ -196,6 +197,24 @@ public:
      * returns "./data/testnet"
      */
     std::string GetNetworkDataDir(const std::string& str_network) const;
+
+    /**
+     * @brief Get list of STUN server addresses for public IP discovery
+     * @return Vector of STUN server addresses in "hostname:port" format
+     *
+     * Parses comma-separated list from configuration file.
+     * Default: Google, Mozilla, and StunProtocol.org STUN servers
+     */
+    std::vector<std::string> GetStunAddresses() const;
+
+    /**
+     * @brief Get manually configured public IP address
+     * @return Public IP string, or "127.0.0.1" if not configured
+     *
+     * If set to non-127.0.0.1 value, disables automatic STUN discovery.
+     * Useful for nodes behind static NAT or with known public IP.
+     */
+    std::string GetPublicIP() const;
 };
 
 #endif

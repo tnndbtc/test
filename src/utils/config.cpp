@@ -159,6 +159,8 @@ void CConfig::LoadDefaults() {
     m_config_values["peers_ping_time"] = std::to_string(PEERS_PING_TIME);
     m_config_values["daemon"] = "false";
     m_config_values["network"] = DEFAULT_NETWORK;
+    m_config_values["stun_addresses"] = DEFAULT_STUN_ADDRESSES;
+    m_config_values["public_ip"] = DEFAULT_PUBLIC_IP;
 }
 
 /**
@@ -367,4 +369,27 @@ std::string CConfig::GetNetworkDataDir(const std::string& str_network) const {
         str_base_dir.pop_back();
     }
     return str_base_dir + "/" + str_network;
+}
+
+std::vector<std::string> CConfig::GetStunAddresses() const {
+    std::string str_addresses = GetValue("stun_addresses", DEFAULT_STUN_ADDRESSES);
+    std::vector<std::string> vec_result;
+
+    // Parse comma-separated list
+    std::stringstream ss(str_addresses);
+    std::string str_addr;
+    while (std::getline(ss, str_addr, ',')) {
+        // Trim whitespace
+        str_addr.erase(0, str_addr.find_first_not_of(" \t"));
+        str_addr.erase(str_addr.find_last_not_of(" \t") + 1);
+        if (!str_addr.empty()) {
+            vec_result.push_back(str_addr);
+        }
+    }
+
+    return vec_result;
+}
+
+std::string CConfig::GetPublicIP() const {
+    return GetValue("public_ip", DEFAULT_PUBLIC_IP);
 }

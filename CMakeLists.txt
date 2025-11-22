@@ -175,12 +175,13 @@ target_link_libraries(bwlogger
 
 # ============================================================
 # Utils Library (libbwutils.so / .dylib / .dll)
-# Hash, configuration, and network utilities
+# Hash, configuration, network utilities, and public IP discovery
 # ============================================================
 add_library(bwutils SHARED
     src/utils/hash.cpp
     src/utils/config.cpp
     src/utils/network.cpp
+    src/utils/get_public_ip.cpp
 )
 
 set_target_properties(bwutils PROPERTIES

@@ -20,6 +20,9 @@
 #include "peer/messages/block_message.h"
 #include "utils/threadname.h"
 #include "utils/hash.h"
+#include "utils/network.h"
+#include "utils/config.h"
+#include "utils/get_public_ip.h"
 #include "logger/logger.h"
 #include <iostream>
 #include <cstring>
@@ -68,7 +71,9 @@ CPeerManager::CPeerManager(int n_port, int n_max_outbound, int n_max_inbound, in
       f_running(false), f_stop_requested(false), f_stop_monitor(false),
       m_last_ping_time(std::chrono::steady_clock::now()),
       m_last_rotation_time(std::chrono::steady_clock::now()),
-      p_blockweave(nullptr) {
+      p_blockweave(nullptr),
+      m_str_public_ip("127.0.0.1"),
+      m_last_public_ip_check(std::chrono::steady_clock::now()) {
     m_inbound_peers.reserve(n_max_inbound_peers);
     m_outbound_peers.reserve(n_max_outbound_peers);
 
@@ -78,6 +83,25 @@ CPeerManager::CPeerManager(int n_port, int n_max_outbound, int n_max_inbound, in
     m_thread_pool = std::make_unique<boost::asio::thread_pool>(n_max_workers);
 
     LOG_INFO("Initialized Boost.Asio with " + std::to_string(n_max_workers) + " worker threads for " + std::to_string(n_max_inbound_peers) + " max inbound connections");
+
+    // Initialize public IP discovery
+    CConfig config;
+    std::string str_config_public_ip = config.GetPublicIP();
+    m_vec_stun_addresses = config.GetStunAddresses();
+
+    if (str_config_public_ip != "127.0.0.1") {
+        // Manual override from config
+        m_str_public_ip = str_config_public_ip;
+        LOG_INFO("Using manually configured public IP: " + m_str_public_ip);
+    } else if (m_n_network_magic != MAINNET_MAGIC && m_n_network_magic != TESTNET_MAGIC) {
+        // LOCALNET or for unit test - no STUN needed
+        m_str_public_ip = "127.0.0.1";
+        LOG_INFO("LOCALNET mode: Using 127.0.0.1 as public IP");
+    } else {
+        // Auto-detect via STUN
+        m_str_public_ip = ::GetPublicIP(m_vec_stun_addresses, 3000);  // Call global function with explicit timeout
+        LOG_INFO("Discovered public IP via STUN: " + m_str_public_ip);
+    }
 }
 
 /**
@@ -630,12 +654,30 @@ void CPeerManager::PeerManagerThread() {
 
         // Check if it's time to send PING messages (every n_peers_ping_time seconds)
         auto now = std::chrono::steady_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_last_ping_time);
+        auto elapsed_ping = std::chrono::duration_cast<std::chrono::seconds>(now - m_last_ping_time);
 
-        if (elapsed.count() >= n_peers_ping_time) {
+        if (elapsed_ping.count() >= n_peers_ping_time) {
             // Send PING to all connected peers (periodic keep-alive)
             SendPingToAllPeers();
             m_last_ping_time = now;
+        }
+
+        // Check if it's time to update public IP (every 5 minutes, only for auto-detected IPs)
+        // Skip if: LOCALNET mode, or public_ip was set in config
+        CConfig config;
+        bool f_is_manual_ip = (config.GetPublicIP() != "127.0.0.1");
+        if (!f_is_manual_ip && m_n_network_magic != LOCALNET_MAGIC) {
+            auto elapsed_ip = std::chrono::duration_cast<std::chrono::seconds>(now - m_last_public_ip_check);
+            if (elapsed_ip.count() >= 300) {  // 5 minutes = 300 seconds
+                std::string str_new_ip = ::GetPublicIP(m_vec_stun_addresses, 3000);
+                if (str_new_ip != "127.0.0.1" && str_new_ip != m_str_public_ip) {
+                    LOG_INFO("Public IP changed: " + m_str_public_ip + " -> " + str_new_ip);
+                    m_str_public_ip = str_new_ip;
+                } else if (str_new_ip != "127.0.0.1") {
+                    LOG_TRACE("Public IP check: " + m_str_public_ip + " (unchanged)");
+                }
+                m_last_public_ip_check = now;
+            }
         }
 
         // Periodic maintenance tasks
@@ -2071,4 +2113,8 @@ void CPeerManager::SetBlockweave(std::shared_ptr<IBlockweave> p_bw) {
     } else {
         LOG_INFO("Blockweave instance cleared from peer manager");
     }
+}
+
+std::string CPeerManager::GetPublicIP() const {
+    return m_str_public_ip;
 }
