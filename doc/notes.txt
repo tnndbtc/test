@@ -12,6 +12,10 @@ sudo yum install git
 sudo usermod -aG docker $USER
 # make it effective
 newgrp docker
+
+sudo yum install epel-release -y \
+    cmake llvm llvm-devel clang lld lldb \
+    openssl openssl-devel boost-devel
 --------------------------
 Ubuntu setup:
 sudo apt update
@@ -32,6 +36,25 @@ sudo systemctl restart systemd-logind
 
 # error: attach failed: The current value of ptrace_scope is 1, which can cause ptrace to fail to attach to a running process. To fix this, run:
 sudo sysctl -w kernel.yama.ptrace_scope=0
+--------------------------
+vscode: launch.json
+{
+    "name": "Attach to process",
+    "type": "cppvsdbg",
+    "request": "attach",
+    "processId": "${command:pickProcess}",
+    "configurations": [
+        {
+            "name": "(Windows) Attach",
+            "type": "cppdbg",
+            "request": "attach",
+            "program": "C:\\Users\\user\\path\\build\\bweave.exe",
+            "MIMode": "gdb",
+            "miDebuggerPath": "C:\\Users\\user\\path\\x86_64-15.2.0-release-posix-seh-msvcrt-rt_v13-rev0\\mingw64\\bin\\gdb.exe",
+
+        }
+    ]
+}
 --------------------------
 # windows 11, 1, name: LAPTOP-PDUE6LIR
 # Open PowerShell as Administrator and run:

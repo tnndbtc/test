@@ -184,6 +184,14 @@ add_library(bwutils SHARED
     src/utils/get_public_ip.cpp
 )
 
+# Suppress false positive -Warray-bounds and -Wstringop-overflow warnings from GCC in Boost.Asio
+# when compiling get_public_ip.cpp (GCC 15.2.0 flags memcpy in basic_resolver_results.hpp)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set_source_files_properties(src/utils/get_public_ip.cpp
+        PROPERTIES COMPILE_FLAGS "-Wno-array-bounds -Wno-stringop-overflow"
+    )
+endif()
+
 set_target_properties(bwutils PROPERTIES
     VERSION 1.0.0
     SOVERSION 1

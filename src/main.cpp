@@ -31,6 +31,25 @@
     #include <limits.h>
 #endif
 
+// Get PID file path (platform-specific)
+std::string GetPidFilePath() {
+#ifdef _WIN32
+    // Windows: Use %APPDATA%\bweave\bweave.pid
+    char appdata[MAX_PATH];
+    if (GetEnvironmentVariableA("APPDATA", appdata, MAX_PATH) > 0) {
+        std::string pid_dir = std::string(appdata) + "\\bweave";
+        // Create directory if it doesn't exist
+        _mkdir(pid_dir.c_str());  // Ignore error if already exists
+        return pid_dir + "\\bweave.pid";
+    }
+    // Fallback to current directory
+    return "bweave.pid";
+#else
+    // POSIX: Use /tmp/bweave.pid
+    return "/tmp/bweave.pid";
+#endif
+}
+
 // Forward declaration
 int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode, const std::string& str_network);
 
@@ -254,7 +273,8 @@ int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode, c
         std::cerr << "[Main] Warning: Windows daemon mode (-d) runs as console background process\n";
         std::cerr << "[Main] For true Windows service, use: bweave.exe --install-service\n";
 #endif
-        if (!CDaemon::Daemonize("/tmp/bweave.pid")) {
+        std::string str_pid_file = GetPidFilePath();
+        if (!CDaemon::Daemonize(str_pid_file)) {
             std::cerr << "Failed to daemonize process\n";
             return 1;
         }
@@ -383,7 +403,7 @@ int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode, c
 
     // Cleanup PID file if in daemon mode
     if (config.IsDaemonMode()) {
-        CDaemon::RemovePidFile("/tmp/bweave.pid");
+        CDaemon::RemovePidFile(GetPidFilePath());
         LOG_INFO("PID file removed");
     }
 

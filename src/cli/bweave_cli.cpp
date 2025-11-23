@@ -23,12 +23,29 @@
 #endif
 
 #ifdef _WIN32
-const std::string STR_PID_FILE = "bweave.pid";  // Windows: current directory
 const std::string STR_DAEMON_EXECUTABLE = "bweave.exe";
 #else
-const std::string STR_PID_FILE = "/tmp/bweave.pid";
 const std::string STR_DAEMON_EXECUTABLE = "bweave";
 #endif
+
+// Get PID file path (platform-specific)
+std::string GetPidFilePath() {
+#ifdef _WIN32
+    // Windows: Use %APPDATA%\bweave\bweave.pid
+    char appdata[MAX_PATH];
+    if (GetEnvironmentVariableA("APPDATA", appdata, MAX_PATH) > 0) {
+        std::string pid_dir = std::string(appdata) + "\\bweave";
+        // Create directory if it doesn't exist
+        _mkdir(pid_dir.c_str());  // Ignore error if already exists
+        return pid_dir + "\\bweave.pid";
+    }
+    // Fallback to current directory
+    return "bweave.pid";
+#else
+    // POSIX: Use /tmp/bweave.pid
+    return "/tmp/bweave.pid";
+#endif
+}
 
 // Simple PID file removal (no dependencies)
 void RemovePidFile(const std::string& str_pid_file) {
@@ -156,7 +173,7 @@ void PrintUsage(const char* program_name) {
 }
 
 bool ReadPidFile(int& n_pid) {
-    std::ifstream file(STR_PID_FILE);
+    std::ifstream file(GetPidFilePath());
     if (!file.is_open()) {
         return false;
     }
@@ -232,7 +249,7 @@ bool IsDaemonRunning() {
     }
 
     // Stale PID file
-    RemovePidFile(STR_PID_FILE);
+    RemovePidFile(GetPidFilePath());
     return false;
 }
 
@@ -250,7 +267,7 @@ bool IsDaemonRunning() {
     }
 
     // Stale PID file
-    RemovePidFile(STR_PID_FILE);
+    RemovePidFile(GetPidFilePath());
     return false;
 }
 #endif
@@ -594,7 +611,7 @@ int StopDaemon() {
         CloseHandle(h_process);
 
         if (result == WAIT_OBJECT_0) {
-            RemovePidFile(STR_PID_FILE);
+            RemovePidFile(GetPidFilePath());
             std::cout << "[CLI] Service stopped successfully\n";
             return 0;
         } else {
