@@ -127,6 +127,9 @@ private:
     std::vector<std::string> m_vec_stun_addresses;               ///< STUN server addresses for periodic IP updates
     std::chrono::steady_clock::time_point m_last_public_ip_check;///< Last time public IP was checked
 
+    // Protocol support
+    uint64_t m_n_services;                                      ///< 64-bit bitmap of services (e.g., NODE_NETWORK)
+
     /**
      * @brief Main peer management thread function (renamed from PeerThread)
      *
@@ -175,13 +178,13 @@ private:
     void InboundWorkerThread(int n_worker_id);
 
     /**
-     * @brief Register inbound socket with async I/O context
+     * @brief Register inbound/outbound socket with async I/O context
      * @param p_peer Shared pointer to peer node
      *
      * Registers async_read_some handler for non-blocking I/O monitoring.
      * Called by HandleAccept after accepting a connection.
      */
-    void RegisterInboundSocket(std::shared_ptr<CPeerNode> p_peer);
+    void RegisterSocket(std::shared_ptr<CPeerNode> p_peer);
 
     /**
      * @brief Register outbound socket with async I/O context
@@ -256,6 +259,13 @@ private:
      * @param received_msg The received VERSION message
      */
     void HandleVersionMessage(std::shared_ptr<CPeerNode> p_peer_shared, const CPeerMessage& received_msg);
+
+    /**
+     * @brief Handle VERACK message from peer
+     * @param p_peer_shared Shared pointer to peer
+     * @param received_msg The received VERACK message
+     */
+    void HandleVerackMessage(std::shared_ptr<CPeerNode> p_peer_shared, const CPeerMessage& received_msg);
 
     /**
      * @brief Handle GETDATA message from peer

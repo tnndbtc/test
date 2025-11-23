@@ -43,6 +43,7 @@ class MessageType:
     CHAIN_INFO = "chain_info"
     INVENTORY = "inv"
     VERSION = "version"
+    VERACK = "verack"
     GETDATA = "getdata"
     UNKNOWN = "unknown"
 
@@ -53,7 +54,8 @@ class MessageType:
             MessageType.PING, MessageType.PONG, MessageType.GET_PEERS,
             MessageType.PEERS, MessageType.TX_IDS, MessageType.TXS,
             MessageType.BLOCKS, MessageType.GET_CHAIN, MessageType.CHAIN_INFO,
-            MessageType.INVENTORY, MessageType.VERSION, MessageType.GETDATA
+            MessageType.INVENTORY, MessageType.VERSION, MessageType.VERACK,
+            MessageType.GETDATA
         }
         return msg_type in valid_types
 
@@ -197,17 +199,127 @@ class P2PConnection:
         self.timeout = timeout
         self.socket = None
 
-    def connect(self):
+    def _create_version_message(self):
         """
-        Connect to the P2P node.
+        Create VERSION message payload.
+
+        VERSION payload format (76 bytes total):
+        - protocol_version: 4 bytes (int32_t, big-endian)
+        - timestamp: 8 bytes (int64_t, big-endian, UNIX time)
+        - address_recv: 26 bytes (CNetworkAddress - peer we're connecting to)
+          - services: 8 bytes (uint64_t, big-endian) - set to 0
+          - ipv6: 16 bytes (IPv4-mapped: 10 bytes 0x00, 2 bytes 0xFF, 4 bytes IPv4)
+          - port: 2 bytes (uint16_t, big-endian)
+        - address_from: 26 bytes (CNetworkAddress - our address)
+          - services: 8 bytes (uint64_t, big-endian) - NODE_NETWORK = 1
+          - ipv6: 16 bytes (IPv4-mapped: 127.0.0.1)
+          - port: 2 bytes (uint16_t, big-endian) - set to 0
+        - nonce: 8 bytes (uint64_t, big-endian) - random value
+        - chain_tip_height: 4 bytes (int32_t, big-endian) - set to 0
 
         Returns:
-            bool: True if connection successful, False otherwise
+            bytes: VERSION message payload (76 bytes)
+        """
+        import random
+        payload = b""
+
+        # Protocol version (4 bytes)
+        PROTOCOL_VERSION = 1
+        payload += struct.pack('!i', PROTOCOL_VERSION)
+
+        # Timestamp (8 bytes) - current UNIX time
+        timestamp = int(time.time())
+        payload += struct.pack('!q', timestamp)
+
+        # address_recv (26 bytes) - peer we're connecting to
+        # services: 0 (we don't know peer's services yet)
+        payload += struct.pack('!Q', 0)
+        # IPv6 address (16 bytes) - IPv4-mapped for 127.0.0.1
+        ipv6_bytes = b'\x00' * 10 + b'\xff\xff' + b'\x7f\x00\x00\x01'
+        payload += ipv6_bytes
+        # port (2 bytes)
+        payload += struct.pack('!H', self.port)
+
+        # address_from (26 bytes) - our address
+        # services: NODE_NETWORK = 1
+        NODE_NETWORK = 1
+        payload += struct.pack('!Q', NODE_NETWORK)
+        # IPv6 address (16 bytes) - IPv4-mapped for 127.0.0.1
+        payload += ipv6_bytes
+        # port (2 bytes) - set to 0
+        payload += struct.pack('!H', 0)
+
+        # nonce (8 bytes) - random value
+        nonce = random.randint(0, 2**64 - 1)
+        payload += struct.pack('!Q', nonce)
+
+        # chain_tip_height (4 bytes) - set to 0 (we don't know)
+        payload += struct.pack('!i', 0)
+
+        return payload
+
+    def _do_handshake(self):
+        """
+        Perform VERSION/VERACK handshake.
+
+        Handshake sequence:
+        1. Send VERSION to peer
+        2. Receive VERSION from peer
+        3. Send VERACK to peer
+        4. Receive VERACK from peer
+
+        Returns:
+            bool: True if handshake successful, False otherwise
+        """
+        try:
+            # Step 1: Send VERSION
+            version_payload = self._create_version_message()
+            version_msg = P2PMessage(MessageType.VERSION, version_payload)
+            if not self.send_message(version_msg):
+                print("Handshake failed: Could not send VERSION")
+                return False
+
+            # Step 2: Receive VERSION from peer
+            received_version = self.receive_message(timeout=5)
+            if not received_version or received_version.msg_type != MessageType.VERSION:
+                print(f"Handshake failed: Expected VERSION, got {received_version.msg_type if received_version else 'None'}")
+                return False
+
+            # Step 3: Send VERACK
+            verack_msg = P2PMessage(MessageType.VERACK, b"")
+            if not self.send_message(verack_msg):
+                print("Handshake failed: Could not send VERACK")
+                return False
+
+            # Step 4: Receive VERACK from peer
+            received_verack = self.receive_message(timeout=5)
+            if not received_verack or received_verack.msg_type != MessageType.VERACK:
+                print(f"Handshake failed: Expected VERACK, got {received_verack.msg_type if received_verack else 'None'}")
+                return False
+
+            return True
+
+        except Exception as e:
+            print(f"Handshake failed with exception: {e}")
+            return False
+
+    def connect(self):
+        """
+        Connect to the P2P node and perform VERSION/VERACK handshake.
+
+        Returns:
+            bool: True if connection and handshake successful, False otherwise
         """
         try:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.settimeout(self.timeout)
             self.socket.connect((self.host, self.port))
+
+            # Perform VERSION/VERACK handshake
+            if not self._do_handshake():
+                self.close()
+                return False
+
             return True
         except Exception as e:
             print(f"Failed to connect to {self.host}:{self.port}: {e}")
@@ -644,6 +756,91 @@ class P2PTest(TestFramework):
             self.log_info("Node silently ignored wrong magic message (acceptable behavior)")
 
         self.log_info("Wrong network magic rejection test completed successfully")
+
+    def test_5_reject_message_without_handshake(self):
+        """Test that node rejects P2P messages sent without completing VERSION/VERACK handshake."""
+        self.log_info("test_5_reject_message_without_handshake: Testing rejection without handshake...")
+
+        # Get initial log position for verification
+        log_pos = self._get_log_position()
+
+        # Test: Connect to node but skip handshake and send INVENTORY directly
+        p2p_port = 48333
+        try:
+            # Create raw socket connection without using P2PConnection.connect()
+            # (which now does handshake automatically)
+            raw_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            raw_socket.settimeout(5)
+            raw_socket.connect(("127.0.0.1", p2p_port))
+
+            self.log_info("TCP connection established (no handshake performed)")
+
+            # Try to send INVENTORY message WITHOUT handshake
+            # Node should reject it because VERSION/VERACK was not completed
+            payload = b""
+            count = 1
+            payload += struct.pack('!I', count)
+            obj_type = 1  # BLOCK type
+            payload += struct.pack('!H', obj_type)
+            hash_bytes = b'A' * 32
+            payload += hash_bytes
+
+            inv_msg = P2PMessage(MessageType.INVENTORY, payload)
+            serialized = inv_msg.serialize()
+            raw_socket.sendall(serialized)
+
+            self.log_info("Sent INVENTORY message without handshake")
+
+            # Give node time to process and reject
+            time.sleep(0.5)
+
+            # Node should NOT respond (connection might be closed)
+            raw_socket.settimeout(2)
+            try:
+                data = raw_socket.recv(1024)
+                if len(data) == 0:
+                    self.log_info("Connection closed by node (expected - peer not in handshake state)")
+                else:
+                    # Try to deserialize response
+                    msg = P2PMessage.deserialize(data)
+                    if msg:
+                        self.assert_true(
+                            False,
+                            f"Node should NOT respond to INVENTORY without handshake. Got: {msg.msg_type}"
+                        )
+                    else:
+                        self.log_info("Node sent data but not a valid P2P message")
+            except socket.timeout:
+                self.log_info("Node did not respond (expected - message ignored)")
+
+            raw_socket.close()
+
+        except Exception as e:
+            self.log_info(f"Connection handling: {e}")
+
+        # Verify node behavior in logs
+        new_logs = self._read_new_logs(log_pos)
+
+        # Node should either:
+        # 1. Drop the connection (log about peer disconnection)
+        # 2. Ignore the message (log about unexpected message)
+        # 3. Log about missing handshake
+        if new_logs:
+            self.log_info(f"Node logged activity (first 500 chars): {new_logs[:500]}")
+            # Accept if node logged anything indicating rejection/disconnection
+            # The actual log message format depends on implementation
+            # self.assert_true(
+            #     len(new_logs) > 0,
+            #     "Node should log something about the rejected message or connection"
+            # )
+            expected_error_string = "Disconnected peer"
+            self.assert_true(expected_error_string in new_logs,
+                "Node should log something about the Disconnected peer"
+            )
+        else:
+            self.log_info("No new logs found (node may have silently ignored)")
+
+        self.log_info("Reject message without handshake test completed successfully")
 
 if __name__ == "__main__":
     unittest.main()

@@ -16,8 +16,10 @@
 #include "peer/messages/inventory_message.h"
 #include "peer/messages/getdata_message.h"
 #include "peer/messages/version_message.h"
+#include "peer/messages/verack_message.h"
 #include "peer/messages/tx_message.h"
 #include "peer/messages/block_message.h"
+#include "blockcore/protocol.h"
 #include "utils/threadname.h"
 #include "utils/hash.h"
 #include "utils/network.h"
@@ -73,7 +75,8 @@ CPeerManager::CPeerManager(int n_port, int n_max_outbound, int n_max_inbound, in
       m_last_rotation_time(std::chrono::steady_clock::now()),
       p_blockweave(nullptr),
       m_str_public_ip("127.0.0.1"),
-      m_last_public_ip_check(std::chrono::steady_clock::now()) {
+      m_last_public_ip_check(std::chrono::steady_clock::now()),
+      m_n_services(NODE_NETWORK) {
     m_inbound_peers.reserve(n_max_inbound_peers);
     m_outbound_peers.reserve(n_max_outbound_peers);
 
@@ -431,6 +434,37 @@ void CPeerManager::HandleAccept(const boost::system::error_code& ec, boost::asio
         return;
     }
 
+    // Check if this peer already exists in our peer lists (prevent duplicates)
+    {
+        std::lock_guard<std::mutex> lock(cs_peers);
+
+        // Check inbound peers
+        for (const auto& p_peer : m_inbound_peers) {
+            if (p_peer && p_peer->GetAddress() == str_ip && p_peer->GetPort() == n_peer_port) {
+                LOG_WARN("Rejecting duplicate inbound connection from " + str_ip + ":" + std::to_string(n_peer_port) +
+                         " (already in inbound peers list)");
+                socket.close();
+                if (!f_stop_requested) {
+                    StartAccept();
+                }
+                return;
+            }
+        }
+
+        // Check outbound peers
+        for (const auto& p_peer : m_outbound_peers) {
+            if (p_peer && p_peer->GetAddress() == str_ip && p_peer->GetPort() == n_peer_port) {
+                LOG_WARN("Rejecting duplicate inbound connection from " + str_ip + ":" + std::to_string(n_peer_port) + 
+                         " (already in outbound peers list)");
+                socket.close();
+                if (!f_stop_requested) {
+                    StartAccept();
+                }
+                return;
+            }
+        }
+    }
+
     // Create shared_ptr from moved socket (keep socket in Boost.Asio, no release)
     auto p_socket = std::make_shared<boost::asio::ip::tcp::socket>(std::move(socket));
 
@@ -495,7 +529,8 @@ void CPeerManager::HandleAccept(const boost::system::error_code& ec, boost::asio
 
         // Create peer node with socket
         auto p_peer = std::make_shared<CPeerNode>(str_ip, n_peer_port, p_socket);
-        p_peer->SetConnected(true);
+        // SetConnected to true after VERSION/VERACK handshakes
+        p_peer->SetConnected(false);
 
         // Set connection_time for inbound peer
         int64_t n_now = std::chrono::duration_cast<std::chrono::seconds>(
@@ -505,10 +540,10 @@ void CPeerManager::HandleAccept(const boost::system::error_code& ec, boost::asio
         LOG_INFO("Set connection_time for inbound peer " + str_ip + " to " + std::to_string(n_now));
 
         // Add to inbound peers list BEFORE registering socket
-        m_inbound_peers.push_back(p_peer);
+        // m_inbound_peers.push_back(p_peer);
 
         // Register socket with async I/O context (inside lock to ensure atomicity)
-        RegisterInboundSocket(p_peer);
+        RegisterSocket(p_peer);
         LOG_INFO("Registered inbound socket for peer: " + p_peer->GetIdentifier());
     }
 
@@ -649,6 +684,7 @@ void CPeerManager::PeerManagerThread() {
     LOG_INFO("Peer management thread started");
 
     while (!f_stop_requested) {
+        LOG_TRACE("Peer management thread awakes");
         // Clean up disconnected peers
         CleanupDisconnectedPeers();
 
@@ -764,7 +800,7 @@ void CPeerManager::MonitorInboundSocketThread() {
  * inbound connection. The async I/O allows monitoring many sockets
  * with a single thread using select/epoll/poll.
  */
-void CPeerManager::RegisterInboundSocket(std::shared_ptr<CPeerNode> p_peer) {
+void CPeerManager::RegisterSocket(std::shared_ptr<CPeerNode> p_peer) {
     try {
         auto p_socket = p_peer->GetSocket();
         if (!p_socket || !p_socket->is_open()) {
@@ -801,28 +837,6 @@ void CPeerManager::RegisterInboundSocket(std::shared_ptr<CPeerNode> p_peer) {
     }
 }
 
-/**
- * @brief Register outbound socket with async I/O context
- * @param n_socket_fd Socket file descriptor
- * @param str_address Peer IP address
- * @param n_port Peer port
- *
- * Wraps the socket file descriptor in a Boost.Asio stream_descriptor
- * and registers an async_read_some handler for non-blocking I/O.
- * The stream_descriptor takes ownership of the socket FD.
- *
- * This function is called by ConnectToPeer after establishing an
- * outbound connection. The async I/O allows monitoring both inbound
- * and outbound sockets with the same monitor thread.
- */
-/*
-void CPeerManager::RegisterOutboundSocket(int n_socket_fd, const std::string& str_address, int n_port) {
-    // TODO Phase 4: Update this function to accept shared_ptr<tcp::socket> and connection_id
-    // For now, this function is disabled until Phase 4 updates ConnectToPeer
-    LOG_ERROR("RegisterOutboundSocket not yet updated for Phase 4 - outbound connections not supported in Phase 2");
-    close(n_socket_fd);
-}
-*/
 /**
  * @brief Async read completion handler for inbound sockets
  * @param ec Boost error code from async operation
@@ -1029,6 +1043,14 @@ void CPeerManager::ProcessReceivedMessage(std::shared_ptr<CPeerNode> p_peer,
             size_t msg_size = 4 + 1 + type_len + 4 + payload.size();
             str_data.erase(0, msg_size);
 
+            if (msg_type != MessageType::VERSION &&
+                msg_type != MessageType::VERACK) {
+                if (p_peer->IsConnected() == false) {
+                    // other messages should go through after handshakes
+                    DisconnectPeer(p_peer);
+                    return;
+                }
+            }
             // Handle different message types
             if (msg_type == MessageType::PING) {
                 HandlePingMessage(p_peer, *p_received_msg);
@@ -1038,6 +1060,8 @@ void CPeerManager::ProcessReceivedMessage(std::shared_ptr<CPeerNode> p_peer,
                 HandleInventoryMessage(p_peer, *p_received_msg);
             } else if (msg_type == MessageType::VERSION) {
                 HandleVersionMessage(p_peer, *p_received_msg);
+            } else if (msg_type == MessageType::VERACK) {
+                HandleVerackMessage(p_peer, *p_received_msg);
             } else if (msg_type == MessageType::GETDATA) {
                 HandleGetDataMessage(p_peer, *p_received_msg);
             } else if (msg_type == MessageType::TX) {
@@ -1198,7 +1222,104 @@ void CPeerManager::HandleVersionMessage(std::shared_ptr<CPeerNode> p_peer_shared
     p_peer_shared->SetProtocolVersion(n_protocol_version);
     p_peer_shared->SetServices(n_services);
 
-    LOG_INFO("Peer " + p_peer_shared->GetIdentifier() + " version handshake received");
+    // Mark peer as DISCONNECTED (will be marked connected when VERACK received)
+    p_peer_shared->SetConnected(false);
+
+    // Check if peer is in outbound peers
+    bool f_is_outbound = false;
+    {
+        std::lock_guard<std::mutex> lock(cs_peers);
+        for (const auto& p : m_outbound_peers) {
+            if (p == p_peer_shared) {
+                f_is_outbound = true;
+                break;
+            }
+        }
+    }
+
+    if (f_is_outbound) {
+        // Node A receiving VERSION from Node B: send VERACK
+        CVerackMessage verack(m_n_network_magic);
+        SendMessageAsync(p_peer_shared, verack);
+        LOG_INFO("Sent VERACK to outbound peer " + p_peer_shared->GetIdentifier());
+    } else {
+        // Not in outbound peers, check if in inbound peers
+        bool f_in_inbound = false;
+        {
+            std::lock_guard<std::mutex> lock(cs_peers);
+            for (const auto& p : m_inbound_peers) {
+                if (p == p_peer_shared) {
+                    f_in_inbound = true;
+                    break;
+                }
+            }
+        }
+
+        if (!f_in_inbound) {
+            // Not in inbound peers - add it
+            std::lock_guard<std::mutex> lock(cs_peers);
+            m_inbound_peers.push_back(p_peer_shared);
+            LOG_INFO("Added peer " + p_peer_shared->GetIdentifier() + " to inbound peers list");
+        }
+
+        // Node B receiving VERSION from Node A: send VERSION response, then VERACK
+        CVersionMessage response_version(m_n_network_magic);
+        response_version.SetAddressRecv(version_msg.GetAddressFrom());
+        CNetworkAddress our_addr(m_n_services, m_str_public_ip, n_listen_port);
+        response_version.SetAddressFrom(our_addr);
+        if (p_blockweave) {
+            int32_t n_chain_height = static_cast<int32_t>(p_blockweave->GetBlockCount()) - 1;
+            response_version.SetChainTipHeight(n_chain_height >= 0 ? n_chain_height : 0);
+        }
+        SendMessageAsync(p_peer_shared, response_version);
+        LOG_INFO("Sent VERSION response to inbound peer " + p_peer_shared->GetIdentifier());
+
+        // Then send VERACK
+        CVerackMessage verack(m_n_network_magic);
+        SendMessageAsync(p_peer_shared, verack);
+        LOG_INFO("Sent VERACK to inbound peer " + p_peer_shared->GetIdentifier());
+    }
+}
+
+void CPeerManager::HandleVerackMessage(std::shared_ptr<CPeerNode> p_peer_shared,
+                                       const CPeerMessage& /* received_msg */) {
+    // Check if peer is in outbound peers or inbound peers
+    bool f_is_outbound = false;
+    bool f_is_inbound = false;
+
+    {
+        std::lock_guard<std::mutex> lock(cs_peers);
+
+        for (const auto& p : m_outbound_peers) {
+            if (p == p_peer_shared) {
+                f_is_outbound = true;
+                break;
+            }
+        }
+
+        if (!f_is_outbound) {
+            for (const auto& p : m_inbound_peers) {
+                if (p == p_peer_shared) {
+                    f_is_inbound = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (f_is_outbound) {
+        // Outbound peer: mark as connected (no RegisterSocket needed - already done)
+        p_peer_shared->SetConnected(true);
+        LOG_INFO("Received VERACK from outbound peer " + p_peer_shared->GetIdentifier() +
+                 " - handshake complete, marked as connected");
+    } else if (f_is_inbound) {
+        // Inbound peer: mark as connected
+        p_peer_shared->SetConnected(true);
+        LOG_INFO("Received VERACK from inbound peer " + p_peer_shared->GetIdentifier() +
+                 " - handshake complete, marked as connected");
+    } else {
+        LOG_WARN("Received VERACK (just discard it) from unknown peer " + p_peer_shared->GetIdentifier());
+    }
 }
 
 void CPeerManager::HandleGetDataMessage(std::shared_ptr<CPeerNode> p_peer_shared,
@@ -1401,7 +1522,7 @@ bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
 
         // Create peer connection object with socket
         auto p_peer = std::make_shared<CPeerNode>(str_address, n_port, p_socket);
-        p_peer->SetConnected(true);
+        p_peer->SetConnected(false);  // Mark as DISCONNECTED initially (will be set in HandleVerack)
 
         // Set connection_time to current timestamp
         int64_t n_now = std::chrono::duration_cast<std::chrono::seconds>(
@@ -1410,26 +1531,39 @@ bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
         p_peer->SetInbound(false);  // Mark as outbound connection
         LOG_INFO("Set connection_time for outbound peer " + str_address + " to " + std::to_string(n_now));
 
-        // Save peer pointer before moving it
-        std::shared_ptr<CPeerNode> p_peer_for_registration = p_peer;
-
-        // Replace the placeholder (nullptr) in the outbound peers list with the actual peer
-        // The placeholder was added by AddPeer() to reserve the slot
+        // Add to outbound peers list
         {
             std::lock_guard<std::mutex> lock(cs_peers);
-            // Find the first nullptr (placeholder) and replace it
-            for (auto& p : m_outbound_peers) {
-                if (p == nullptr) {
-                    p = std::move(p_peer);
-                    break;
-                }
+            auto it = std::find(m_outbound_peers.begin(), m_outbound_peers.end(), nullptr);
+            bool f_erased_nullptr = false;
+            if (it != m_outbound_peers.end()) {
+                m_outbound_peers.erase(it);
+                f_erased_nullptr = true;
             }
+            if (f_erased_nullptr == false)
+            {
+                LOG_ERROR("Expect peer reservation is made, but couldn't find for peer: " + p_peer->GetIdentifier());
+            }
+            m_outbound_peers.push_back(p_peer);
         }
 
-        // Register outbound socket with async I/O context (same infrastructure as inbound)
-        RegisterInboundSocket(p_peer_for_registration);
+        // Register socket with async I/O context (so we can receive VERSION response)
+        RegisterSocket(p_peer);
 
-        LOG_INFO("Successfully connected to peer " + str_address + ":" + std::to_string(n_port));
+        // Send VERSION message
+        CVersionMessage version_msg(m_n_network_magic);
+        CNetworkAddress addr_recv(0, str_address, n_port);  // services=0 for peer we're connecting to
+        CNetworkAddress addr_from(m_n_services, m_str_public_ip, n_listen_port);
+        version_msg.SetAddressRecv(addr_recv);
+        version_msg.SetAddressFrom(addr_from);
+        if (p_blockweave) {
+            int32_t n_chain_height = static_cast<int32_t>(p_blockweave->GetBlockCount()) - 1;
+            version_msg.SetChainTipHeight(n_chain_height >= 0 ? n_chain_height : 0);
+        }
+        SendMessageAsync(p_peer, version_msg);
+        LOG_INFO("Sent VERSION to " + str_address + ":" + std::to_string(n_port) + " (waiting for VERSION/VERACK)");
+
+        // LOG_INFO("Successfully connected to peer " + str_address + ":" + std::to_string(n_port) + " (waiting for VERSION/VERACK)");
 
         return true;
     }
