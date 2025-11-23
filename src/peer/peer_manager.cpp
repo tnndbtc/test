@@ -180,6 +180,15 @@ bool CPeerManager::Start() {
  * access peer list during shutdown.
  */
 void CPeerManager::Stop() {
+    if (!f_running) {
+        return;
+    }
+
+    LOG_INFO("Stopping peer manager");
+    f_stop_requested = true;
+    f_stop_monitor = true;
+    f_running = false;
+
     // Close and destroy acceptor FIRST, before stopping io_context
     // This prevents the acceptor destructor from accessing io_context internals during shutdown
     CloseAcceptor();
@@ -195,15 +204,6 @@ void CPeerManager::Stop() {
     if (m_thread_pool) {
         m_thread_pool->join();
     }
-
-    if (!f_running) {
-        return;
-    }
-
-    LOG_INFO("Stopping peer manager");
-    f_stop_requested = true;
-    f_stop_monitor = true;
-    f_running = false;
 
     // Stop all peer connections (both inbound and outbound)
     // Close sockets and mark peers as disconnected
@@ -226,7 +226,7 @@ void CPeerManager::Stop() {
 
                     LOG_TRACE("Cancelled and closed socket for peer: " + p_peer->GetIdentifier());
                 }
-                p_peer->SetConnected(false);
+                // No SetConnected(false) needed - peer lists cleared below
             }
         }
 
@@ -246,7 +246,7 @@ void CPeerManager::Stop() {
 
                     LOG_TRACE("Cancelled and closed socket for peer: " + p_peer->GetIdentifier());
                 }
-                p_peer->SetConnected(false);
+                // No SetConnected(false) needed - peer lists cleared below
             }
         }
     }
@@ -685,8 +685,6 @@ void CPeerManager::PeerManagerThread() {
 
     while (!f_stop_requested) {
         LOG_TRACE("Peer management thread awakes");
-        // Clean up disconnected peers
-        CleanupDisconnectedPeers();
 
         // Check if it's time to send PING messages (every n_peers_ping_time seconds)
         auto now = std::chrono::steady_clock::now();
@@ -877,8 +875,8 @@ void CPeerManager::HandleAsyncRead(const boost::system::error_code& ec,
             LOG_ERROR("Async read error for peer " + p_peer->GetIdentifier() + ": " + ec.message());
         }
 
-        // Mark peer as disconnected
-        p_peer->SetConnected(false);
+        // Disconnect peer and remove from lists
+        DisconnectPeer(p_peer);
         return;
     }
 
@@ -912,8 +910,8 @@ void CPeerManager::HandleAsyncRead(const boost::system::error_code& ec,
         LOG_ERROR("Failed to re-register async read for peer " + p_peer->GetIdentifier() +
                   ": " + std::string(e.what()));
 
-        // Mark peer as disconnected on failure
-        p_peer->SetConnected(false);
+        // Disconnect peer and remove from lists
+        DisconnectPeer(p_peer);
     }
 }
 
@@ -979,14 +977,8 @@ void CPeerManager::HandleAsyncWrite(const boost::system::error_code& ec,
             LOG_ERROR("Async write error on peer: " + p_peer->GetIdentifier() + ": " + ec.message());
         }
 
-        // On error: Close connection
-        p_peer->SetConnected(false);
-        auto p_socket = p_peer->GetSocket();
-        if (p_socket && p_socket->is_open()) {
-            boost::system::error_code ec_close;
-            p_socket->shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec_close);
-            p_socket->close(ec_close);
-        }
+        // Disconnect peer and remove from lists
+        DisconnectPeer(p_peer);
         return;
     }
 
@@ -1581,9 +1573,10 @@ bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
  * 1. Mark as disconnected
  * 2. Shutdown socket (SHUT_RDWR)
  * 3. Close socket
+ * 4. Remove from peer lists (m_inbound_peers and m_outbound_peers)
  *
  * Safe to call on NULL pointer (no-op).
- * Does not remove from peer list - use CleanupDisconnectedPeers().
+ * Thread-safe: Uses cs_peers mutex for list manipulation.
  */
 void CPeerManager::DisconnectPeer(std::shared_ptr<CPeerNode> p_peer_shared) {
     if (!p_peer_shared) {
@@ -1600,83 +1593,28 @@ void CPeerManager::DisconnectPeer(std::shared_ptr<CPeerNode> p_peer_shared) {
         p_socket->close(ec);
     }
 
-    LOG_INFO("Disconnected peer " + p_peer_shared->GetIdentifier());
-}
-
-/**
- * @brief Remove disconnected peers from both inbound and outbound lists
- *
- * Thread-safe cleanup using erase-remove idiom:
- * 1. Acquires mutex locks
- * 2. Finds all peers where f_connected == false
- * 3. For inbound peers: Cancel async operations and close descriptors
- * 4. Removes them from both peer vectors
- *
- * Called periodically by PeerManagerThread() every 5 seconds.
- * For outbound peers, assumes connection threads have already been joined.
- */
-void CPeerManager::CleanupDisconnectedPeers() {
-    // First, close connections for disconnected peers
-    {
-        std::lock_guard<std::mutex> lock_peers(cs_peers);
-
-        for (const auto& p_peer : m_inbound_peers) {
-            if (p_peer && !p_peer->IsConnected()) {
-                // Close socket if not already closed
-                auto p_socket = p_peer->GetSocket();
-                if (p_socket && p_socket->is_open()) {
-                    boost::system::error_code ec;
-                    p_socket->shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
-                    p_socket->close(ec);
-                }
-            }
-        }
-
-        for (const auto& p_peer : m_outbound_peers) {
-            if (p_peer && !p_peer->IsConnected()) {
-                // Close socket if not already closed
-                auto p_socket = p_peer->GetSocket();
-                if (p_socket && p_socket->is_open()) {
-                    boost::system::error_code ec;
-                    p_socket->shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
-                    p_socket->close(ec);
-                }
-            }
-        }
-    }
-
-    // Then remove disconnected peers from both lists
+    // Remove peer from lists immediately (prevents race condition with background cleanup)
     {
         std::lock_guard<std::mutex> lock(cs_peers);
 
-        // Remove disconnected inbound peers
-        size_t inbound_before = m_inbound_peers.size();
+        // Remove from inbound peers
+        auto pred = [p_peer_shared](const std::shared_ptr<CPeerNode>& p) {
+            return p == p_peer_shared;
+        };
+
         m_inbound_peers.erase(
-            std::remove_if(m_inbound_peers.begin(), m_inbound_peers.end(),
-                [](const std::shared_ptr<CPeerNode>& p_peer) {
-                    return p_peer && !p_peer->IsConnected();
-                }),
+            std::remove_if(m_inbound_peers.begin(), m_inbound_peers.end(), pred),
             m_inbound_peers.end()
         );
-        size_t inbound_removed = inbound_before - m_inbound_peers.size();
-        if (inbound_removed > 0) {
-            LOG_INFO("Cleaned up " + std::to_string(inbound_removed) + " disconnected inbound peer(s)");
-        }
 
-        // Remove disconnected outbound peers
-        size_t outbound_before = m_outbound_peers.size();
+        // Remove from outbound peers
         m_outbound_peers.erase(
-            std::remove_if(m_outbound_peers.begin(), m_outbound_peers.end(),
-                [](const std::shared_ptr<CPeerNode>& p_peer) {
-                    return p_peer && !p_peer->IsConnected();
-                }),
+            std::remove_if(m_outbound_peers.begin(), m_outbound_peers.end(), pred),
             m_outbound_peers.end()
         );
-        size_t outbound_removed = outbound_before - m_outbound_peers.size();
-        if (outbound_removed > 0) {
-            LOG_INFO("Cleaned up " + std::to_string(outbound_removed) + " disconnected outbound peer(s)");
-        }
     }
+
+    LOG_INFO("Disconnected peer " + p_peer_shared->GetIdentifier());
 }
 
 /**
@@ -1740,8 +1678,7 @@ bool CPeerManager::AddPeer(const std::string& str_address, int n_port) {
  * @return Number of outbound peers
  *
  * Thread-safe count of peers in outbound peer list.
- * Includes both connected and disconnected peers that haven't
- * been cleaned up yet by CleanupDisconnectedPeers().
+ * Only counts peers that have completed the VERSION/VERACK handshake.
  */
 size_t CPeerManager::GetOutboundPeerCount() const {
     std::lock_guard<std::mutex> lock(cs_peers);
@@ -1758,8 +1695,8 @@ size_t CPeerManager::GetOutboundPeerCount() const {
  * @brief Get count of active inbound peer connections
  * @return Number of inbound peers
  *
- * Thread-safe count using mutex lock. Includes disconnected peers
- * that haven't been cleaned up yet by CleanupDisconnectedPeers().
+ * Thread-safe count using mutex lock.
+ * Only counts peers that have completed the VERSION/VERACK handshake.
  */
 size_t CPeerManager::GetInboundPeerCount() const {
     std::lock_guard<std::mutex> lock(cs_peers);

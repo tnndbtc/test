@@ -333,14 +333,6 @@ private:
     void DisconnectPeer(std::shared_ptr<CPeerNode> p_peer_shared);
 
     /**
-     * @brief Remove disconnected peers from peer list
-     *
-     * Thread-safe cleanup of peers that are no longer connected.
-     * Called periodically by peer management thread.
-     */
-    void CleanupDisconnectedPeers();
-
-    /**
      * @brief Create and configure Boost.Asio acceptor
      * @return true if acceptor created and bound successfully
      *
