@@ -685,6 +685,7 @@ void CPeerManager::PeerManagerThread() {
 
     while (!f_stop_requested) {
         LOG_TRACE("Peer management thread awakes");
+        LOG_TRACE("PeerManagerThread begin loop: inbound_peers: " + std::to_string(m_inbound_peers.size()) + " outbound_peers: " + std::to_string(m_outbound_peers.size()));
 
         // Check if it's time to send PING messages (every n_peers_ping_time seconds)
         auto now = std::chrono::steady_clock::now();
@@ -723,6 +724,7 @@ void CPeerManager::PeerManagerThread() {
         CleanupExpiredBans();
 
         // Sleep for a bit before next iteration
+        LOG_TRACE("PeerManagerThread end loop inbound_peers: " + std::to_string(m_inbound_peers.size()) + " outbound_peers: " + std::to_string(m_outbound_peers.size()));
         std::this_thread::sleep_for(std::chrono::seconds(5));
     }
 
@@ -1521,7 +1523,7 @@ bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
             std::chrono::system_clock::now().time_since_epoch()).count();
         p_peer->SetConnectionTime(n_now);
         p_peer->SetInbound(false);  // Mark as outbound connection
-        LOG_INFO("Set connection_time for outbound peer " + str_address + " to " + std::to_string(n_now));
+        LOG_INFO("Set connection_time for outbound peer " + p_peer->GetIdentifier() + " to " + std::to_string(n_now));
 
         // Add to outbound peers list
         {
@@ -1536,6 +1538,7 @@ bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
             {
                 LOG_ERROR("Expect peer reservation is made, but couldn't find for peer: " + p_peer->GetIdentifier());
             }
+            LOG_INFO("Add peer: " +  p_peer->GetIdentifier() + " to outbound peers");
             m_outbound_peers.push_back(p_peer);
         }
 
@@ -1553,9 +1556,7 @@ bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
             version_msg.SetChainTipHeight(n_chain_height >= 0 ? n_chain_height : 0);
         }
         SendMessageAsync(p_peer, version_msg);
-        LOG_INFO("Sent VERSION to " + str_address + ":" + std::to_string(n_port) + " (waiting for VERSION/VERACK)");
-
-        // LOG_INFO("Successfully connected to peer " + str_address + ":" + std::to_string(n_port) + " (waiting for VERSION/VERACK)");
+        LOG_INFO("Sent VERSION to " + p_peer->GetIdentifier() + " (waiting for VERSION/VERACK)");
 
         return true;
     }
@@ -1938,6 +1939,7 @@ void CPeerManager::BroadcastInventoryByPeerKnowledge(const std::vector<std::pair
 
     std::lock_guard<std::mutex> lock(cs_peers);
     size_t n_total_sent = 0;
+    LOG_TRACE("BroadcastInventoryByPeerKnowledge: begin peer size: inbound_peers: " + std::to_string(m_inbound_peers.size()) + " outbound_peers: " + std::to_string(m_outbound_peers.size()));
 
     // Build inventory per peer (filtering items they already know)
     std::vector<std::shared_ptr<CPeerNode>> all_peers;

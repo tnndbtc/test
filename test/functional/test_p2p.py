@@ -132,7 +132,7 @@ class P2PTest(TestFramework):
         - Connections remain stable during the test
         - ping_roundtrip_time is 0 for all peers (no PING sent yet)
         """
-        self.log_info("test_05_node0 outbound connections via TestNode: Testing node0 outbound connections via TestNode...")
+        self.log_info("test_04_node0 outbound connections via TestNode: Testing node0 outbound connections via TestNode...")
 
         # Connections were established in setup()
         node0 = self.nodes[0]
@@ -156,7 +156,7 @@ class P2PTest(TestFramework):
 
         total_peers = peer_info["total_peers"]
         outbound_peers = peer_info["outbound_peers"]
-        self.assert_true(outbound_peers==self.successful_connections, f"Node{node0.node_index} should have {outbound_peers} total outbound peers")
+        self.assert_true(outbound_peers==self.successful_connections, f"Node{node0.node_index} currently have {outbound_peers} total outbound peers, but expect to have {self.successful_connections}")
         inbound_peers = peer_info["inbound_peers"]
         self.assert_true(inbound_peers==0, f"Node{node0.node_index} should have {inbound_peers} total inbound peers")
         peer_list = peer_info["peers"]
