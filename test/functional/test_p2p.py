@@ -206,7 +206,7 @@ class P2PTest(TestFramework):
         - Node0's getpeer shows 3 peers with connection_time set
         - Each of nodes 1, 2, 3 show connection_time is set for their connection
         """
-        self.log_info("test_06_peerinfo_after_addpeer: Testing connection_time after addpeer...")
+        self.log_info("test_05_peerinfo_after_addpeer: Testing connection_time after addpeer...")
 
         # Connections were established in setup()
         node0 = self.nodes[0]

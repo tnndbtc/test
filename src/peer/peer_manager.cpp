@@ -1039,8 +1039,10 @@ void CPeerManager::ProcessReceivedMessage(std::shared_ptr<CPeerNode> p_peer,
 
             if (msg_type != MessageType::VERSION &&
                 msg_type != MessageType::VERACK) {
-                if (p_peer->IsConnected() == false) {
-                    // other messages should go through after handshakes
+                if (!p_peer->IsHandshakeComplete()) {
+                    // Other messages only allowed after VERSION/VERACK handshake completes
+                    LOG_WARN("Received " + msg_type + " from peer " + p_peer->GetIdentifier() +
+                             " before handshake complete - disconnecting");
                     DisconnectPeer(p_peer);
                     return;
                 }
@@ -1066,9 +1068,9 @@ void CPeerManager::ProcessReceivedMessage(std::shared_ptr<CPeerNode> p_peer,
                 LOG_TRACE("Received unknown message type '" + msg_type + "' from peer " + p_peer->GetIdentifier());
             }
         } else {
-            // Not enough data yet for a complete message, wait for more
-            // Note: In production, we should buffer this partial data per-socket
-            LOG_TRACE("Incomplete or incorrect message in buffer, waiting for more data from peer: " + p_peer->GetIdentifier());
+            // Corrupted message
+            LOG_WARN("Incorrect message in buffer, disconnect the peer: " + p_peer->GetIdentifier());
+            DisconnectPeer(p_peer);
             break;
         }
     }
@@ -1216,8 +1218,11 @@ void CPeerManager::HandleVersionMessage(std::shared_ptr<CPeerNode> p_peer_shared
     p_peer_shared->SetProtocolVersion(n_protocol_version);
     p_peer_shared->SetServices(n_services);
 
-    // Mark peer as DISCONNECTED (will be marked connected when VERACK received)
-    p_peer_shared->SetConnected(false);
+    // Add VERSION_RCVD flag to handshake state bitmap
+    if (p_peer_shared->AddHandshakeFlag(HandshakeState::VERSION_RCVD) == false) {
+        DisconnectPeer(p_peer_shared);
+        return;
+    }
 
     // Check if peer is in outbound peers
     bool f_is_outbound = false;
@@ -1266,6 +1271,10 @@ void CPeerManager::HandleVersionMessage(std::shared_ptr<CPeerNode> p_peer_shared
             response_version.SetChainTipHeight(n_chain_height >= 0 ? n_chain_height : 0);
         }
         SendMessageAsync(p_peer_shared, response_version);
+        if (p_peer_shared->AddHandshakeFlag(HandshakeState::VERSION_SENT) == false) { // Add VERSION_SENT flag
+            DisconnectPeer(p_peer_shared);
+            return;
+        }
         LOG_INFO("Sent VERSION response to inbound peer " + p_peer_shared->GetIdentifier());
 
         // Then send VERACK
@@ -1277,42 +1286,12 @@ void CPeerManager::HandleVersionMessage(std::shared_ptr<CPeerNode> p_peer_shared
 
 void CPeerManager::HandleVerackMessage(std::shared_ptr<CPeerNode> p_peer_shared,
                                        const CPeerMessage& /* received_msg */) {
-    // Check if peer is in outbound peers or inbound peers
-    bool f_is_outbound = false;
-    bool f_is_inbound = false;
+    LOG_INFO("Received VERACK from peer " + p_peer_shared->GetIdentifier());
 
-    {
-        std::lock_guard<std::mutex> lock(cs_peers);
-
-        for (const auto& p : m_outbound_peers) {
-            if (p == p_peer_shared) {
-                f_is_outbound = true;
-                break;
-            }
-        }
-
-        if (!f_is_outbound) {
-            for (const auto& p : m_inbound_peers) {
-                if (p == p_peer_shared) {
-                    f_is_inbound = true;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (f_is_outbound) {
-        // Outbound peer: mark as connected (no RegisterSocket needed - already done)
-        p_peer_shared->SetConnected(true);
-        LOG_INFO("Received VERACK from outbound peer " + p_peer_shared->GetIdentifier() +
-                 " - handshake complete, marked as connected");
-    } else if (f_is_inbound) {
-        // Inbound peer: mark as connected
-        p_peer_shared->SetConnected(true);
-        LOG_INFO("Received VERACK from inbound peer " + p_peer_shared->GetIdentifier() +
-                 " - handshake complete, marked as connected");
-    } else {
-        LOG_WARN("Received VERACK (just discard it) from unknown peer " + p_peer_shared->GetIdentifier());
+    // Add VERACK_RCVD flag to handshake state bitmap
+    if (p_peer_shared->AddHandshakeFlag(HandshakeState::VERACK_RCVD) == false) {
+        DisconnectPeer(p_peer_shared);
+        return;
     }
 }
 
@@ -1516,7 +1495,6 @@ bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
 
         // Create peer connection object with socket
         auto p_peer = std::make_shared<CPeerNode>(str_address, n_port, p_socket);
-        p_peer->SetConnected(false);  // Mark as DISCONNECTED initially (will be set in HandleVerack)
 
         // Set connection_time to current timestamp
         int64_t n_now = std::chrono::duration_cast<std::chrono::seconds>(
@@ -1556,6 +1534,10 @@ bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
             version_msg.SetChainTipHeight(n_chain_height >= 0 ? n_chain_height : 0);
         }
         SendMessageAsync(p_peer, version_msg);
+        if (p_peer->AddHandshakeFlag(HandshakeState::VERSION_SENT) == false) { // Add VERSION_SENT flag
+            DisconnectPeer(p_peer);
+            return false;
+        }
         LOG_INFO("Sent VERSION to " + p_peer->GetIdentifier() + " (waiting for VERSION/VERACK)");
 
         return true;

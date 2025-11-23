@@ -1,11 +1,13 @@
 // ============= peer_node.cpp =============
 #include "peer/peer_node.h"
+#include "logger/logger.h"
 
 // CPeerNode implementation
 
 CPeerNode::CPeerNode()
     : p_socket(nullptr),
       f_connected(false),
+      m_handshake_state(HandshakeState::NONE),
       n_last_ping_nonce(0),
       m_last_ping_send_time(),
       str_address(""),
@@ -20,6 +22,7 @@ CPeerNode::CPeerNode()
 CPeerNode::CPeerNode(const std::string& str_addr, int n_port_num)
     : p_socket(nullptr),
       f_connected(false),
+      m_handshake_state(HandshakeState::NONE),
       n_last_ping_nonce(0),
       m_last_ping_send_time(),
       str_address(str_addr),
@@ -34,7 +37,9 @@ CPeerNode::CPeerNode(const std::string& str_addr, int n_port_num)
 CPeerNode::CPeerNode(const std::string& str_addr, int n_port_num,
                      std::shared_ptr<boost::asio::ip::tcp::socket> socket)
     : p_socket(socket),
-      f_connected(socket && socket->is_open()),
+      // f_connected(socket && socket->is_open()),
+      f_connected(false),
+      m_handshake_state(HandshakeState::NONE),
       n_last_ping_nonce(0),
       m_last_ping_send_time(),
       str_address(str_addr),
@@ -256,7 +261,11 @@ bool CPeerNode::IsConnected() const {
 
 void CPeerNode::SetConnected(bool f_is_connected) {
     std::lock_guard<std::mutex> lock(cs_peer_node);
+    std::string str_f_connected = (f_connected ? "true" : "false");
+    LOG_TRACE("CPeerNode::SetConnected before set: " + str_f_connected);
     f_connected = f_is_connected;
+    str_f_connected = (f_connected ? "true" : "false");
+    LOG_TRACE("CPeerNode::SetConnected after set: " + str_f_connected);
 }
 
 uint32_t CPeerNode::GetLastPingNonce() const {
@@ -277,4 +286,26 @@ std::chrono::steady_clock::time_point CPeerNode::GetLastPingSendTime() const {
 void CPeerNode::SetLastPingSendTime(std::chrono::steady_clock::time_point time) {
     std::lock_guard<std::mutex> lock(cs_peer_node);
     m_last_ping_send_time = time;
+}
+
+bool CPeerNode::AddHandshakeFlag(uint8_t flag) {
+    std::string str_id = GetIdentifier();
+    std::lock_guard<std::mutex> lock(cs_peer_node);
+    if (m_handshake_state & flag) {
+        LOG_WARN("Duplicate handshake message received.  Reject peer: " + str_id);
+        return false;
+    }
+    m_handshake_state |= flag;
+    if (m_handshake_state == HandshakeState::COMPLETE) {
+        f_connected = true;
+        LOG_INFO("Handshake complete with peer " + str_id);
+        return true;
+    }
+    LOG_TRACE("Handshake flag is set to: " + std::to_string(m_handshake_state) + " for peer: " + str_id);
+    return true;
+}
+
+bool CPeerNode::IsHandshakeComplete() const {
+    std::lock_guard<std::mutex> lock(cs_peer_node);
+    return m_handshake_state == HandshakeState::COMPLETE;
 }

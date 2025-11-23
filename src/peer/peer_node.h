@@ -63,6 +63,33 @@ public:
 };
 
 /**
+ * @enum HandshakeState
+ * @brief Bitmap flags for tracking VERSION/VERACK handshake progression
+ *
+ * Uses independent bits to handle async handshake message ordering.
+ * Messages can arrive in any order, and handshake completes when all required bits are set.
+ *
+ * Bitmap layout:
+ * - Bit 0 (0x01): VERSION_SENT - We sent VERSION (outbound peer only)
+ * - Bit 1 (0x02): VERSION_RCVD - Received VERSION from peer
+ * - Bit 2 (0x04): VERACK_RCVD - Received VERACK from peer
+ * - COMPLETE (0x07): All three flags set = handshake complete
+ *
+ * Example: If VERACK arrives before VERSION:
+ *   1. Initial: NONE (0x00)
+ *   2. VERACK arrives: 0x04
+ *   3. VERSION arrives: 0x04 | 0x02 = 0x06
+ *   4. Check: 0x06 != 0x07, still waiting for VERSION_SENT flag
+ */
+enum HandshakeState : uint8_t {
+    NONE = 0,
+    VERSION_SENT = (1 << 0),  // 0x01
+    VERSION_RCVD = (1 << 1),  // 0x02
+    VERACK_RCVD  = (1 << 2),  // 0x04
+    COMPLETE = (VERSION_SENT | VERSION_RCVD | VERACK_RCVD)  // 0x07
+};
+
+/**
  * @class CPeerNode
  * @brief Unified peer representation with socket, connection state, and metadata
  *
@@ -92,6 +119,7 @@ private:
 
     // Connection state
     bool f_connected;                 ///< Whether peer is currently connected
+    uint8_t m_handshake_state;        ///< VERSION/VERACK handshake progression bitmap (HandshakeState flags)
 
     // PING/PONG tracking
     uint32_t n_last_ping_nonce;       ///< Nonce of last sent PING message for round-trip tracking
@@ -311,6 +339,18 @@ public:
      * @param f_is_connected true if connected, false otherwise
      */
     void SetConnected(bool f_is_connected);
+
+    /**
+     * @brief Add handshake state flag(s) to current bitmap
+     * @param flag HandshakeState flag(s) to add (bitwise OR)
+     */
+    bool AddHandshakeFlag(uint8_t flag);
+
+    /**
+     * @brief Check if VERSION/VERACK handshake is complete
+     * @return true if handshake complete (state == COMPLETE), false otherwise
+     */
+    bool IsHandshakeComplete() const;
 
     /**
      * @brief Get the nonce of the last sent PING message
