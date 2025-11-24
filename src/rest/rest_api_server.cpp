@@ -997,7 +997,7 @@ std::tuple<int, std::string> CRestApiServer::HandleRpcAddPeer(const std::string&
         oss << "}";
 
         LOG_INFO("RPC addpeer: " + str_address + ":" + std::to_string(n_port) + " - " +
-                 (f_success ? "success" : "failed"));
+                 (f_success ? "successfully sent, waiting for confirmation." : "failed to send"));
 
         return {HTTP_OK, oss.str()};
     } catch (const std::exception& e) {
