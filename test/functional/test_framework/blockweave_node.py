@@ -134,11 +134,11 @@ class BlockweaveNode:
 
             with open(custom_config_path, 'w') as f:
                 p2p_port_written = False
-                bind_address_written = False
+                bind_ip_written = False
                 log_level_written = False
                 network_written = False
                 for line in config_lines:
-                    # Override log_dir, data_dir, rest_api_port, p2p_port, bind_address, log_level, network, and daemon settings
+                    # Override log_dir, data_dir, rest_api_port, p2p_port, bind_ip, log_level, network, and daemon settings
                     if line.strip().startswith('log_dir='):
                         # Use forward slashes for cross-platform compatibility (Windows accepts them)
                         f.write(f"log_dir={log_dir.as_posix()}\n")
@@ -152,10 +152,10 @@ class BlockweaveNode:
                             p2p_port_written = True
                         else:
                             f.write(line)
-                    elif line.strip().startswith('bind_address='):
+                    elif line.strip().startswith('bind_ip=') or line.strip().startswith('#bind_ip='):
                         if self.bind_ip is not None:
-                            f.write(f"bind_address={self.bind_ip}\n")
-                            bind_address_written = True
+                            f.write(f"bind_ip={self.bind_ip}\n")
+                            bind_ip_written = True
                         else:
                             f.write(line)
                     elif line.strip().startswith('log_level='):
@@ -174,10 +174,10 @@ class BlockweaveNode:
                     f.write(f"\n# P2P port (added by test framework)\n")
                     f.write(f"p2p_port={self.p2p_port}\n")
 
-                # Add bind_address if it wasn't in the config and we have a value
-                if self.bind_ip is not None and not bind_address_written:
-                    f.write(f"\n# Bind address (added by test framework)\n")
-                    f.write(f"bind_address={self.bind_ip}\n")
+                # Add bind_ip if it wasn't in the config and we have a value
+                if self.bind_ip is not None and not bind_ip_written:
+                    f.write(f"\n# Bind IP address (added by test framework)\n")
+                    f.write(f"bind_ip={self.bind_ip}\n")
 
                 # Add log_level if it wasn't in the config
                 if not log_level_written:
@@ -194,7 +194,7 @@ class BlockweaveNode:
             if self.p2p_port is not None:
                 self.logger.info(f"P2P port: {self.p2p_port}")
             if self.bind_ip is not None:
-                self.logger.info(f"Bind address: {self.bind_ip}")
+                self.logger.info(f"Bind IP: {self.bind_ip}")
             return custom_config_path
 
         return self.config_file
