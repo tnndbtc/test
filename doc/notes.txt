@@ -1,21 +1,41 @@
 --------------------------
-install docker on CentOS
+install docker on CentOS AlmaLinux
 sudo dnf install -y yum-utils
 sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
 yum repolist | grep docker
 sudo yum install -y docker-ce docker-ce-cli containerd.io
 sudo systemctl enable docker
 sudo systemctl start docker
-sudo yum install git
 
 # add current user to docker group
 sudo usermod -aG docker $USER
 # make it effective
 newgrp docker
 
+Edit /etc/yum.repos.d/CentOS-Base.repo
+comment out mirrorlist for [base], [updates], [extras]
+use baseurl instead
+[base]
+baseurl=http://vault.centos.org/7.9.2009/os/$basearch/
+[updates]
+baseurl=http://vault.centos.org/7.9.2009/updates/$basearch/
+[extras]
+baseurl=http://vault.centos.org/7.9.2009/extras/$basearch/
+
+Some more is at: https://archive.fedoraproject.org/pub/archive/epel/testing/7/source/tree/
+
+sudo yum clean all
+
 sudo yum install epel-release -y \
     cmake llvm llvm-devel clang lld lldb \
-    openssl openssl-devel boost-devel
+    openssl openssl-devel boost-devel git
+
+sudo vi /etc/systemd/logind.conf
+HandleLidSwitch=ignore
+HandleLidSwitchExternalPower=ignore
+
+sudo systemctl restart systemd-logind
+
 --------------------------
 Ubuntu setup:
 sudo apt update
