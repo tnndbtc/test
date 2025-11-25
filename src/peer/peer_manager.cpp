@@ -1485,6 +1485,26 @@ bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
             LOG_ERROR("Invalid peer address: " + str_address + " - " + addr_ec.message());
             return false;
         }
+
+        // --- Choose local binding IP, to honor bind_ip  ---
+        if (str_bind_ip.empty() == false) {
+            boost::system::error_code ec_local;
+            boost::asio::ip::address local_addr =
+                boost::asio::ip::make_address(str_bind_ip, ec_local);
+            if (ec_local) {
+                LOG_ERROR("Invalid local bind IP: " + str_bind_ip + " - " + ec_local.message());
+                return false;
+            }
+            // Bind socket to chosen local IP (ephemeral port 0)
+            boost::asio::ip::tcp::endpoint local_endpoint(local_addr, 0);
+            p_socket->open(local_endpoint.protocol());
+            p_socket->bind(local_endpoint, ec_local);
+            if (ec_local) {
+                LOG_ERROR("Failed to bind local endpoint " + str_bind_ip + ": " + ec_local.message());
+                return false;
+            }
+        }
+
         boost::asio::ip::tcp::endpoint endpoint(addr, n_port);
 
         // Connect to peer (synchronous for now)
