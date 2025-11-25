@@ -1155,10 +1155,10 @@ std::tuple<int, std::string> CRestApiServer::HandleRpcMineTrigger() {
         oss << "{\n";
         oss << "  \"status\": \"success\",\n";
         oss << "  \"message\": \"Block mined successfully\",\n";
-        oss << "  \"block_height\": " << p_blockweave->GetBlockCount() << "\n";
+        oss << "  \"block_height\": " << p_blockweave->GetBlockCount() - 1 << "\n";
         oss << "}";
 
-        LOG_INFO("RPC minetrigger: Block mined successfully at height " + std::to_string(p_blockweave->GetBlockCount()));
+        LOG_INFO("RPC minetrigger: Block mined successfully at height " + std::to_string(p_blockweave->GetBlockCount() - 1));
 
         return {HTTP_OK, oss.str()};
     } catch (const std::exception& e) {
