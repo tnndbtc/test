@@ -22,7 +22,7 @@ class BlockweaveNode:
     Provides methods to start, stop, and query a local blockweave node.
     """
 
-    def __init__(self, project_root=None, port=28443, p2p_port=None, config_file=None, datadir=None, node_index=0, bind_ip=None):
+    def __init__(self, project_root=None, port=28443, p2p_port=None, config_file=None, datadir=None, node_index=0, bind_ip=None, max_inbound_peers=None, max_outbound_peers=None):
         """
         Initialize the node manager.
 
@@ -34,6 +34,8 @@ class BlockweaveNode:
             datadir: Data directory for this node (default: auto-generated temp directory)
             node_index: Node index for logging (default: 0, creates node0 folder)
             bind_ip: IP address to bind P2P socket to (default: None, uses default from config)
+            max_inbound_peers: Maximum number of inbound peer connections (default: None, uses default from config)
+            max_outbound_peers: Maximum number of outbound peer connections (default: None, uses default from config)
         """
         if project_root is None:
             # Auto-detect project root
@@ -60,6 +62,8 @@ class BlockweaveNode:
         self.port = port
         self.p2p_port = p2p_port
         self.bind_ip = bind_ip
+        self.max_inbound_peers = max_inbound_peers
+        self.max_outbound_peers = max_outbound_peers
         # Config file is copied to build/ during build from src/conf/bweave.conf
         self.config_file = config_file or (self.project_root / "build" / "bweave.conf")
 
@@ -135,10 +139,12 @@ class BlockweaveNode:
             with open(custom_config_path, 'w') as f:
                 p2p_port_written = False
                 bind_ip_written = False
+                max_inbound_peers_written = False
+                max_outbound_peers_written = False
                 log_level_written = False
                 network_written = False
                 for line in config_lines:
-                    # Override log_dir, data_dir, rest_api_port, p2p_port, bind_ip, log_level, network, and daemon settings
+                    # Override log_dir, data_dir, rest_api_port, p2p_port, bind_ip, max_inbound_peers, max_outbound_peers, log_level, network, and daemon settings
                     if line.strip().startswith('log_dir='):
                         # Use forward slashes for cross-platform compatibility (Windows accepts them)
                         f.write(f"log_dir={log_dir.as_posix()}\n")
@@ -156,6 +162,18 @@ class BlockweaveNode:
                         if self.bind_ip is not None:
                             f.write(f"bind_ip={self.bind_ip}\n")
                             bind_ip_written = True
+                        else:
+                            f.write(line)
+                    elif line.strip().startswith('max_inbound_peers='):
+                        if self.max_inbound_peers is not None:
+                            f.write(f"max_inbound_peers={self.max_inbound_peers}\n")
+                            max_inbound_peers_written = True
+                        else:
+                            f.write(line)
+                    elif line.strip().startswith('max_outbound_peers='):
+                        if self.max_outbound_peers is not None:
+                            f.write(f"max_outbound_peers={self.max_outbound_peers}\n")
+                            max_outbound_peers_written = True
                         else:
                             f.write(line)
                     elif line.strip().startswith('log_level='):
@@ -179,6 +197,16 @@ class BlockweaveNode:
                     f.write(f"\n# Bind IP address (added by test framework)\n")
                     f.write(f"bind_ip={self.bind_ip}\n")
 
+                # Add max_inbound_peers if it wasn't in the config and we have a value
+                if self.max_inbound_peers is not None and not max_inbound_peers_written:
+                    f.write(f"\n# Max inbound peers (added by test framework)\n")
+                    f.write(f"max_inbound_peers={self.max_inbound_peers}\n")
+
+                # Add max_outbound_peers if it wasn't in the config and we have a value
+                if self.max_outbound_peers is not None and not max_outbound_peers_written:
+                    f.write(f"\n# Max outbound peers (added by test framework)\n")
+                    f.write(f"max_outbound_peers={self.max_outbound_peers}\n")
+
                 # Add log_level if it wasn't in the config
                 if not log_level_written:
                     f.write(f"\n# Log level (added by test framework)\n")
@@ -195,6 +223,10 @@ class BlockweaveNode:
                 self.logger.info(f"P2P port: {self.p2p_port}")
             if self.bind_ip is not None:
                 self.logger.info(f"Bind IP: {self.bind_ip}")
+            if self.max_inbound_peers is not None:
+                self.logger.info(f"Max inbound peers: {self.max_inbound_peers}")
+            if self.max_outbound_peers is not None:
+                self.logger.info(f"Max outbound peers: {self.max_outbound_peers}")
             return custom_config_path
 
         return self.config_file
@@ -651,6 +683,8 @@ class BlockweaveNode:
         """
 
         peer_address = "127.0.0.1"
+        if peer_node.bind_ip != None:
+            peer_address = peer_node.bind_ip
         self.logger.info(
             f"Node{self.node_index} connecting to peer at {peer_address}:{peer_node.p2p_port}..."
         )

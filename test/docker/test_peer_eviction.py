@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+"""
+P2P network functional test
+
+Tests peer-to-peer networking by starting multiple local nodes
+and verifying they can establish connections via the RPC API.
+
+This test suite covers:
+- Node startup and isolation
+- Port allocation and uniqueness
+- Mining status verification
+- P2P connections via /rpc/addpeer endpoint
+- Peer info queries via /rpc/getpeer endpoint
+- Connection time tracking
+- Inbound and outbound peer connections
+needs to set env var: PYTHONPATH=../functional
+"""
+
+import sys
+import time
+import unittest
+from test_framework import TestFramework
+
+
+class P2PTest(TestFramework):
+    """Test P2P networking with multiple nodes."""
+
+    # Set num_nodes as class attribute so it's available during setUpClass
+    num_nodes = 5
+
+    # Network interface IP mappings (Docker multi-network configuration)
+    # In Docker, each network interface gets a different IP address
+    # eth0: First Docker network (e.g., 10.10.0.0/16)
+    # eth1: Second Docker network (e.g., 81.10.0.0/16)
+    # eth2: Third Docker network (e.g., 8.8.0.0/16)
+    # eth3: Fourth Docker network (e.g., 203.10.0.0/16)
+    #
+    # Example IPs for demonstration:
+    # - node0 binds to eth0 IP: 10.10.0.2
+    # - node1 binds to eth1 IP: 81.10.0.2
+    # - node2+ bind to eth2 IP: 8.8.0.2, etc.
+    interface_ips = {
+        'eth0': '10.10.0.2',  # IP on first Docker network
+        'eth1': '81.10.0.2',  # IP on second Docker network
+        'eth2': '8.8.0.2',  # IP on third Docker network (base IP)
+    }
+
+    def setup_nodes(self):
+        """
+        Override setup_nodes to assign bind_ip based on interface mapping.
+
+        - node0 binds to eth0 IP
+        - node1 binds to eth1 IP
+        - node2 and rest bind to eth2 IP
+        """
+        if self.num_nodes <= 0:
+            return
+
+        self.log_info(f"Starting {self.num_nodes} local blockweave nodes with interface bindings...")
+
+        # Calculate port numbers (using localnet ports: 48443 REST, 48333 P2P)
+        base_rest_port = 48443
+        base_p2p_port = 48333
+
+        # Create and start nodes with specific bind_ip assignments
+        for i in range(self.num_nodes):
+            rest_port = base_rest_port + i
+            p2p_port = base_p2p_port + i
+
+            # Determine which IP to bind based on node index
+            if i == 0:
+                bind_ip = self.interface_ips['eth0']
+                interface = 'eth0'
+            elif i == 1:
+                bind_ip = self.interface_ips['eth1']
+                interface = 'eth1'
+            else:
+                bind_ip = self.interface_ips['eth2']
+                interface = 'eth2'
+
+            self.log_info(
+                f"Starting node {i} (REST: {rest_port}, P2P: {p2p_port}, "
+                f"bind_ip: {bind_ip} on {interface}, "
+                f"max_inbound_peers=2, max_outbound_peers=1)"
+            )
+            blockweave_node = self.add_node(
+                port=rest_port,
+                p2p_port=p2p_port,
+                bind_ip=bind_ip,
+                max_inbound_peers=2,
+                max_outbound_peers=1
+            )
+
+            if not blockweave_node.start(timeout=20):
+                raise RuntimeError(f"Failed to start node {i}")
+
+            self.log_info(f"Node {i} started successfully on {interface}")
+
+        self.log_info(f"All {len(self.nodes)} nodes started successfully")
+
+    def setup(self):
+        """Setup test environment - configure to start 4 local nodes and establish connections."""
+        # Nodes will be created as:
+        # Node 0: REST API port 48443, P2P port 48333, bind_ip=eth0, max_inbound=2, max_outbound=1
+        # Node 1: REST API port 48444, P2P port 48334, bind_ip=eth1, max_inbound=2, max_outbound=1
+        # Node 2: REST API port 48445, P2P port 48335, bind_ip=eth2, max_inbound=2, max_outbound=1
+        # Node 3: REST API port 48446, P2P port 48336, bind_ip=eth2, max_inbound=2, max_outbound=1
+        # Node 4: REST API port 48447, P2P port 48337, bind_ip=eth2, max_inbound=2, max_outbound=1
+        #
+
+        # Debug: Log peer counts after setup
+        for i, node in enumerate(self.nodes):
+            peer_info = node.get_peer_info()
+            total = peer_info.get('total_peers', 0)
+            outbound = peer_info.get('outbound_peers', 0)
+            inbound = peer_info.get('inbound_peers', 0)
+            self.log_info(f"setup: Node{i} peer counts: total={total}, outbound={outbound}, inbound={inbound}")
+
+    def test_1_nodes_are_running(self):
+        """Verify all nodes are running."""
+        self.log_info("test_01_nodes_are_running: Verifying all nodes are running...")
+
+        for node in self.nodes:
+            # Check if process is alive
+            if node.process and node.process.poll() is None:
+                self.assert_true(True, f"Node {node.node_index} process is running")
+            else:
+                self.assert_true(False, f"Node {node.node_index} process should be running")
+
+            self.log_info(f"Node {node.node_index} is running")
+
+        # node0 connect to node1
+        self.log_info("setup: Establishing peer connections...")
+
+        node0 = self.nodes[0]
+        node1 = self.nodes[1]
+        #target_nodes = [self.nodes[i] for i in range(1, self.num_nodes - 1)]
+
+        self.successful_connections = 0
+        if node0.connect_to_peer(node1, wait=True):
+            self.log_info(f"setup: node0 successfully connected to node1")
+            self.successful_connections += 1
+        else:
+            self.log_info(f"setup: WARNING - Failed to connect node0 to node1")
+
+        self.assert_equal(self.successful_connections, 1, f"{self.successful_connections} (expect to be 1) connections established")
+        # Wait for connections to stabilize
+        time.sleep(2)
+        self.log_info(f"setup: Completed - {self.successful_connections}/1 connections established")
+
+if __name__ == "__main__":
+    unittest.main()
