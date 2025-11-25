@@ -116,6 +116,14 @@ class P2PTest(TestFramework):
             inbound = peer_info.get('inbound_peers', 0)
             self.log_info(f"setup: Node{i} peer counts: total={total}, outbound={outbound}, inbound={inbound}")
 
+    def help_connect(self, node_from, node_to):
+        if node_from.connect_to_peer(node_to, wait=True):
+            self.log_info(f"setup: node_from({node_from.bind_ip}:{node_from.p2p_port}) successfully connected to node_to({node_to.bind_ip}:{node_to.p2p_port})")
+            return True
+        else:
+            self.log_info(f"setup: WARNING - Failed to connect node_from({node_from.bind_ip}:{node_from.p2p_port}) to node_to({node_to.bind_ip}:{node_to.p2p_port})")
+        return False
+
     def test_1_nodes_are_running(self):
         """Verify all nodes are running."""
         self.log_info("test_01_nodes_are_running: Verifying all nodes are running...")
@@ -132,21 +140,17 @@ class P2PTest(TestFramework):
         # node0 connect to node1
         self.log_info("setup: Establishing peer connections...")
 
+        self.successful_connections = 0
         node0 = self.nodes[0]
         node1 = self.nodes[1]
-        #target_nodes = [self.nodes[i] for i in range(1, self.num_nodes - 1)]
+        node2 = self.nodes[2]
+        node3 = self.nodes[3]
+        node4 = self.nodes[4]
 
-        self.successful_connections = 0
-        if node0.connect_to_peer(node1, wait=True):
-            self.log_info(f"setup: node0 successfully connected to node1")
+        if self.help_connect(node1, node0):
             self.successful_connections += 1
-        else:
-            self.log_info(f"setup: WARNING - Failed to connect node0 to node1")
-
         self.assert_equal(self.successful_connections, 1, f"{self.successful_connections} (expect to be 1) connections established")
-        # Wait for connections to stabilize
-        time.sleep(2)
-        self.log_info(f"setup: Completed - {self.successful_connections}/1 connections established")
+        # self.log_info(f"setup: Completed - {self.successful_connections}/1 connections established")
 
 if __name__ == "__main__":
     unittest.main()

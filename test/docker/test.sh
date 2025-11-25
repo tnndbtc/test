@@ -60,4 +60,4 @@ docker network connect --ip 203.10.0.2 net203 "$CONTAINER_NAME"
 
 echo "docker exec $CONTAINER_NAME bash -c \"rm -rf build/ && ./configure --generator=\"Unix Makefiles\" && cd build && make -j8\""
 docker exec "$CONTAINER_NAME" bash -c "rm -rf build/ && ./configure --generator=\"Unix Makefiles\" && cd build && make -j8"
-#docker exec "$CONTAINER_NAME" bash -c "cd test/docker && cp ../functional/test_runner.py . && test_runner.py test_peer_eviction.py"
+docker exec "$CONTAINER_NAME" bash -c "cd test/docker && cp ../functional/test_runner.py . && ./test_runner.py test_peer_eviction.py"
