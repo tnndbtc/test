@@ -12,6 +12,7 @@ import shutil
 import unittest
 import platform
 import time
+import subprocess
 from pathlib import Path
 
 from .blockweave_node import BlockweaveNode
@@ -24,6 +25,75 @@ class TestFramework(unittest.TestCase):
     Provides common test utilities and setup/teardown functionality.
     Extends unittest.TestCase for standard Python test framework integration.
     """
+
+    @staticmethod
+    def check_for_running_bweave_processes():
+        """
+        Check if there are any bweave processes currently running.
+
+        Returns:
+            list: List of (pid, command_line) tuples for running bweave processes.
+                  Empty list if no processes found.
+
+        This helps detect orphaned processes from previous test runs that could
+        interfere with the current test by holding ports or resources.
+        """
+        running_processes = []
+
+        try:
+            if platform.system() == "Windows":
+                # Windows: Use tasklist command
+                result = subprocess.run(
+                    ["tasklist", "/FI", "IMAGENAME eq bweave.exe", "/FO", "CSV", "/NH"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+
+                if result.returncode == 0:
+                    # Parse CSV output (format: "Image Name","PID","Session Name","Session#","Mem Usage")
+                    for line in result.stdout.strip().split('\n'):
+                        if line and 'bweave.exe' in line.lower():
+                            parts = line.replace('"', '').split(',')
+                            if len(parts) >= 2:
+                                try:
+                                    pid = int(parts[1].strip())
+                                    running_processes.append((pid, "bweave.exe"))
+                                except ValueError:
+                                    pass
+            else:
+                # Unix-like systems (Linux, macOS): Use ps command
+                result = subprocess.run(
+                    ["ps", "aux"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+
+                if result.returncode == 0:
+                    for line in result.stdout.split('\n'):
+                        # Look for bweave in the command line, but exclude:
+                        # - grep itself
+                        # - bweave_cli (the CLI tool, not the daemon)
+                        # - this script
+                        if 'bweave' in line and 'grep' not in line and 'bweave_cli' not in line:
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                try:
+                                    pid = int(parts[1])
+                                    # Get the command (everything from the 11th column onwards)
+                                    command = ' '.join(parts[10:]) if len(parts) > 10 else 'bweave'
+                                    # Only add if it's actually the bweave executable
+                                    if '/bweave' in command or command.startswith('bweave') or command == './bweave':
+                                        running_processes.append((pid, command))
+                                except (ValueError, IndexError):
+                                    pass
+        except subprocess.TimeoutExpired:
+            print("Warning: Timeout while checking for running bweave processes")
+        except Exception as e:
+            print(f"Warning: Error checking for running bweave processes: {e}")
+
+        return running_processes
 
     def __init__(self, methodName='runTest'):
         """Initialize the test framework."""
@@ -216,6 +286,34 @@ class TestFramework(unittest.TestCase):
         if getattr(cls, 'use_per_test_setup', False):
             return
 
+        # Check for running bweave processes before starting tests
+        running_processes = cls.check_for_running_bweave_processes()
+        if running_processes:
+            error_msg = "\n" + "="*70 + "\n"
+            error_msg += "ERROR: Found running bweave process(es) before test start!\n"
+            error_msg += "="*70 + "\n"
+            error_msg += "\nRunning bweave processes detected:\n"
+            for pid, command in running_processes:
+                error_msg += f"  PID {pid}: {command}\n"
+            error_msg += "\nThese processes may interfere with the tests by holding ports or resources.\n"
+            error_msg += "Please stop all bweave processes before running tests.\n"
+            error_msg += "\nTo stop them:\n"
+            if platform.system() == "Windows":
+                error_msg += "  taskkill /F /IM bweave.exe\n"
+            else:
+                error_msg += "  pkill bweave\n"
+                error_msg += "  # Or kill specific processes:\n"
+                for pid, _ in running_processes:
+                    error_msg += f"  kill {pid}\n"
+            error_msg += "="*70 + "\n"
+
+            # Print to stderr so it's visible even if test output is captured
+            import sys
+            print(error_msg, file=sys.stderr)
+
+            # Raise exception to stop test execution
+            raise RuntimeError("Running bweave processes detected. Please clean up before running tests.")
+
         # Initialize class-level attributes
         cls.tmpdir = None
         cls.nocleanup = False
@@ -296,6 +394,34 @@ class TestFramework(unittest.TestCase):
         """
         # If use_per_test_setup is True, do full setup for each test
         if getattr(self.__class__, 'use_per_test_setup', False):
+            # Check for running bweave processes before starting test
+            running_processes = self.check_for_running_bweave_processes()
+            if running_processes:
+                error_msg = "\n" + "="*70 + "\n"
+                error_msg += "ERROR: Found running bweave process(es) before test start!\n"
+                error_msg += "="*70 + "\n"
+                error_msg += "\nRunning bweave processes detected:\n"
+                for pid, command in running_processes:
+                    error_msg += f"  PID {pid}: {command}\n"
+                error_msg += "\nThese processes may interfere with the tests by holding ports or resources.\n"
+                error_msg += "Please stop all bweave processes before running tests.\n"
+                error_msg += "\nTo stop them:\n"
+                if platform.system() == "Windows":
+                    error_msg += "  taskkill /F /IM bweave.exe\n"
+                else:
+                    error_msg += "  pkill bweave\n"
+                    error_msg += "  # Or kill specific processes:\n"
+                    for pid, _ in running_processes:
+                        error_msg += f"  kill {pid}\n"
+                error_msg += "="*70 + "\n"
+
+                # Print to stderr so it's visible even if test output is captured
+                import sys
+                print(error_msg, file=sys.stderr)
+
+                # Raise exception to stop test execution
+                raise RuntimeError("Running bweave processes detected. Please clean up before running tests.")
+
             self.tmpdir = None
             self.nocleanup = False
             self.nodes = []
