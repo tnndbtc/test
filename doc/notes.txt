@@ -40,6 +40,9 @@ HandleLidSwitchExternalPower=ignore
 sudo systemctl restart systemd-logind
 
 sudo hostnamectl set-hostname alma1
+
+# for sanitizers
+sudo dnf install gcc gcc-c++ libasan libubsan libtsan
 --------------------------
 Ubuntu setup:
 sudo apt update

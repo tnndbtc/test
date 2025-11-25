@@ -36,6 +36,22 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
             # Windows-specific: Generate DWARF debug info for MinGW
             # This creates proper debug symbols for tools like GDB on Windows
             message(STATUS "MinGW Debug: Enabled -g -ggdb -O0 (DWARF debug symbols)")
+        elseif(UNIX AND NOT APPLE)
+            # Linux-specific: Enable sanitizers for Debug builds
+            # AddressSanitizer: Detects memory errors (buffer overflows, use-after-free, etc.)
+            # UndefinedBehaviorSanitizer: Detects undefined behavior
+            # LeakSanitizer: Detects memory leaks (enabled by default with ASan)
+            # Note: MemorySanitizer requires special instrumented libraries, so it's commented out
+            add_compile_options(-fsanitize=address -fsanitize=undefined)
+            add_link_options(-fsanitize=address -fsanitize=undefined)
+            message(STATUS "Linux Debug: Enabled -g -ggdb -O0 with AddressSanitizer and UndefinedBehaviorSanitizer")
+        elseif(APPLE)
+            # macOS-specific: Enable sanitizers if supported
+            # AddressSanitizer and UndefinedBehaviorSanitizer are well-supported on macOS
+            # MemorySanitizer is not well-supported on macOS, so we omit it
+            add_compile_options(-fsanitize=address -fsanitize=undefined)
+            add_link_options(-fsanitize=address -fsanitize=undefined)
+            message(STATUS "macOS Debug: Enabled -g -ggdb -O0 with AddressSanitizer and UndefinedBehaviorSanitizer")
         else()
             message(STATUS "GCC/Clang Debug: Enabled -g -ggdb -O0")
         endif()
