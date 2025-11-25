@@ -61,13 +61,14 @@
  * @param n_max_outbound Maximum number of outbound peer connections
  * @param n_max_inbound Maximum number of inbound peer connections
  * @param n_ping_time Interval in seconds between PING messages
+ * @param str_bind Bind IP address for P2P listening (empty means all interfaces)
  *
  * Initializes peer manager in stopped state. Reserves space for
  * peer connections to avoid vector reallocations during operation.
  * Call Start() to begin accepting connections.
  */
-CPeerManager::CPeerManager(int n_port, int n_max_outbound, int n_max_inbound, int n_max_workers, int n_ping_time, uint32_t n_magic)
-    : n_listen_port(n_port), m_p_acceptor(nullptr),
+CPeerManager::CPeerManager(int n_port, int n_max_outbound, int n_max_inbound, int n_max_workers, int n_ping_time, uint32_t n_magic, const std::string& str_bind)
+    : n_listen_port(n_port), str_bind_ip(str_bind), m_p_acceptor(nullptr),
       n_max_inbound_peers(n_max_inbound), n_max_outbound_peers(n_max_outbound),
       n_peers_ping_time(n_ping_time), m_n_network_magic(n_magic),
       f_running(false), f_stop_requested(false), f_stop_monitor(false),
@@ -317,14 +318,27 @@ bool CPeerManager::CreateAcceptor() {
         m_p_acceptor->set_option(reuse_port(true));
 #endif
 
-        // Bind to all interfaces on configured port
-        boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::tcp::v4(), n_listen_port);
+        // Bind to configured IP (or all interfaces if bind_ip is empty)
+        boost::asio::ip::tcp::endpoint endpoint;
+        if (str_bind_ip.empty()) {
+            // Bind to all interfaces
+            endpoint = boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), n_listen_port);
+        } else {
+            // Bind to specific IP address
+            boost::system::error_code ec;
+            boost::asio::ip::address bind_address = boost::asio::ip::make_address(str_bind_ip, ec);
+            if (ec) {
+                throw boost::system::system_error(ec, "Invalid bind IP address: " + str_bind_ip);
+            }
+            endpoint = boost::asio::ip::tcp::endpoint(bind_address, n_listen_port);
+        }
         m_p_acceptor->bind(endpoint);
 
         // Start listening with backlog of 10
         m_p_acceptor->listen(10);
 
-        LOG_INFO("Acceptor created and listening on port " + std::to_string(n_listen_port));
+        std::string str_bind_desc = str_bind_ip.empty() ? "all interfaces" : str_bind_ip;
+        LOG_INFO("Acceptor created and listening on " + str_bind_desc + " port " + std::to_string(n_listen_port));
         return true;
 
     } catch (const boost::system::system_error& e) {

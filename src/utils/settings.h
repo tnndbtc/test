@@ -17,6 +17,9 @@ constexpr int REST_API_PORT = 28443;
 // Peer-to-peer network port
 constexpr int P2P_PORT = 28333;
 
+// Default bind IP address for P2P listening (empty means bind to all interfaces)
+const std::string BIND_IP = "";
+
 // Maximum number of inbound peer connections (peers connecting to us)
 constexpr int MAX_INBOUND_PEERS = 120;
 

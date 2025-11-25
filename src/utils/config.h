@@ -129,6 +129,12 @@ public:
     int GetP2PPort() const;
 
     /**
+     * @brief Get bind IP address for P2P listening
+     * @return IP address string (empty means bind to all interfaces)
+     */
+    std::string GetBindIP() const;
+
+    /**
      * @brief Get maximum number of outbound peer connections
      * @return Max peers number (default: MAX_OUTBOUND_PEERS from settings.h)
      */

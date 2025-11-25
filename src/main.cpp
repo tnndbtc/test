@@ -319,10 +319,14 @@ int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode, c
     int n_max_outbound = config.GetMaxOutboundPeers();
     int n_max_inbound = config.GetMaxInboundPeers();
     int n_peers_ping_time = config.GetPeersPingTime();
+    std::string str_bind_ip = config.GetBindIP();
     uint32_t n_network_magic = network_params.magic_bytes;
     LOG_INFO("Creating peer manager on port " + std::to_string(n_p2p_port));
     LOG_INFO("Peers PING time: " + std::to_string(n_peers_ping_time) + " seconds");
-    CPeerManager peer_manager(n_p2p_port, n_max_outbound, n_max_inbound, MAX_INBOUND_WORKER_THREADS, n_peers_ping_time, n_network_magic);
+    if (!str_bind_ip.empty()) {
+        LOG_INFO("Bind IP: " + str_bind_ip);
+    }
+    CPeerManager peer_manager(n_p2p_port, n_max_outbound, n_max_inbound, MAX_INBOUND_WORKER_THREADS, n_peers_ping_time, n_network_magic, str_bind_ip);
 
     // Start REST API server (1 listener thread + N worker threads)
     LOG_INFO("Starting REST API server on port " + std::to_string(n_rest_port));

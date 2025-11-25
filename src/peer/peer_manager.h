@@ -82,6 +82,7 @@ private:
 
     // Network configuration
     int n_listen_port;               ///< Port for listening to incoming connections
+    std::string str_bind_ip;         ///< IP address to bind to (empty means all interfaces)
     std::unique_ptr<boost::asio::ip::tcp::acceptor> m_p_acceptor;  ///< Boost.Asio acceptor for async accept (destructs BEFORE io_context)
     int n_max_inbound_peers;         ///< Maximum number of inbound peer connections
     int n_max_outbound_peers;        ///< Maximum number of outbound peer connections
@@ -460,8 +461,9 @@ public:
      * @param n_max_workers Maximum number of inbound worker threads (default: MAX_INBOUND_WORKER_THREADS from settings.h)
      * @param n_ping_time Interval in seconds between PING messages (default: PEERS_PING_TIME from settings.h)
      * @param n_magic Network magic bytes for P2P message validation (default: MAINNET_MAGIC from settings.h)
+     * @param str_bind Bind IP address for P2P listening (default: BIND_IP from settings.h, empty means all interfaces)
      */
-    CPeerManager(int n_port = P2P_PORT, int n_max_outbound = MAX_OUTBOUND_PEERS, int n_max_inbound = MAX_INBOUND_PEERS, int n_max_workers = MAX_INBOUND_WORKER_THREADS, int n_ping_time = PEERS_PING_TIME, uint32_t n_magic = LOCALNET_MAGIC);
+    CPeerManager(int n_port = P2P_PORT, int n_max_outbound = MAX_OUTBOUND_PEERS, int n_max_inbound = MAX_INBOUND_PEERS, int n_max_workers = MAX_INBOUND_WORKER_THREADS, int n_ping_time = PEERS_PING_TIME, uint32_t n_magic = LOCALNET_MAGIC, const std::string& str_bind = BIND_IP);
 
     /**
      * @brief Destructor - stops networking and cleans up resources

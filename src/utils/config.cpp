@@ -149,6 +149,7 @@ void CConfig::LoadDefaults() {
     m_config_values["miner_address"] = "";
     m_config_values["rest_api_port"] = std::to_string(REST_API_PORT);
     m_config_values["p2p_port"] = std::to_string(P2P_PORT);
+    m_config_values["bind_ip"] = BIND_IP;
     m_config_values["max_outbound_peers"] = std::to_string(MAX_OUTBOUND_PEERS);
     m_config_values["max_inbound_peers"] = std::to_string(MAX_INBOUND_PEERS);
     m_config_values["data_dir"] = "data";  // Relative path, will expand to ~/.bweave/data
@@ -312,6 +313,10 @@ int CConfig::GetRestApiPort() const {
 
 int CConfig::GetP2PPort() const {
     return GetIntValue("p2p_port", P2P_PORT);
+}
+
+std::string CConfig::GetBindIP() const {
+    return GetValue("bind_ip", BIND_IP);
 }
 
 int CConfig::GetMaxOutboundPeers() const {

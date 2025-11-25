@@ -1,4 +1,7 @@
 --------------------------
+# to export sanitizer output
+export ASAN_OPTIONS=log_path=/tmp/asan/asan.log:detect_leaks=1
+--------------------------
 install docker on CentOS AlmaLinux
 sudo dnf install -y yum-utils
 sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
@@ -36,6 +39,7 @@ HandleLidSwitchExternalPower=ignore
 
 sudo systemctl restart systemd-logind
 
+sudo hostnamectl set-hostname alma1
 --------------------------
 Ubuntu setup:
 sudo apt update
