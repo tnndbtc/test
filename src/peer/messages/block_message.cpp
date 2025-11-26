@@ -25,8 +25,7 @@ std::vector<uint8_t> CBlockMessage::SerializePayload() const {
         return std::vector<uint8_t>();  // Empty payload for null block
     }
     std::string str_serialized = m_p_block->Serialize();
-    std::vector<uint8_t> payload(str_serialized.size());
-    std::memcpy(payload.data(), str_serialized.data(), str_serialized.size());
+    std::vector<uint8_t> payload(str_serialized.begin(), str_serialized.end());
     return payload;
 }
 

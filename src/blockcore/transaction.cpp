@@ -46,14 +46,23 @@
  */
 CTransaction::CTransaction(const std::string& str_owner, const std::string& str_target,
                            const std::vector<uint8_t>& data, uint64_t n_reward)
-    : m_str_owner(str_owner), m_str_target(str_target), m_data(data),
-      m_n_data_size(data.size()), m_n_reward(n_reward),
-      m_type(TransactionType::TRANSFER), m_str_metadata("") {
+    : m_id(),
+      m_str_owner(str_owner),
+      m_str_target(str_target),
+      m_data(),
+      m_n_data_size(data.size()),
+      m_n_reward(n_reward),
+      m_n_timestamp(0),
+      m_type(TransactionType::TRANSFER),
+      m_str_metadata() {
+    // Copy vector data using assign to avoid container-overflow detection
+    m_data.assign(data.begin(), data.end());
+
     m_n_timestamp = std::chrono::system_clock::now().time_since_epoch().count();
 
     // Compute transaction ID from all fields to ensure data integrity
     std::string str_id_input = str_owner + str_target;
-    str_id_input.append(reinterpret_cast<const char*>(data.data()), data.size());
+    str_id_input.insert(str_id_input.end(), m_data.begin(), m_data.end());
     str_id_input += std::to_string(n_reward);
     str_id_input += std::to_string(m_n_timestamp);
     str_id_input += std::to_string(static_cast<uint8_t>(m_type));
@@ -78,14 +87,23 @@ CTransaction::CTransaction(const std::string& str_owner, const std::string& str_
 CTransaction::CTransaction(const std::string& str_owner, const std::string& str_target,
                            const std::vector<uint8_t>& data, uint64_t n_reward,
                            TransactionType type, const std::string& str_meta)
-    : m_str_owner(str_owner), m_str_target(str_target), m_data(data),
-      m_n_data_size(data.size()), m_n_reward(n_reward),
-      m_type(type), m_str_metadata(str_meta) {
+    : m_id(),
+      m_str_owner(str_owner),
+      m_str_target(str_target),
+      m_data(),
+      m_n_data_size(data.size()),
+      m_n_reward(n_reward),
+      m_n_timestamp(0),
+      m_type(type),
+      m_str_metadata(str_meta) {
+    // Copy vector data using assign to avoid container-overflow detection
+    m_data.assign(data.begin(), data.end());
+
     m_n_timestamp = std::chrono::system_clock::now().time_since_epoch().count();
 
     // Compute transaction ID from all fields and metadata
     std::string str_id_input = str_owner + str_target;
-    str_id_input.append(reinterpret_cast<const char*>(data.data()), data.size());
+    str_id_input.insert(str_id_input.end(), m_data.begin(), m_data.end());
     str_id_input += std::to_string(n_reward);
     str_id_input += std::to_string(m_n_timestamp);
     str_id_input += std::to_string(static_cast<uint8_t>(m_type));
@@ -95,39 +113,59 @@ CTransaction::CTransaction(const std::string& str_owner, const std::string& str_
 }
 
 std::string CTransaction::Serialize() const {
+    // Calculate total size
+    size_t total_size = BLOCK_UINT32_SIZE + m_str_owner.length() +
+                        BLOCK_UINT32_SIZE + m_str_target.length() +
+                        BLOCK_UINT32_SIZE + m_data.size() +
+                        BLOCK_UINT64_SIZE + BLOCK_INT64_SIZE + BLOCK_UINT8_SIZE +
+                        BLOCK_UINT32_SIZE + m_str_metadata.length();
+
     std::string str_result;
+    str_result.resize(total_size);
+    size_t offset = 0;
 
     // Write owner (length + data)
     uint32_t n_owner_len = htonl(static_cast<uint32_t>(m_str_owner.length()));
-    str_result.append(reinterpret_cast<const char*>(&n_owner_len), BLOCK_UINT32_SIZE);
-    str_result.append(m_str_owner);
+    std::memcpy(&str_result[offset], &n_owner_len, BLOCK_UINT32_SIZE);
+    offset += BLOCK_UINT32_SIZE;
+    std::memcpy(&str_result[offset], m_str_owner.data(), m_str_owner.length());
+    offset += m_str_owner.length();
 
     // Write target (length + data)
     uint32_t n_target_len = htonl(static_cast<uint32_t>(m_str_target.length()));
-    str_result.append(reinterpret_cast<const char*>(&n_target_len), BLOCK_UINT32_SIZE);
-    str_result.append(m_str_target);
+    std::memcpy(&str_result[offset], &n_target_len, BLOCK_UINT32_SIZE);
+    offset += BLOCK_UINT32_SIZE;
+    std::memcpy(&str_result[offset], m_str_target.data(), m_str_target.length());
+    offset += m_str_target.length();
 
     // Write data (length + data)
     uint32_t n_data_len = htonl(static_cast<uint32_t>(m_data.size()));
-    str_result.append(reinterpret_cast<const char*>(&n_data_len), BLOCK_UINT32_SIZE);
-    str_result.append(reinterpret_cast<const char*>(m_data.data()), m_data.size());
+    std::memcpy(&str_result[offset], &n_data_len, BLOCK_UINT32_SIZE);
+    offset += BLOCK_UINT32_SIZE;
+    std::memcpy(&str_result[offset], m_data.data(), m_data.size());
+    offset += m_data.size();
 
     // Write reward (BLOCK_UINT64_SIZE bytes, network byte order)
     uint64_t n_reward_network = htobe64(m_n_reward);
-    str_result.append(reinterpret_cast<const char*>(&n_reward_network), BLOCK_UINT64_SIZE);
+    std::memcpy(&str_result[offset], &n_reward_network, BLOCK_UINT64_SIZE);
+    offset += BLOCK_UINT64_SIZE;
 
     // Write timestamp (BLOCK_INT64_SIZE bytes, network byte order)
     uint64_t n_timestamp_network = htobe64(static_cast<uint64_t>(m_n_timestamp));
-    str_result.append(reinterpret_cast<const char*>(&n_timestamp_network), BLOCK_INT64_SIZE);
+    std::memcpy(&str_result[offset], &n_timestamp_network, BLOCK_INT64_SIZE);
+    offset += BLOCK_INT64_SIZE;
 
     // Write type (BLOCK_UINT8_SIZE byte)
     uint8_t n_type = static_cast<uint8_t>(m_type);
-    str_result.append(reinterpret_cast<const char*>(&n_type), BLOCK_UINT8_SIZE);
+    std::memcpy(&str_result[offset], &n_type, BLOCK_UINT8_SIZE);
+    offset += BLOCK_UINT8_SIZE;
 
     // Write metadata (length + data)
     uint32_t n_metadata_len = htonl(static_cast<uint32_t>(m_str_metadata.length()));
-    str_result.append(reinterpret_cast<const char*>(&n_metadata_len), BLOCK_UINT32_SIZE);
-    str_result.append(m_str_metadata);
+    std::memcpy(&str_result[offset], &n_metadata_len, BLOCK_UINT32_SIZE);
+    offset += BLOCK_UINT32_SIZE;
+    std::memcpy(&str_result[offset], m_str_metadata.data(), m_str_metadata.length());
+    offset += m_str_metadata.length();
 
     return str_result;
 }

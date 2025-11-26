@@ -91,45 +91,48 @@ std::string CVersionMessage::GetType() const {
  */
 std::vector<uint8_t> CVersionMessage::SerializePayload() const {
     std::vector<uint8_t> payload;
-    payload.reserve(76);
+    payload.resize(76);  // Pre-allocate exact size needed
+    size_t offset = 0;
 
     // Serialize protocol_version (4 bytes)
     uint32_t n_protocol_version_network = htonl(static_cast<uint32_t>(m_n_protocol_version));
-    const uint8_t* p_protocol_version = reinterpret_cast<const uint8_t*>(&n_protocol_version_network);
-    payload.insert(payload.end(), p_protocol_version, p_protocol_version + 4);
+    std::memcpy(payload.data() + offset, &n_protocol_version_network, 4);
+    offset += 4;
 
     // Serialize timestamp (8 bytes)
     uint64_t n_timestamp_network = htobe64(static_cast<uint64_t>(m_n_timestamp));
-    const uint8_t* p_timestamp = reinterpret_cast<const uint8_t*>(&n_timestamp_network);
-    payload.insert(payload.end(), p_timestamp, p_timestamp + 8);
+    std::memcpy(payload.data() + offset, &n_timestamp_network, 8);
+    offset += 8;
 
     // Serialize address_recv (26 bytes)
     uint64_t n_recv_services_network = htobe64(m_address_recv.n_services);
-    const uint8_t* p_recv_services = reinterpret_cast<const uint8_t*>(&n_recv_services_network);
-    payload.insert(payload.end(), p_recv_services, p_recv_services + 8);
-    payload.insert(payload.end(), m_address_recv.address.begin(), m_address_recv.address.end());
+    std::memcpy(payload.data() + offset, &n_recv_services_network, 8);
+    offset += 8;
+    std::memcpy(payload.data() + offset, m_address_recv.address.data(), 16);
+    offset += 16;
     uint16_t n_recv_port_network = htons(m_address_recv.n_port);
-    const uint8_t* p_recv_port = reinterpret_cast<const uint8_t*>(&n_recv_port_network);
-    payload.insert(payload.end(), p_recv_port, p_recv_port + 2);
+    std::memcpy(payload.data() + offset, &n_recv_port_network, 2);
+    offset += 2;
 
     // Serialize address_from (26 bytes)
     uint64_t n_from_services_network = htobe64(m_address_from.n_services);
-    const uint8_t* p_from_services = reinterpret_cast<const uint8_t*>(&n_from_services_network);
-    payload.insert(payload.end(), p_from_services, p_from_services + 8);
-    payload.insert(payload.end(), m_address_from.address.begin(), m_address_from.address.end());
+    std::memcpy(payload.data() + offset, &n_from_services_network, 8);
+    offset += 8;
+    std::memcpy(payload.data() + offset, m_address_from.address.data(), 16);
+    offset += 16;
     uint16_t n_from_port_network = htons(m_address_from.n_port);
-    const uint8_t* p_from_port = reinterpret_cast<const uint8_t*>(&n_from_port_network);
-    payload.insert(payload.end(), p_from_port, p_from_port + 2);
+    std::memcpy(payload.data() + offset, &n_from_port_network, 2);
+    offset += 2;
 
     // Serialize nonce (8 bytes)
     uint64_t n_nonce_network = htobe64(m_n_nonce);
-    const uint8_t* p_nonce = reinterpret_cast<const uint8_t*>(&n_nonce_network);
-    payload.insert(payload.end(), p_nonce, p_nonce + 8);
+    std::memcpy(payload.data() + offset, &n_nonce_network, 8);
+    offset += 8;
 
     // Serialize chain_tip_height (4 bytes)
     uint32_t n_chain_tip_height_network = htonl(static_cast<uint32_t>(m_n_chain_tip_height));
-    const uint8_t* p_chain_tip_height = reinterpret_cast<const uint8_t*>(&n_chain_tip_height_network);
-    payload.insert(payload.end(), p_chain_tip_height, p_chain_tip_height + 4);
+    std::memcpy(payload.data() + offset, &n_chain_tip_height_network, 4);
+    offset += 4;
 
     return payload;
 }
