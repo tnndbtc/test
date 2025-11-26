@@ -505,8 +505,8 @@ void CPeerManager::HandleAccept(const boost::system::error_code& ec, boost::asio
                 std::srand(std::time(nullptr));
                 size_t random_idx = same_subnet_indices[std::rand() % same_subnet_indices.size()];
 
-                LOG_INFO("Max inbound peers reached. Dropping peer from same subnet " + str_new_subnet +
-                         " to accept new connection: " + m_inbound_peers[random_idx]->GetIdentifier());
+                LOG_INFO("Max inbound peers reached. Dropping peer " + m_inbound_peers[random_idx]->GetIdentifier() + " from same subnet " + str_new_subnet +
+                         " to accept new connection");
 
                 DisconnectPeer(m_inbound_peers[random_idx]);
             } else {
@@ -700,6 +700,26 @@ void CPeerManager::PeerManagerThread() {
     while (!f_stop_requested) {
         LOG_TRACE("Peer management thread awakes");
         LOG_TRACE("PeerManagerThread begin loop: inbound_peers: " + std::to_string(m_inbound_peers.size()) + " outbound_peers: " + std::to_string(m_outbound_peers.size()));
+
+        // Log detailed peer information
+        {
+            std::lock_guard<std::mutex> lock(cs_peers);
+            std::string str_inbound_details = "Inbound peers: ";
+            for (const auto& p_peer : m_inbound_peers) {
+                if (p_peer) {
+                    str_inbound_details += p_peer->GetIdentifier() + " ";
+                }
+            }
+            LOG_TRACE(str_inbound_details);
+
+            std::string str_outbound_details = "Outbound peers: ";
+            for (const auto& p_peer : m_outbound_peers) {
+                if (p_peer) {
+                    str_outbound_details += p_peer->GetIdentifier() + " ";
+                }
+            }
+            LOG_TRACE(str_outbound_details);
+        }
 
         // Check if it's time to send PING messages (every n_peers_ping_time seconds)
         auto now = std::chrono::steady_clock::now();
@@ -1649,21 +1669,41 @@ void CPeerManager::DisconnectPeer(std::shared_ptr<CPeerNode> p_peer_shared) {
  * occurs asynchronously in background thread.
  */
 bool CPeerManager::AddPeer(const std::string& str_address, int n_port) {
-    // Check if we've reached max outbound peers and reserve a slot
+    // Check if we've reached max outbound peers and drop a random one if needed
     // We need to do this atomically to prevent race conditions where
     // multiple threads could pass the size check simultaneously
     {
         std::lock_guard<std::mutex> lock(cs_peers);
-        if (m_outbound_peers.size() >= static_cast<size_t>(n_max_outbound_peers)) {
-            LOG_WARN("Maximum outbound peers reached (" + std::to_string(n_max_outbound_peers) + ")");
-            return false;
-        }
 
         // Check if already connected to this peer
         for (const auto& p_peer : m_outbound_peers) {
             if (p_peer && p_peer->GetAddress() == str_address && p_peer->GetPort() == n_port) {
                 LOG_INFO("Already connected to peer " + str_address + ":" + std::to_string(n_port));
                 return false;
+            }
+        }
+
+        // If max outbound peers reached, drop a random one to make room for new peer
+        if (m_outbound_peers.size() >= static_cast<size_t>(n_max_outbound_peers)) {
+            LOG_WARN("Maximum outbound peers reached (" + std::to_string(n_max_outbound_peers) + "), dropping random peer");
+
+            // Find all connected outbound peers
+            std::vector<size_t> connected_indices;
+            for (size_t i = 0; i < m_outbound_peers.size(); i++) {
+                if (m_outbound_peers[i] && m_outbound_peers[i]->IsConnected()) {
+                    connected_indices.push_back(i);
+                }
+            }
+
+            if (!connected_indices.empty()) {
+                // Drop a random connected outbound peer
+                std::srand(std::time(nullptr));
+                size_t random_idx = connected_indices[std::rand() % connected_indices.size()];
+
+                LOG_INFO("Dropping random outbound peer " + m_outbound_peers[random_idx]->GetIdentifier() +
+                         " to accept new connection to " + str_address + ":" + std::to_string(n_port));
+
+                DisconnectPeer(m_outbound_peers[random_idx]);
             }
         }
 

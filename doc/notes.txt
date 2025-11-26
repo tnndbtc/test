@@ -1,6 +1,8 @@
 --------------------------
 # to export sanitizer output
 export ASAN_OPTIONS=log_path=/tmp/asan/asan.log:detect_leaks=1
+export ASAN_OPTIONS=log_path=/tmp/asan/asan.log:detect_leaks=1:abort_on_error=1
+export UBSAN_OPTIONS=halt_on_error=1
 --------------------------
 install docker on CentOS AlmaLinux
 sudo dnf install -y yum-utils

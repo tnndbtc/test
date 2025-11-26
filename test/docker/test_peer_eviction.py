@@ -140,16 +140,34 @@ class P2PTest(TestFramework):
         # node0 connect to node1
         self.log_info("setup: Establishing peer connections...")
 
-        self.successful_connections = 0
         node0 = self.nodes[0]
         node1 = self.nodes[1]
         node2 = self.nodes[2]
         node3 = self.nodes[3]
         node4 = self.nodes[4]
 
-        if self.help_connect(node1, node0):
-            self.successful_connections += 1
-        self.assert_equal(self.successful_connections, 1, f"{self.successful_connections} (expect to be 1) connections established")
+        self.help_connect(node1, node0)
+        node0_peer_info = node0.get_peer_info()
+        total_peers = node0_peer_info.get('total_peers', -1)
+        total_outbound = node0_peer_info.get('outbound_peers', -1)
+        total_inbound = node0_peer_info.get('inbound_peers', -1)
+        self.assert_equal(total_peers, 1, f"{total_peers} (expect to be 1)")
+        self.assert_equal(total_inbound, 1, f"{total_inbound} (expect to be 1)")
+        self.assert_equal(total_outbound, 0, f"{total_outbound} (expect to be 0)")
+        peers_list = node0_peer_info.get('peers', [])
+        self.log_info(f"peers_list: " + str(peers_list))
+
+        self.help_connect(node2, node0)
+
+        self.help_connect(node3, node0)
+        time.sleep(2)
+        node0_peer_info = node0.get_peer_info()
+        total_peers = node0_peer_info.get('total_peers', -1)
+        total_outbound = node0_peer_info.get('outbound_peers', -1)
+        total_inbound = node0_peer_info.get('inbound_peers', -1)
+        peers_list = node0_peer_info.get('peers', [])
+        self.log_info(f"peers_list: " + str(peers_list))
+
         # self.log_info(f"setup: Completed - {self.successful_connections}/1 connections established")
 
 if __name__ == "__main__":
