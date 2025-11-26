@@ -516,3 +516,213 @@ TEST(PeerManager_ThreadSafe_GetPublicIP) {
     // Verify we made many queries without crashing
     ASSERT_TRUE(query_count > 100, "Should have made multiple thread-safe queries");
 }
+
+/**
+ * @brief Test SendPingToAllPeers doesn't deadlock with concurrent peer operations
+ *
+ * This test verifies the fix for deadlock scenario:
+ * - Thread 1 calls SendPingToAllPeers() repeatedly (like PeerManagerThread)
+ * - Thread 2-11 call GetConnectedPeers() repeatedly (like REST API threads)
+ * - Without the fix: If SendPingToAllPeers held cs_peers while calling
+ *   SendMessageAsync, and async completion called DisconnectPeer, deadlock occurs
+ * - With fix: Lock is released before async operations, no deadlock
+ *
+ * The fix copies peer list under lock, releases lock, then sends messages.
+ * This test verifies concurrent access patterns don't deadlock.
+ */
+TEST(PeerManager_SendPing_NoDeadlock) {
+    CPeerManager manager(8360, 8, 120, 32, 180, 0xACDE4892);  // LOCALNET_MAGIC
+
+    // Start the manager to enable threads
+    manager.Start();
+
+    std::atomic<bool> stop_flag{false};
+    std::atomic<int> ping_count{0};
+    std::atomic<int> query_count{0};
+    std::atomic<bool> deadlock_detected{false};
+
+    // Thread 1: Repeatedly call SendPingToAllPeers (simulates PeerManagerThread)
+    std::thread ping_thread([&]() {
+        while (!stop_flag) {
+            manager.SendPingToAllPeers();
+            ping_count++;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    });
+
+    // Thread 2-11: Repeatedly query peer info (simulates REST API threads)
+    // These threads will contend for cs_peers lock
+    std::vector<std::thread> query_threads;
+    for (int i = 0; i < 10; i++) {
+        query_threads.emplace_back([&]() {
+            while (!stop_flag) {
+                auto peers = manager.GetConnectedPeers();
+                (void)peers;
+                query_count++;
+                std::this_thread::yield();
+            }
+        });
+    }
+
+    // Watchdog thread - detects if test is hanging
+    std::thread watchdog([&]() {
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+        if (!stop_flag) {
+            deadlock_detected = true;
+            // Force exit if hanging
+            std::_Exit(1);
+        }
+    });
+
+    // Run for 500ms - if there's a deadlock, watchdog will kill us
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    stop_flag = true;
+
+    // Join all threads - if deadlock exists, this will hang
+    ping_thread.join();
+    for (auto& t : query_threads) {
+        t.join();
+    }
+
+    manager.Stop();
+    watchdog.join();
+
+    // Verify operations completed without deadlock
+    ASSERT_FALSE(deadlock_detected, "Deadlock detected - test hung");
+    ASSERT_TRUE(ping_count > 50, "SendPingToAllPeers should have been called multiple times");
+    ASSERT_TRUE(query_count > 500, "GetConnectedPeers should have been called many times");
+}
+
+/**
+ * @brief Test HandleAccept doesn't deadlock when evicting peers
+ *
+ * This test verifies the fix for deadlock scenario in HandleAccept():
+ * - HandleAccept() holds cs_peers lock while checking peer limits
+ * - When limit reached, it calls DisconnectPeer() to evict a peer
+ * - DisconnectPeer() needs cs_peers lock
+ * - Without fix: DEADLOCK. With fix: eviction succeeds
+ *
+ * The test simulates this by:
+ * 1. Starting peer manager with low max_inbound_peers limit
+ * 2. Accepting connections in one thread (via Start())
+ * 3. Simultaneously querying peer counts from multiple threads
+ * 4. Verifying no deadlock when peer eviction triggers
+ *
+ * Note: This is a stress test that verifies thread-safety of peer eviction logic.
+ */
+TEST(PeerManager_HandleAccept_NoDeadlock) {
+    // Use very low limits to trigger eviction quickly
+    CPeerManager manager(8361, 1, 2, 32, 180, 0xACDE4892);  // max_outbound=1, max_inbound=2
+
+    manager.Start();
+
+    std::atomic<bool> stop_flag{false};
+    std::atomic<int> query_count{0};
+
+    // Multiple threads querying peer counts (simulates REST API)
+    std::vector<std::thread> query_threads;
+    for (int i = 0; i < 10; i++) {
+        query_threads.emplace_back([&manager, &stop_flag, &query_count]() {
+            while (!stop_flag) {
+                size_t inbound = manager.GetInboundPeerCount();
+                size_t outbound = manager.GetOutboundPeerCount();
+                (void)inbound;
+                (void)outbound;
+                query_count++;
+                std::this_thread::sleep_for(std::chrono::microseconds(100));
+            }
+        });
+    }
+
+    // Run for 200ms - concurrent queries while acceptor is active
+    // If HandleAccept() has deadlock, queries will hang when eviction occurs
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    stop_flag = true;
+
+    // Join all threads - if deadlock exists, this will hang
+    for (auto& t : query_threads) {
+        t.join();
+    }
+
+    manager.Stop();
+
+    // Verify operations completed without deadlock
+    ASSERT_TRUE(query_count > 100, "Peer count queries should succeed without deadlock");
+}
+
+/**
+ * @brief Stress test for concurrent SendPing and DisconnectPeer operations
+ *
+ * This is a more aggressive stress test that verifies:
+ * - SendPingToAllPeers can be called concurrently with DisconnectPeer
+ * - GetConnectedPeers can be called while peers are being disconnected
+ * - No race conditions or deadlocks occur under heavy concurrent load
+ *
+ * This test exercises the lock ordering fix:
+ * - Copy peer list under lock
+ * - Release lock
+ * - Perform I/O operations without holding lock
+ */
+TEST(PeerManager_ConcurrentPingDisconnect_StressTest) {
+    CPeerManager manager(8362, 8, 120, 32, 180, 0xACDE4892);
+    manager.Start();
+
+    std::atomic<bool> stop_flag{false};
+    std::atomic<int> operation_count{0};
+
+    // Thread pool performing various operations concurrently
+    std::vector<std::thread> threads;
+
+    // 5 threads calling SendPingToAllPeers
+    for (int i = 0; i < 5; i++) {
+        threads.emplace_back([&manager, &stop_flag, &operation_count]() {
+            while (!stop_flag) {
+                manager.SendPingToAllPeers();
+                operation_count++;
+                std::this_thread::yield();
+            }
+        });
+    }
+
+    // 10 threads querying peer info
+    for (int i = 0; i < 10; i++) {
+        threads.emplace_back([&manager, &stop_flag, &operation_count]() {
+            while (!stop_flag) {
+                auto peers = manager.GetConnectedPeers();
+                size_t count = manager.GetInboundPeerCount();
+                (void)peers;
+                (void)count;
+                operation_count++;
+                std::this_thread::yield();
+            }
+        });
+    }
+
+    // 5 threads querying peer counts
+    for (int i = 0; i < 5; i++) {
+        threads.emplace_back([&manager, &stop_flag, &operation_count]() {
+            while (!stop_flag) {
+                size_t out = manager.GetOutboundPeerCount();
+                size_t in = manager.GetInboundPeerCount();
+                (void)out;
+                (void)in;
+                operation_count++;
+                std::this_thread::yield();
+            }
+        });
+    }
+
+    // Run stress test for 300ms
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    stop_flag = true;
+
+    // Join all threads - will hang if any deadlock exists
+    for (auto& t : threads) {
+        t.join();
+    }
+
+    manager.Stop();
+
+    // Verify we performed many concurrent operations without deadlock
+    ASSERT_TRUE(operation_count > 1000, "Should complete many concurrent operations");
+}

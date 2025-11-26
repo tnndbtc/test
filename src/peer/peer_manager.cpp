@@ -483,6 +483,8 @@ void CPeerManager::HandleAccept(const boost::system::error_code& ec, boost::asio
     auto p_socket = std::make_shared<boost::asio::ip::tcp::socket>(std::move(socket));
 
     // Check peer limits and enforce subnet diversity
+    // Collect peer to evict (if needed) while holding lock, then disconnect outside lock
+    std::shared_ptr<CPeerNode> p_peer_to_evict;
     {
         std::lock_guard<std::mutex> lock(cs_peers);
         if (m_inbound_peers.size() >= static_cast<size_t>(n_max_inbound_peers)) {
@@ -508,7 +510,7 @@ void CPeerManager::HandleAccept(const boost::system::error_code& ec, boost::asio
                 LOG_INFO("Max inbound peers reached. Dropping peer " + m_inbound_peers[random_idx]->GetIdentifier() + " from same subnet " + str_new_subnet +
                          " to accept new connection");
 
-                DisconnectPeer(m_inbound_peers[random_idx]);
+                p_peer_to_evict = m_inbound_peers[random_idx];
             } else {
                 // No peer from same subnet - drop a random peer anyway for network diversity
                 std::vector<size_t> connected_indices;
@@ -527,7 +529,7 @@ void CPeerManager::HandleAccept(const boost::system::error_code& ec, boost::asio
                              m_inbound_peers[random_idx]->GetIdentifier() +
                              " to accept new connection from " + str_ip);
 
-                    DisconnectPeer(m_inbound_peers[random_idx]);
+                    p_peer_to_evict = m_inbound_peers[random_idx];
                 } else {
                     // No connected peers - should not happen, but accept as fallback
                     LOG_ERROR("Maximum inbound peers reached but no connected peers found, add peer connection from " +
@@ -535,6 +537,17 @@ void CPeerManager::HandleAccept(const boost::system::error_code& ec, boost::asio
                 }
             }
         }
+    }
+
+    // Disconnect peer outside the lock to avoid deadlock
+    // DisconnectPeer() needs cs_peers, so we must not hold it here
+    if (p_peer_to_evict) {
+        DisconnectPeer(p_peer_to_evict);
+    }
+
+    // Now register the new peer
+    {
+        std::lock_guard<std::mutex> lock(cs_peers);
 
         LOG_INFO("Accepted inbound peer connection from " + str_ip + ":" + std::to_string(n_peer_port));
 
