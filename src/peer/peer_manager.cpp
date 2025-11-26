@@ -1910,45 +1910,32 @@ size_t CPeerManager::SendPingToAllPeers() {
     size_t n_sent = 0;
     auto ping_send_time = std::chrono::steady_clock::now();
 
+    // Copy peer list while holding lock, then release before sending
+    // This prevents deadlock: SendMessageAsync -> HandleAsyncWrite -> DisconnectPeer also needs cs_peers
+    std::vector<std::shared_ptr<CPeerNode>> peers_to_ping;
     {
         std::lock_guard<std::mutex> lock(cs_peers);
+        peers_to_ping.reserve(m_outbound_peers.size() + m_inbound_peers.size());
+        peers_to_ping.insert(peers_to_ping.end(), m_outbound_peers.begin(), m_outbound_peers.end());
+        peers_to_ping.insert(peers_to_ping.end(), m_inbound_peers.begin(), m_inbound_peers.end());
+    }
 
-        // Send PING to outbound peers using async I/O
-        for (auto& p_peer : m_outbound_peers) {
-            if (p_peer && p_peer->IsConnected() && p_peer->GetSocket()) {
-                // Create PING message (nonce is auto-generated)
-                CPingMessage ping_message(m_n_network_magic);
-                uint32_t n_nonce = ping_message.GetNonce();
+    // Send PING to all peers (without holding cs_peers lock)
+    for (auto& p_peer : peers_to_ping) {
+        if (p_peer && p_peer->IsConnected() && p_peer->GetSocket()) {
+            // Create PING message (nonce is auto-generated)
+            CPingMessage ping_message(m_n_network_magic);
+            uint32_t n_nonce = ping_message.GetNonce();
 
-                // Store nonce and send time for verification when PONG arrives
-                p_peer->SetLastPingNonce(n_nonce);
-                p_peer->SetLastPingSendTime(ping_send_time);
+            // Store nonce and send time for verification when PONG arrives
+            p_peer->SetLastPingNonce(n_nonce);
+            p_peer->SetLastPingSendTime(ping_send_time);
 
-                // Send via async I/O
-                SendMessageAsync(p_peer, ping_message);
-                n_sent++;
-                LOG_TRACE("Queued async " + ping_message.GetType() + " with nonce " + std::to_string(n_nonce) + " to outbound peer " +
-                         p_peer->GetIdentifier());
-            }
-        }
-
-        // Send PING to inbound peers (using async I/O)
-        for (auto& p_peer : m_inbound_peers) {
-            if (p_peer && p_peer->IsConnected() && p_peer->GetSocket()) {
-                // Create PING message (nonce is auto-generated)
-                CPingMessage ping_message(m_n_network_magic);
-                uint32_t n_nonce = ping_message.GetNonce();
-
-                // Store nonce and send time for verification when PONG arrives
-                p_peer->SetLastPingNonce(n_nonce);
-                p_peer->SetLastPingSendTime(ping_send_time);
-
-                // Send via async I/O
-                SendMessageAsync(p_peer, ping_message);
-                n_sent++;
-                LOG_TRACE("Queued async " + ping_message.GetType() + " with nonce " + std::to_string(n_nonce) + " to inbound peer " +
-                         p_peer->GetIdentifier());
-            }
+            // Send via async I/O
+            SendMessageAsync(p_peer, ping_message);
+            n_sent++;
+            LOG_TRACE("Queued async " + ping_message.GetType() + " with nonce " + std::to_string(n_nonce) + " to peer " +
+                     p_peer->GetIdentifier());
         }
     }
 

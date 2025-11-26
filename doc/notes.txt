@@ -49,7 +49,7 @@ sudo dnf install gcc gcc-c++ libasan libubsan libtsan
 Ubuntu setup:
 sudo apt update
 # libboost-all-dev has more
-sudo apt install -y openssh-server net-tools git cmake llvm clang lldb lld openssl libssl-dev libboost-dev
+sudo apt install -y openssh-server net-tools git cmake llvm clang lldb lld openssl libssl-dev libboost-dev libasan6
 
 # for claude:
 sudo apt install -y nodejs npm
