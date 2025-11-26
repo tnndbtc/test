@@ -155,20 +155,52 @@ class P2PTest(TestFramework):
         self.assert_equal(total_inbound, 1, f"{total_inbound} (expect to be 1)")
         self.assert_equal(total_outbound, 0, f"{total_outbound} (expect to be 0)")
         peers_list = node0_peer_info.get('peers', [])
-        self.log_info(f"peers_list: " + str(peers_list))
+        self.log_info(f"after node1 connect to node0: node0 peers_list: " + str(peers_list))
+        self.assert_equal(len(peers_list), 1, f"peers_list length expect to be 1")
+        peer = peers_list[0]
+        self.assert_equal(peer["address"], "81.10.0.2", f"peer address should be 81.10.0.2")
+        self.assert_true(peer["inbound"], f"peer is inbound")
+        # peer port is randomly select by OS, so do not assert here
 
         self.help_connect(node2, node0)
-
-        self.help_connect(node3, node0)
-        time.sleep(2)
         node0_peer_info = node0.get_peer_info()
         total_peers = node0_peer_info.get('total_peers', -1)
         total_outbound = node0_peer_info.get('outbound_peers', -1)
         total_inbound = node0_peer_info.get('inbound_peers', -1)
+        self.assert_equal(total_peers, 2, f"{total_peers} (expect to be 2)")
+        self.assert_equal(total_inbound, 2, f"{total_inbound} (expect to be 2)")
+        self.assert_equal(total_outbound, 0, f"{total_outbound} (expect to be 0)")
         peers_list = node0_peer_info.get('peers', [])
-        self.log_info(f"peers_list: " + str(peers_list))
+        self.log_info(f"after node2 connect to node0: node0 peers_list: " + str(peers_list))
+        self.assert_equal(len(peers_list), 2, f"peers_list length expect to be 2")
+        peer0 = peers_list[0]
+        self.assert_equal(peer0["address"], "81.10.0.2", f"peer address should be 81.10.0.2")
+        self.assert_true(peer0["inbound"], f"peer {peer0["address"]} is inbound")
+        peer1 = peers_list[1]
+        self.assert_equal(peer1["address"], "8.8.0.2", f"peer address should be 8.8.0.2")
+        self.assert_true(peer1["inbound"], f"peer {peer1["address"]} is inbound")
+        peer1_p2p_port_prev = peer1["port"]
 
-        # self.log_info(f"setup: Completed - {self.successful_connections}/1 connections established")
+        self.help_connect(node3, node0)
+        time.sleep(1)
+        node0_peer_info = node0.get_peer_info()
+        total_peers = node0_peer_info.get('total_peers', -1)
+        total_outbound = node0_peer_info.get('outbound_peers', -1)
+        total_inbound = node0_peer_info.get('inbound_peers', -1)
+        self.assert_equal(total_peers, 2, f"{total_peers} (expect to be 2)")
+        self.assert_equal(total_inbound, 2, f"{total_inbound} (expect to be 2)")
+        peers_list = node0_peer_info.get('peers', [])
+        self.log_info(f"after node3 connect to node0: node0 peers_list: " + str(peers_list))
+        self.assert_equal(len(peers_list), 2, f"peers_list length expect to be 2")
+        peer0 = peers_list[0]
+        self.assert_equal(peer0["address"], "81.10.0.2", f"peer address should be 81.10.0.2")
+        self.assert_true(peer0["inbound"], f"peer {peer0["address"]} is inbound")
+        peer1 = peers_list[1]
+        self.assert_equal(peer1["address"], "8.8.0.2", f"peer address should be 8.8.0.2")
+        self.assert_true(peer1["inbound"], f"peer {peer1["address"]} is inbound")
+        self.assert_true(peer1_p2p_port_prev != peer1["port"], f"peer {peer1["address"]} p2p port {peer1["port"]} is a different from previous peer port {peer1_p2p_port_prev} because of same subnet eviction")
+
+        self.log_info(f"setup: Completed - peer eviction happened as expected")
 
 if __name__ == "__main__":
     unittest.main()
