@@ -458,33 +458,16 @@ class P2PTest(TestFramework):
         if not self.node:
             raise RuntimeError("Failed to start blockweave node")
 
-        # Set log file path - node0's log is in tmpdir/node0/log/bweave.log
-        self.log_file = self.tmpdir / "node0" / "log" / "bweave.log"
+        # Set log file path - use the shared utility from test_framework
+        self.log_file = self.get_node_log_file(self.node)
 
     def _get_log_position(self):
-        """Get current position in log file for tracking new entries."""
-        try:
-            with open(self.log_file, 'r') as f:
-                f.seek(0, 2)  # Seek to end
-                return f.tell()
-        except Exception as e:
-            self.log_info(f"Could not get log position: {e}")
-            return None
+        """Get current position in log file for tracking new entries (wrapper for compatibility)."""
+        return self.get_log_position(self.log_file)
 
     def _read_new_logs(self, log_position):
-        """Read log entries added since the given position."""
-        if log_position is None:
-            return ""
-        try:
-            platform_specific_behavior = 'r+' # for apple darwin
-            with open(self.log_file, platform_specific_behavior) as f:
-                # on Linux, log contents is still in OS buffer because node only called flush().  Force write to disk first
-                os.fsync(f.fileno())
-                f.seek(log_position)
-                return f.read()
-        except Exception as e:
-            self.log_info(f"Could not read logs: {e}")
-            return ""
+        """Read log entries added since the given position (wrapper for compatibility)."""
+        return self.read_new_logs(self.log_file, log_position)
 
     def test_1_send_valid_inventory_message(self):
         """Test sending INVENTORY message to a node."""

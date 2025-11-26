@@ -43,6 +43,7 @@ class P2PTest(TestFramework):
         'eth0': '10.10.0.2',  # IP on first Docker network
         'eth1': '81.10.0.2',  # IP on second Docker network
         'eth2': '8.8.0.2',  # IP on third Docker network (base IP)
+        'eth3': '203.10.0.2',  # IP on third Docker network (base IP)
     }
 
     def setup_nodes(self):
@@ -74,6 +75,9 @@ class P2PTest(TestFramework):
             elif i == 1:
                 bind_ip = self.interface_ips['eth1']
                 interface = 'eth1'
+            elif i == 4:
+                bind_ip = self.interface_ips['eth3']
+                interface = 'eth3'
             else:
                 bind_ip = self.interface_ips['eth2']
                 interface = 'eth2'
@@ -181,8 +185,8 @@ class P2PTest(TestFramework):
         self.assert_true(peer1["inbound"], f"peer {peer1["address"]} is inbound")
         peer1_p2p_port_prev = peer1["port"]
 
+        # eviction on same subnet
         self.help_connect(node3, node0)
-        time.sleep(1)
         node0_peer_info = node0.get_peer_info()
         total_peers = node0_peer_info.get('total_peers', -1)
         total_outbound = node0_peer_info.get('outbound_peers', -1)
@@ -200,7 +204,46 @@ class P2PTest(TestFramework):
         self.assert_true(peer1["inbound"], f"peer {peer1["address"]} is inbound")
         self.assert_true(peer1_p2p_port_prev != peer1["port"], f"peer {peer1["address"]} p2p port {peer1["port"]} is a different from previous peer port {peer1_p2p_port_prev} because of same subnet eviction")
 
-        self.log_info(f"setup: Completed - peer eviction happened as expected")
+        # Verify log file contains the expected eviction message
+        # Dropping peer 8.8.0.2:48595 from same subnet
+        eviction_msg1 = "Dropping peer 8.8.0.2"
+        eviction_msg2 = "from same subnet"
+        found_eviction1 = self.check_log_for_message(node0, eviction_msg1)
+        found_eviction2 = self.check_log_for_message(node0, eviction_msg2)
+
+        self.assert_true(found_eviction1 and found_eviction2,
+            f"Log file should contain peer eviction message from same subnet: '{eviction_msg1} and {eviction_msg2}'")
+
+        if found_eviction1 and found_eviction2:
+            self.log_info(f"Found expected eviction message in log: '{eviction_msg1} and {eviction_msg2}'")
+
+        # eviction on random peer
+        self.help_connect(node4, node0)
+        node0_peer_info = node0.get_peer_info()
+        total_peers = node0_peer_info.get('total_peers', -1)
+        total_outbound = node0_peer_info.get('outbound_peers', -1)
+        total_inbound = node0_peer_info.get('inbound_peers', -1)
+        self.assert_equal(total_peers, 2, f"{total_peers} (expect to be 2)")
+        self.assert_equal(total_inbound, 2, f"{total_inbound} (expect to be 2)")
+        peers_list = node0_peer_info.get('peers', [])
+        self.log_info(f"after node4 connect to node0: node0 peers_list: " + str(peers_list))
+        self.assert_equal(len(peers_list), 2, f"peers_list length expect to be 2")
+        # no need to check peer0, because it's randomly evicted, so not sure which one is dropped
+        peer1 = peers_list[1]
+        self.assert_equal(peer1["address"], "203.10.0.2", f"peer address should be 203.10.0.2")
+        self.assert_true(peer1["inbound"], f"peer {peer1["address"]} is inbound")
+
+        # Verify log file contains the expected random peer eviction message
+        eviction_msg = "Dropping random peer for network diversity"
+        found_eviction = self.check_log_for_message(node0, eviction_msg)
+
+        self.assert_true(found_eviction,
+            f"Log file should contain random peer eviction message: '{eviction_msg}'")
+
+        if found_eviction:
+            self.log_info(f"Found expected eviction message in log: '{eviction_msg}'")
+
+        self.log_info(f"setup: Completed - peer eviction happened as expected (verified in logs)")
 
 if __name__ == "__main__":
     unittest.main()

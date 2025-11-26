@@ -553,3 +553,90 @@ class TestFramework(unittest.TestCase):
         """Log a debug message."""
         if hasattr(self, 'logger'):
             self.logger.debug(message)
+
+    def get_node_log_file(self, node):
+        """
+        Get the log file path for a given node.
+
+        Args:
+            node: BlockweaveNode instance
+
+        Returns:
+            Path: Path to the node's log file (bweave.log)
+        """
+        # Convert to Path if it's a string
+        datadir = Path(node.datadir) if isinstance(node.datadir, str) else node.datadir
+        return datadir / "log" / "bweave.log"
+
+    def get_log_position(self, log_file):
+        """
+        Get current position in log file for tracking new entries.
+
+        Args:
+            log_file: Path to the log file
+
+        Returns:
+            int: Current file position, or None on error
+        """
+        try:
+            with open(log_file, 'r') as f:
+                f.seek(0, 2)  # Seek to end
+                return f.tell()
+        except Exception as e:
+            self.log_info(f"Could not get log position: {e}")
+            return None
+
+    def read_new_logs(self, log_file, log_position):
+        """
+        Read log entries added since the given position.
+
+        Args:
+            log_file: Path to the log file
+            log_position: Position to start reading from (from get_log_position)
+
+        Returns:
+            str: New log content since position, or empty string on error
+        """
+        if log_position is None:
+            return ""
+        try:
+            import os
+            platform_specific_behavior = 'r+'  # for apple darwin
+            with open(log_file, platform_specific_behavior) as f:
+                # on Linux, log contents is still in OS buffer because node only called flush().
+                # Force write to disk first
+                os.fsync(f.fileno())
+                f.seek(log_position)
+                return f.read()
+        except Exception as e:
+            self.log_info(f"Could not read logs: {e}")
+            return ""
+
+    def check_log_for_message(self, node, message, since_position=None):
+        """
+        Check if a node's log file contains a specific message.
+
+        Args:
+            node: BlockweaveNode instance
+            message: String to search for in the log
+            since_position: Optional position to start reading from (from get_log_position)
+
+        Returns:
+            bool: True if message found, False otherwise
+        """
+        log_file = self.get_node_log_file(node)
+        if not log_file.exists():
+            self.log_warn(f"Log file does not exist: {log_file}")
+            return False
+
+        try:
+            if since_position is not None:
+                log_content = self.read_new_logs(log_file, since_position)
+            else:
+                with open(log_file, 'r') as f:
+                    log_content = f.read()
+
+            return message in log_content
+        except Exception as e:
+            self.log_warn(f"Error checking log for message: {e}")
+            return False
