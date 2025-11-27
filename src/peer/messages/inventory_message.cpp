@@ -37,6 +37,7 @@ std::string CInventoryMessage::GetType() const {
  * Format: [count:4bytes][type:2bytes][hash:32bytes]...
  */
 std::vector<uint8_t> CInventoryMessage::SerializePayload() const {
+    LOG_TRACE("CInventoryMessage::SerializePayload - Starting serialization");
     // Calculate size: 4 bytes count + n * (2 bytes type + 32 bytes hash)
     size_t n_payload_size = MESSAGE_COUNT_SIZE + (m_vec_items.size() * (MESSAGE_TYPE_SIZE + MESSAGE_HASH_SIZE));
     std::vector<uint8_t> payload(n_payload_size);
@@ -51,6 +52,7 @@ std::vector<uint8_t> CInventoryMessage::SerializePayload() const {
 
     // Write each item
     for (const auto& item : m_vec_items) {
+    LOG_TRACE("CInventoryMessage::SerializePayload - Starting serialization");
         // Write type (2 bytes, network byte order)
         uint16_t n_type_network = htons(static_cast<uint16_t>(item.type));
         std::memcpy(payload.data() + n_offset, &n_type_network, MESSAGE_TYPE_SIZE);
@@ -61,6 +63,7 @@ std::vector<uint8_t> CInventoryMessage::SerializePayload() const {
         n_offset += MESSAGE_HASH_SIZE;
     }
 
+    LOG_TRACE("CInventoryMessage::SerializePayload - Success: " + std::to_string(payload.size()) + " bytes");
     return payload;
 }
 

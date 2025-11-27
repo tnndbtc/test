@@ -1,5 +1,6 @@
 // ============= getpeers_message.cpp =============
 #include "getpeers_message.h"
+#include "logger/logger.h"
 
 /**
  * @brief Constructor with magic
@@ -19,6 +20,8 @@ std::string CGetPeersMessage::GetType() const {
  * @brief Serialize (empty payload)
  */
 std::vector<uint8_t> CGetPeersMessage::SerializePayload() const {
+    LOG_TRACE("CGetPeersMessage::SerializePayload - Starting serialization");
+    LOG_TRACE("CGetPeersMessage::SerializePayload - Success: 0 bytes (empty payload)");
     return std::vector<uint8_t>();  // Empty payload
 }
 

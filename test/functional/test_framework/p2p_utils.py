@@ -12,6 +12,139 @@ import time
 import random
 
 
+def create_version_payload(peer_port, our_address="127.0.0.1"):
+    """
+    Create VERSION message payload for P2P handshake.
+
+    This is a standalone helper function that can be used by any test
+    to create a VERSION message payload without needing a P2PConnection instance.
+
+    VERSION payload format (76 bytes total):
+    - protocol_version: 4 bytes (int32_t, big-endian)
+    - timestamp: 8 bytes (int64_t, big-endian, UNIX time)
+    - address_recv: 26 bytes (CNetworkAddress - peer we're connecting to)
+      - services: 8 bytes (uint64_t, big-endian) - set to 0
+      - ipv6: 16 bytes (IPv4-mapped: 10 bytes 0x00, 2 bytes 0xFF, 4 bytes IPv4)
+      - port: 2 bytes (uint16_t, big-endian)
+    - address_from: 26 bytes (CNetworkAddress - our address)
+      - services: 8 bytes (uint64_t, big-endian) - NODE_NETWORK = 1
+      - ipv6: 16 bytes (IPv4-mapped: our_address)
+      - port: 2 bytes (uint16_t, big-endian) - set to 0
+    - nonce: 8 bytes (uint64_t, big-endian) - random value
+    - chain_tip_height: 4 bytes (int32_t, big-endian) - set to 0
+
+    Args:
+        peer_port: Port number of the peer we're connecting to
+        our_address: Our IP address (default: "127.0.0.1")
+
+    Returns:
+        bytes: VERSION message payload (76 bytes)
+    """
+    payload = b""
+
+    # Protocol version (4 bytes)
+    PROTOCOL_VERSION = 1
+    payload += struct.pack('!i', PROTOCOL_VERSION)
+
+    # Timestamp (8 bytes) - current UNIX time
+    timestamp = int(time.time())
+    payload += struct.pack('!q', timestamp)
+
+    # address_recv (26 bytes) - peer we're connecting to
+    # services: 0 (we don't know peer's services yet)
+    payload += struct.pack('!Q', 0)
+    # IPv6 address (16 bytes) - IPv4-mapped for 127.0.0.1
+    ipv6_bytes = b'\x00' * 10 + b'\xff\xff' + b'\x7f\x00\x00\x01'
+    payload += ipv6_bytes
+    # port (2 bytes)
+    payload += struct.pack('!H', peer_port)
+
+    # address_from (26 bytes) - our address
+    # services: NODE_NETWORK = 1
+    NODE_NETWORK = 1
+    payload += struct.pack('!Q', NODE_NETWORK)
+    # IPv6 address (16 bytes) - IPv4-mapped for our_address
+    payload += ipv6_bytes
+    # port (2 bytes) - set to 0
+    payload += struct.pack('!H', 0)
+
+    # nonce (8 bytes) - random value
+    nonce = random.randint(0, 2**64 - 1)
+    payload += struct.pack('!Q', nonce)
+
+    # chain_tip_height (4 bytes) - set to 0 (we don't know)
+    payload += struct.pack('!i', 0)
+
+    return payload
+
+
+def perform_version_verack_handshake(connection):
+    """
+    Perform VERSION/VERACK handshake on an established connection.
+
+    This is a standalone helper function that can be used to perform
+    the handshake on any connection object that has send_message() and
+    receive_message() methods.
+
+    Handshake sequence:
+    1. Send VERSION to peer
+    2. Receive VERSION from peer
+    3. Send VERACK to peer
+    4. Receive VERACK from peer
+
+    Args:
+        connection: Connection object with the following methods:
+            - send_message(message) -> bool
+            - receive_message(timeout=N) -> P2PMessage or None
+            And the following attributes:
+            - port: Peer port number
+
+    Returns:
+        bool: True if handshake successful, False otherwise
+
+    Example:
+        conn = P2PConnection("127.0.0.1", 48333)
+        # Connect socket manually
+        conn.socket = socket.socket(...)
+        conn.socket.connect((conn.host, conn.port))
+        # Perform handshake
+        if perform_version_verack_handshake(conn):
+            # Ready to send/receive messages
+            pass
+    """
+    try:
+        # Step 1: Send VERSION
+        version_payload = create_version_payload(connection.port)
+        version_msg = P2PMessage(MessageType.VERSION, version_payload)
+        if not connection.send_message(version_msg):
+            print("Handshake failed: Could not send VERSION")
+            return False
+
+        # Step 2: Receive VERSION from peer
+        received_version = connection.receive_message(timeout=5)
+        if not received_version or received_version.msg_type != MessageType.VERSION:
+            print(f"Handshake failed: Expected VERSION, got {received_version.msg_type if received_version else 'None'}")
+            return False
+
+        # Step 3: Send VERACK
+        verack_msg = P2PMessage(MessageType.VERACK, b"")
+        if not connection.send_message(verack_msg):
+            print("Handshake failed: Could not send VERACK")
+            return False
+
+        # Step 4: Receive VERACK from peer
+        received_verack = connection.receive_message(timeout=5)
+        if not received_verack or received_verack.msg_type != MessageType.VERACK:
+            print(f"Handshake failed: Expected VERACK, got {received_verack.msg_type if received_verack else 'None'}")
+            return False
+
+        return True
+
+    except Exception as e:
+        print(f"Handshake failed with exception: {e}")
+        return False
+
+
 class MessageType:
     """
     P2P message types - must match MessageType namespace in peer_message.h.
@@ -26,9 +159,8 @@ class MessageType:
     PONG = "pong"
     GET_PEERS = "get_peers"
     PEERS = "peers"
-    TX_IDS = "tx_ids"
-    TXS = "txs"
-    BLOCK = "blocks"
+    TX = "tx"
+    BLOCK = "block"
     GET_CHAIN = "get_chain"
     CHAIN_INFO = "chain_info"
     INVENTORY = "inv"
@@ -42,10 +174,10 @@ class MessageType:
         """Check if a message type string is valid."""
         valid_types = {
             MessageType.PING, MessageType.PONG, MessageType.GET_PEERS,
-            MessageType.PEERS, MessageType.TX_IDS, MessageType.TXS,
-            MessageType.BLOCK, MessageType.GET_CHAIN, MessageType.CHAIN_INFO,
+            MessageType.PEERS, MessageType.TX, MessageType.BLOCK,
+            MessageType.GET_CHAIN, MessageType.CHAIN_INFO,
             MessageType.INVENTORY, MessageType.VERSION, MessageType.VERACK,
-            MessageType.GETDATA
+            MessageType.GETDATA, MessageType.UNKNOWN
         }
         return msg_type in valid_types
 
@@ -190,125 +322,35 @@ class P2PConnection:
         self.timeout = timeout
         self.socket = None
 
-    def _create_version_message(self):
+    def connect(self, do_handshake=True):
         """
-        Create VERSION message payload.
+        Connect to the P2P node and optionally perform VERSION/VERACK handshake.
 
-        VERSION payload format (76 bytes total):
-        - protocol_version: 4 bytes (int32_t, big-endian)
-        - timestamp: 8 bytes (int64_t, big-endian, UNIX time)
-        - address_recv: 26 bytes (CNetworkAddress - peer we're connecting to)
-          - services: 8 bytes (uint64_t, big-endian) - set to 0
-          - ipv6: 16 bytes (IPv4-mapped: 10 bytes 0x00, 2 bytes 0xFF, 4 bytes IPv4)
-          - port: 2 bytes (uint16_t, big-endian)
-        - address_from: 26 bytes (CNetworkAddress - our address)
-          - services: 8 bytes (uint64_t, big-endian) - NODE_NETWORK = 1
-          - ipv6: 16 bytes (IPv4-mapped: 127.0.0.1)
-          - port: 2 bytes (uint16_t, big-endian) - set to 0
-        - nonce: 8 bytes (uint64_t, big-endian) - random value
-        - chain_tip_height: 4 bytes (int32_t, big-endian) - set to 0
+        Args:
+            do_handshake: Whether to perform VERSION/VERACK handshake (default: True)
+                         Set to False if you want to manually control the handshake
 
         Returns:
-            bytes: VERSION message payload (76 bytes)
-        """
-        payload = b""
+            bool: True if connection (and handshake if requested) successful, False otherwise
 
-        # Protocol version (4 bytes)
-        PROTOCOL_VERSION = 1
-        payload += struct.pack('!i', PROTOCOL_VERSION)
-
-        # Timestamp (8 bytes) - current UNIX time
-        timestamp = int(time.time())
-        payload += struct.pack('!q', timestamp)
-
-        # address_recv (26 bytes) - peer we're connecting to
-        # services: 0 (we don't know peer's services yet)
-        payload += struct.pack('!Q', 0)
-        # IPv6 address (16 bytes) - IPv4-mapped for 127.0.0.1
-        ipv6_bytes = b'\x00' * 10 + b'\xff\xff' + b'\x7f\x00\x00\x01'
-        payload += ipv6_bytes
-        # port (2 bytes)
-        payload += struct.pack('!H', self.port)
-
-        # address_from (26 bytes) - our address
-        # services: NODE_NETWORK = 1
-        NODE_NETWORK = 1
-        payload += struct.pack('!Q', NODE_NETWORK)
-        # IPv6 address (16 bytes) - IPv4-mapped for 127.0.0.1
-        payload += ipv6_bytes
-        # port (2 bytes) - set to 0
-        payload += struct.pack('!H', 0)
-
-        # nonce (8 bytes) - random value
-        nonce = random.randint(0, 2**64 - 1)
-        payload += struct.pack('!Q', nonce)
-
-        # chain_tip_height (4 bytes) - set to 0 (we don't know)
-        payload += struct.pack('!i', 0)
-
-        return payload
-
-    def _do_handshake(self):
-        """
-        Perform VERSION/VERACK handshake.
-
-        Handshake sequence:
-        1. Send VERSION to peer
-        2. Receive VERSION from peer
-        3. Send VERACK to peer
-        4. Receive VERACK from peer
-
-        Returns:
-            bool: True if handshake successful, False otherwise
-        """
-        try:
-            # Step 1: Send VERSION
-            version_payload = self._create_version_message()
-            version_msg = P2PMessage(MessageType.VERSION, version_payload)
-            if not self.send_message(version_msg):
-                print("Handshake failed: Could not send VERSION")
-                return False
-
-            # Step 2: Receive VERSION from peer
-            received_version = self.receive_message(timeout=5)
-            if not received_version or received_version.msg_type != MessageType.VERSION:
-                print(f"Handshake failed: Expected VERSION, got {received_version.msg_type if received_version else 'None'}")
-                return False
-
-            # Step 3: Send VERACK
-            verack_msg = P2PMessage(MessageType.VERACK, b"")
-            if not self.send_message(verack_msg):
-                print("Handshake failed: Could not send VERACK")
-                return False
-
-            # Step 4: Receive VERACK from peer
-            received_verack = self.receive_message(timeout=5)
-            if not received_verack or received_verack.msg_type != MessageType.VERACK:
-                print(f"Handshake failed: Expected VERACK, got {received_verack.msg_type if received_verack else 'None'}")
-                return False
-
-            return True
-
-        except Exception as e:
-            print(f"Handshake failed with exception: {e}")
-            return False
-
-    def connect(self):
-        """
-        Connect to the P2P node and perform VERSION/VERACK handshake.
-
-        Returns:
-            bool: True if connection and handshake successful, False otherwise
+        Example without handshake:
+            conn = P2PConnection("127.0.0.1", 48333)
+            if conn.connect(do_handshake=False):
+                # Manually perform handshake or send custom messages
+                if perform_version_verack_handshake(conn):
+                    # Now ready for communication
+                    pass
         """
         try:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.settimeout(self.timeout)
             self.socket.connect((self.host, self.port))
 
-            # Perform VERSION/VERACK handshake
-            if not self._do_handshake():
-                self.close()
-                return False
+            # Optionally perform VERSION/VERACK handshake
+            if do_handshake:
+                if not perform_version_verack_handshake(self):
+                    self.close()
+                    return False
 
             return True
         except Exception as e:

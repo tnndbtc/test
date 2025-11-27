@@ -10,7 +10,7 @@ This test suite covers:
 - Peer message serialization/deserialization
 - SendMessageToPeer functionality
 - BroadcastMessage functionality
-- Different message types (PING, PONG, GET_PEERS, TX_IDS, etc.)
+- Different message types (PING, PONG, GET_PEERS, TX, BLOCK, etc.)
 """
 
 import sys

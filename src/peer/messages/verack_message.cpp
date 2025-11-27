@@ -1,5 +1,6 @@
 // ============= verack_message.cpp =============
 #include "verack_message.h"
+#include "logger/logger.h"
 
 /**
  * @brief Constructor with magic
@@ -19,6 +20,8 @@ std::string CVerackMessage::GetType() const {
  * @brief Serialize (empty payload)
  */
 std::vector<uint8_t> CVerackMessage::SerializePayload() const {
+    LOG_TRACE("CVerackMessage::SerializePayload - Starting serialization");
+    LOG_TRACE("CVerackMessage::SerializePayload - Success: 0 bytes (empty payload)");
     return std::vector<uint8_t>();  // Empty payload
 }
 

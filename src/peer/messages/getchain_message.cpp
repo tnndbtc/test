@@ -1,5 +1,6 @@
 // ============= getchain_message.cpp =============
 #include "getchain_message.h"
+#include "logger/logger.h"
 
 /**
  * @brief Constructor with magic
@@ -19,6 +20,8 @@ std::string CGetChainMessage::GetType() const {
  * @brief Serialize (empty payload)
  */
 std::vector<uint8_t> CGetChainMessage::SerializePayload() const {
+    LOG_TRACE("CGetChainMessage::SerializePayload - Starting serialization");
+    LOG_TRACE("CGetChainMessage::SerializePayload - Success: 0 bytes (empty payload)");
     return std::vector<uint8_t>();  // Empty payload
 }
 

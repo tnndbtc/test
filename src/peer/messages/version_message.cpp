@@ -2,6 +2,7 @@
 #include "version_message.h"
 #include "blockcore/protocol.h"
 #include "utils/settings.h"
+#include "logger/logger.h"
 #include "utils/generate_nonce.h"
 #include <cstring>
 #include <sstream>
@@ -90,6 +91,7 @@ std::string CVersionMessage::GetType() const {
  * - chain_tip_height: 4 bytes (int32_t)
  */
 std::vector<uint8_t> CVersionMessage::SerializePayload() const {
+    LOG_TRACE("CVersionMessage::SerializePayload - Starting serialization");
     std::vector<uint8_t> payload;
     payload.resize(76);  // Pre-allocate exact size needed
     size_t offset = 0;
@@ -134,6 +136,7 @@ std::vector<uint8_t> CVersionMessage::SerializePayload() const {
     std::memcpy(payload.data() + offset, &n_chain_tip_height_network, 4);
     offset += 4;
 
+    LOG_TRACE("CVersionMessage::SerializePayload - Success: " + std::to_string(payload.size()) + " bytes");
     return payload;
 }
 

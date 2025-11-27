@@ -1,5 +1,6 @@
 // ============= ping_message.cpp =============
 #include "ping_message.h"
+#include "logger/logger.h"
 #include <cstring>
 #include <cstdlib>
 #include "utils/generate_nonce.h"
@@ -30,12 +31,14 @@ std::string CPingMessage::GetType() const {
  * @brief Serialize nonce to 4-byte big-endian payload
  */
 std::vector<uint8_t> CPingMessage::SerializePayload() const {
+    LOG_TRACE("CPingMessage::SerializePayload - Starting serialization");
     std::vector<uint8_t> payload(4);
 
     // Convert nonce to network byte order (big-endian)
     uint32_t n_nonce_network = htonl(m_n_nonce);
     std::memcpy(payload.data(), &n_nonce_network, 4);
 
+    LOG_TRACE("CPingMessage::SerializePayload - Success: " + std::to_string(payload.size()) + " bytes");
     return payload;
 }
 

@@ -1,5 +1,6 @@
 // ============= unknown_message.cpp =============
 #include "unknown_message.h"
+#include "logger/logger.h"
 
 /**
  * @brief Constructor with magic
@@ -19,6 +20,8 @@ std::string CUnknownMessage::GetType() const {
  * @brief Serialize empty payload
  */
 std::vector<uint8_t> CUnknownMessage::SerializePayload() const {
+    LOG_TRACE("CUnknownMessage::SerializePayload - Starting serialization");
+    LOG_TRACE("CUnknownMessage::SerializePayload - Success: 0 bytes (empty payload)");
     return std::vector<uint8_t>();  // Empty payload
 }
 

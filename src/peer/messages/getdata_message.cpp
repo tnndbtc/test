@@ -1,6 +1,7 @@
 // ============= getdata_message.cpp =============
 #include "getdata_message.h"
 #include "utils/settings.h"
+#include "logger/logger.h"
 #include <cstring>
 
 // Include network byte order functions
@@ -50,6 +51,7 @@ std::vector<uint8_t> CGetDataMessage::SerializePayload() const {
 
     // Write each item
     for (const auto& item : m_vec_items) {
+    LOG_TRACE("CGetDataMessage::SerializePayload - Starting serialization");
         // Write type (2 bytes, network byte order)
         uint16_t n_type_network = htons(static_cast<uint16_t>(item.type));
         std::memcpy(payload.data() + n_offset, &n_type_network, MESSAGE_TYPE_SIZE);
@@ -60,6 +62,7 @@ std::vector<uint8_t> CGetDataMessage::SerializePayload() const {
         n_offset += MESSAGE_HASH_SIZE;
     }
 
+    LOG_TRACE("CGetDataMessage::SerializePayload - Success: " + std::to_string(payload.size()) + " bytes");
     return payload;
 }
 

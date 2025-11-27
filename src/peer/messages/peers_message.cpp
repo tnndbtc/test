@@ -1,5 +1,6 @@
 // ============= peers_message.cpp =============
 #include "peers_message.h"
+#include "logger/logger.h"
 #include <cstring>
 
 // Include network byte order functions
@@ -35,9 +36,11 @@ std::string CPeersMessage::GetType() const {
  * Format: [count:4bytes][address_length:2bytes][address:N bytes][port:2bytes]...
  */
 std::vector<uint8_t> CPeersMessage::SerializePayload() const {
+    LOG_TRACE("CPeersMessage::SerializePayload - Starting serialization");
     // Calculate total size
     size_t n_total_size = 4;  // 4 bytes for count
     for (const auto& peer : m_vec_peers) {
+    LOG_TRACE("CPeersMessage::SerializePayload - Starting serialization");
         n_total_size += 2 + peer.str_address.size() + 2;  // address_length + address + port
     }
 
@@ -68,6 +71,7 @@ std::vector<uint8_t> CPeersMessage::SerializePayload() const {
         n_offset += 2;
     }
 
+    LOG_TRACE("CPeersMessage::SerializePayload - Success: " + std::to_string(payload.size()) + " bytes");
     return payload;
 }
 

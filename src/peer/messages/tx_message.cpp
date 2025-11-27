@@ -1,6 +1,7 @@
 // ============= tx_message.cpp =============
 #include "tx_message.h"
 #include "utils/settings.h"
+#include "logger/logger.h"
 #include <cstring>
 
 /**
@@ -21,11 +22,14 @@ std::string CTxMessage::GetType() const {
  * @brief Serialize transaction data to binary payload
  */
 std::vector<uint8_t> CTxMessage::SerializePayload() const {
+    LOG_TRACE("CTxMessage::SerializePayload - Starting serialization");
     if (!m_p_tx) {
+        LOG_TRACE("CTxMessage::SerializePayload - Success: Empty payload for null transaction");
         return std::vector<uint8_t>();  // Empty payload for null transaction
     }
     std::string str_serialized = m_p_tx->Serialize();
     std::vector<uint8_t> payload(str_serialized.begin(), str_serialized.end());
+    LOG_TRACE("CTxMessage::SerializePayload - Success: " + std::to_string(payload.size()) + " bytes");
     return payload;
 }
 

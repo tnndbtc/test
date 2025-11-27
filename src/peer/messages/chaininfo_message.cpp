@@ -1,5 +1,6 @@
 // ============= chaininfo_message.cpp =============
 #include "chaininfo_message.h"
+#include "logger/logger.h"
 #include <cstring>
 
 /**
@@ -43,9 +44,11 @@ std::vector<uint8_t> CChainInfoMessage::SerializePayload() const {
 
     // Serialize best block hash string
     if (n_hash_length > 0) {
+    LOG_TRACE("CChainInfoMessage::SerializePayload - Starting serialization");
         payload.insert(payload.end(), m_str_best_block.begin(), m_str_best_block.end());
     }
 
+    LOG_TRACE("CChainInfoMessage::SerializePayload - Success: " + std::to_string(payload.size()) + " bytes");
     return payload;
 }
 
