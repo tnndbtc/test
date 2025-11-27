@@ -1424,7 +1424,7 @@ void CPeerManager::HandleTxMessage(std::shared_ptr<CPeerNode> p_peer_shared, con
     // Add transaction to blockweave mempool
     if (p_blockweave) {
         p_blockweave->AddTransaction(p_tx);
-        LOG_INFO("Added transaction " + p_tx->m_id.GetData() + "... to mempool");
+        LOG_TRACE("Added transaction " + p_tx->m_id.GetData() + "(from: " +  p_tx->m_str_owner + " to: " + p_tx->m_str_target + ") ... to mempool");
 
         // Broadcast INVENTORY for the new transaction (scheduled asynchronously)
         std::vector<std::pair<ObjectType::Type, std::string>> vec_inventory;

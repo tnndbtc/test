@@ -246,6 +246,9 @@ class P2PRelayTest(TestFramework):
 
             time.sleep(1)
 
+        # have to sleep here in Linux, because the calling of get_chain_info() may arrive at out of order, so the call below may return 0 txs on node2 in mempool
+        time.sleep(1)
+
         for i, node in enumerate(self.nodes, start=1):
             chain_info = node.get_chain_info()
             blocks = chain_info.get('blocks', -1)

@@ -444,6 +444,7 @@ std::pair<bool, std::vector<std::shared_ptr<CBlock>>> CBlockweave::VerifyBlock(s
                 });
     
             if (it != m_mempool.end()) {
+                LOG_TRACE("Remove transaction: " + (*it)->m_id.GetData() + " from mempool");
                 m_mempool.erase(it);
                 n_removed++;
             }
