@@ -366,7 +366,7 @@ std::pair<bool, std::vector<std::shared_ptr<CBlock>>> CBlockweave::VerifyBlock(s
     
         // 1. Check if block already exists in map_blocks
         if (map_blocks.find(str_block_hash) != map_blocks.end()) {
-            LOG_TRACE("Block already exists, ignoring: " + str_block_hash + "...");
+            LOG_TRACE("Block already exists (could be expected because of recursive call), ignoring: " + str_block_hash + "...");
             return {false, vec_blocks_to_broadcast};
         }
 
