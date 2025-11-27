@@ -1685,6 +1685,7 @@ bool CPeerManager::AddPeer(const std::string& str_address, int n_port) {
     // Check if we've reached max outbound peers and drop a random one if needed
     // We need to do this atomically to prevent race conditions where
     // multiple threads could pass the size check simultaneously
+    std::shared_ptr<CPeerNode> p_peer_to_drop;
     {
         std::lock_guard<std::mutex> lock(cs_peers);
 
@@ -1716,7 +1717,8 @@ bool CPeerManager::AddPeer(const std::string& str_address, int n_port) {
                 LOG_INFO("Dropping random outbound peer " + m_outbound_peers[random_idx]->GetIdentifier() +
                          " to accept new connection to " + str_address + ":" + std::to_string(n_port));
 
-                DisconnectPeer(m_outbound_peers[random_idx]);
+                // Store peer to disconnect outside the lock to avoid deadlock
+                p_peer_to_drop = m_outbound_peers[random_idx];
             }
         }
 
@@ -1724,6 +1726,12 @@ bool CPeerManager::AddPeer(const std::string& str_address, int n_port) {
         // This prevents other threads from exceeding n_max_outbound_peers
         // while we perform the blocking connection operation
         m_outbound_peers.push_back(nullptr);
+    }
+
+    // Disconnect peer outside the lock to avoid deadlock
+    // DisconnectPeer() needs cs_peers, so we must not hold it here
+    if (p_peer_to_drop) {
+        DisconnectPeer(p_peer_to_drop);
     }
 
     // Perform blocking connection outside the lock
@@ -2085,35 +2093,47 @@ void CPeerManager::RotateOutboundConnections() {
         return;  // Not time to rotate yet
     }
 
-    std::lock_guard<std::mutex> lock(cs_peers);
+    std::vector<std::shared_ptr<CPeerNode>> peers_to_disconnect;
+    {
+        std::lock_guard<std::mutex> lock(cs_peers);
 
-    if (m_outbound_peers.size() < 2) {
-        return;  // Need at least 2 peers to rotate
-    }
-
-    // Find oldest 1-2 connections based on connection time
-    std::vector<std::shared_ptr<CPeerNode>> oldest_peers;
-    for (auto& p_peer : m_outbound_peers) {
-        if (p_peer && p_peer->IsConnected()) {
-            oldest_peers.push_back(p_peer);
+        if (m_outbound_peers.size() < 2) {
+            return;  // Need at least 2 peers to rotate
         }
+
+        // Find oldest 1-2 connections based on connection time
+        std::vector<std::shared_ptr<CPeerNode>> oldest_peers;
+        for (auto& p_peer : m_outbound_peers) {
+            if (p_peer && p_peer->IsConnected()) {
+                oldest_peers.push_back(p_peer);
+            }
+        }
+
+        // Sort by connection time (oldest first)
+        std::sort(oldest_peers.begin(), oldest_peers.end(),
+                  [](const std::shared_ptr<CPeerNode>& a, const std::shared_ptr<CPeerNode>& b) {
+                      return a->GetConnectionTime() < b->GetConnectionTime();
+                  });
+
+        // Store peers to disconnect
+        int n_to_disconnect = std::min(2, static_cast<int>(oldest_peers.size()));
+        for (int i = 0; i < n_to_disconnect; i++) {
+            LOG_INFO("Rotating out outbound peer: " + oldest_peers[i]->GetIdentifier());
+            peers_to_disconnect.push_back(oldest_peers[i]);
+        }
+
+        m_last_rotation_time = now;
     }
 
-    // Sort by connection time (oldest first)
-    std::sort(oldest_peers.begin(), oldest_peers.end(),
-              [](const std::shared_ptr<CPeerNode>& a, const std::shared_ptr<CPeerNode>& b) {
-                  return a->GetConnectionTime() < b->GetConnectionTime();
-              });
-
-    // Disconnect 1-2 oldest connections
-    int n_to_disconnect = std::min(2, static_cast<int>(oldest_peers.size()));
-    for (int i = 0; i < n_to_disconnect; i++) {
-        LOG_INFO("Rotating out outbound peer: " + oldest_peers[i]->GetIdentifier());
-        DisconnectPeer(oldest_peers[i]);
+    // Disconnect peers outside the lock to avoid deadlock
+    // DisconnectPeer() needs cs_peers, so we must not hold it here
+    for (auto& p_peer : peers_to_disconnect) {
+        DisconnectPeer(p_peer);
     }
 
-    m_last_rotation_time = now;
-    LOG_INFO("Rotated " + std::to_string(n_to_disconnect) + " outbound connections");
+    if (!peers_to_disconnect.empty()) {
+        LOG_INFO("Rotated " + std::to_string(peers_to_disconnect.size()) + " outbound connections");
+    }
 }
 
 // ============= Subnet-Based Inbound Rotation =============
@@ -2128,40 +2148,46 @@ std::string CPeerManager::GetSubnet(const std::string& str_address) {
 }
 
 void CPeerManager::EnforceSubnetDiversity() {
-    std::lock_guard<std::mutex> lock(cs_peers);
+    std::vector<std::shared_ptr<CPeerNode>> peers_to_disconnect;
+    {
+        std::lock_guard<std::mutex> lock(cs_peers);
 
-    // Count connections per subnet
-    std::map<std::string, std::vector<std::shared_ptr<CPeerNode>>> subnet_connections;
+        // Count connections per subnet
+        std::map<std::string, std::vector<std::shared_ptr<CPeerNode>>> subnet_connections;
 
-    for (auto& p_peer : m_inbound_peers) {
-        if (p_peer && p_peer->IsConnected()) {
-            std::string str_subnet = GetSubnet(p_peer->GetAddress());
-            subnet_connections[str_subnet].push_back(p_peer);
+        for (auto& p_peer : m_inbound_peers) {
+            if (p_peer && p_peer->IsConnected()) {
+                std::string str_subnet = GetSubnet(p_peer->GetAddress());
+                subnet_connections[str_subnet].push_back(p_peer);
+            }
+        }
+
+        // Disconnect one oldest connection from each subnet that has multiple connections
+        // Since there is one addpeer request, just remove one oldest peer from the same subnet
+        for (auto& pair : subnet_connections) {
+            if (pair.second.size() > 1) {
+                // Sort by connection time (oldest first)
+                std::sort(pair.second.begin(), pair.second.end(),
+                         [](const std::shared_ptr<CPeerNode>& a, const std::shared_ptr<CPeerNode>& b) {
+                             return a->GetConnectionTime() < b->GetConnectionTime();
+                         });
+
+                // Store the oldest connection from this subnet to disconnect later
+                LOG_INFO("Enforcing subnet diversity: will disconnect oldest peer from subnet " +
+                         pair.first + ": " + pair.second[0]->GetIdentifier());
+                peers_to_disconnect.push_back(pair.second[0]);
+            }
         }
     }
 
-    // Disconnect one oldest connection from each subnet that has multiple connections
-    // Since there is one addpeer request, just remove one oldest peer from the same subnet
-    int n_disconnected = 0;
-
-    for (auto& pair : subnet_connections) {
-        if (pair.second.size() > 1) {
-            // Sort by connection time (oldest first)
-            std::sort(pair.second.begin(), pair.second.end(),
-                     [](const std::shared_ptr<CPeerNode>& a, const std::shared_ptr<CPeerNode>& b) {
-                         return a->GetConnectionTime() < b->GetConnectionTime();
-                     });
-
-            // Disconnect only the oldest connection from this subnet
-            LOG_INFO("Enforcing subnet diversity: disconnecting oldest peer from subnet " +
-                     pair.first + ": " + pair.second[0]->GetIdentifier());
-            DisconnectPeer(pair.second[0]);
-            n_disconnected++;
-        }
+    // Disconnect peers outside the lock to avoid deadlock
+    // DisconnectPeer() needs cs_peers, so we must not hold it here
+    for (auto& p_peer : peers_to_disconnect) {
+        DisconnectPeer(p_peer);
     }
 
-    if (n_disconnected > 0) {
-        LOG_INFO("Enforced subnet diversity: disconnected " + std::to_string(n_disconnected) + " peers");
+    if (!peers_to_disconnect.empty()) {
+        LOG_INFO("Enforced subnet diversity: disconnected " + std::to_string(peers_to_disconnect.size()) + " peers");
     }
 }
 

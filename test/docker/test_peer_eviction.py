@@ -237,6 +237,18 @@ class P2PTest(TestFramework):
         eviction_msg = "Dropping random peer for network diversity"
         found_eviction = self.check_log_for_message(node0, eviction_msg)
 
+        # eviction on outbound peer
+        self.help_connect(node4, node1)
+        node4_peer_info = node4.get_peer_info()
+        total_peers = node4_peer_info.get('total_peers', -1)
+        total_outbound = node4_peer_info.get('outbound_peers', -1)
+        total_inbound = node4_peer_info.get('inbound_peers', -1)
+        self.assert_equal(total_peers, 1, f"node4 total peers: {total_peers} (expect to be 1)")
+        self.assert_equal(total_inbound, 0, f"node4 total inbound: {total_inbound} (expect to be 0)")
+        self.assert_equal(total_outbound, 1, f"node4 total outbound: {total_outbound} (expect to be 1)")
+        peers_list = node4_peer_info.get('peers', [])
+        self.log_info(f"after node4 connect to node1: node4 peers_list: " + str(peers_list))
+        self.assert_equal(len(peers_list), 1, f"peers_list length expect to be 1")
         self.assert_true(found_eviction,
             f"Log file should contain random peer eviction message: '{eviction_msg}'")
 

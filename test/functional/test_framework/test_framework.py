@@ -198,7 +198,10 @@ class TestFramework(unittest.TestCase):
         # Add file handler for this test
         file_handler = logging.FileHandler(log_file)
         file_handler.setLevel(logging.DEBUG)
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        # Use custom format with UTC time in brackets and milliseconds
+        formatter = logging.Formatter('[%(asctime)s.%(msecs)03d UTC] - %(name)s - %(levelname)s - %(message)s',
+                                      datefmt='%Y-%m-%d %H:%M:%S')
+        formatter.converter = time.gmtime  # Use UTC time instead of local time
         file_handler.setFormatter(formatter)
         self.logger.addHandler(file_handler)
 
