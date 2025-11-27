@@ -484,6 +484,7 @@ std::pair<bool, std::vector<std::shared_ptr<CBlock>>> CBlockweave::VerifyBlock(s
         std::unique_lock<std::shared_mutex> lock_blocks(cs_rw_map_blocks);
         std::unique_lock<std::shared_mutex> lock_orphans(cs_rw_map_orphan_blocks);
         std::unique_lock<std::shared_mutex> lock_hashes(cs_rw_m_block_hashes);
+        std::unique_lock<std::shared_mutex> lock_mempool(cs_rw_m_mempool);
 
         LOG_INFO("Block #" + std::to_string(p_block->GetHeight()) + " verified and added to blockchain");
     
@@ -529,7 +530,27 @@ std::pair<bool, std::vector<std::shared_ptr<CBlock>>> CBlockweave::VerifyBlock(s
                 if (p_orphan->GetHeight() > m_current_block->GetHeight()) {
                     m_current_block = p_orphan;
                 }
-    
+
+                // Remove duplicate transactions from mempool
+                const auto& orphan_txs = p_orphan->GetTransactions();
+                size_t n_removed = 0;
+                for (const auto& p_block_tx : orphan_txs) {
+                    auto it = std::find_if(m_mempool.begin(), m_mempool.end(),
+                        [&p_block_tx](const std::shared_ptr<CTransaction>& p_mempool_tx) {
+                            return p_mempool_tx->m_id == p_block_tx->m_id;
+                        });
+
+                    if (it != m_mempool.end()) {
+                        m_mempool.erase(it);
+                        n_removed++;
+                    }
+                }
+
+                if (n_removed > 0) {
+                    LOG_INFO("Removed " + std::to_string(n_removed) +
+                             " duplicate transactions from mempool for orphan block");
+                }
+
                 // Add to broadcast list
                 vec_blocks_to_broadcast.push_back(p_orphan);
     
