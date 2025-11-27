@@ -294,6 +294,11 @@ size_t CBlockweave::GetBlockCount() const {
     return map_blocks.size();
 }
 
+size_t CBlockweave::GetOrphanBlocksSize() const {
+    std::shared_lock<std::shared_mutex> lock(cs_rw_map_orphan_blocks);
+    return map_orphan_blocks.size();
+}
+
 bool CBlockweave::HasTransactionInMempool(const std::string& str_tx_hash) const {
     std::shared_lock<std::shared_mutex> lock(cs_rw_m_mempool);
 

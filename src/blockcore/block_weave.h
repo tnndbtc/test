@@ -52,6 +52,7 @@ public:
     virtual bool IsMiningEnabled() const override;
     virtual size_t GetMempoolSize() const override;
     virtual size_t GetBlockCount() const override;
+    virtual size_t GetOrphanBlocksSize() const override;
     virtual bool HasTransactionInMempool(const std::string& str_tx_hash) const override;
     virtual void SetPeerManager(IPeerManager* p_mgr) override;
 
