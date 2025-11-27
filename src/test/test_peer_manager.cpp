@@ -546,7 +546,7 @@ TEST(PeerManager_SendPing_NoDeadlock) {
         while (!stop_flag) {
             manager.SendPingToAllPeers();
             ping_count++;
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            std::this_thread::yield();
         }
     });
 
