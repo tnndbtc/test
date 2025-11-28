@@ -8,6 +8,23 @@ PROJECT_ROOT=$(dirname "$(dirname "$SCRIPT_DIR")")
 # Move to project root
 cd "$PROJECT_ROOT" || exit 1
 
+# Parse command-line arguments
+f_keep_container=false
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --keep-container)
+            f_keep_container=true
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [--keep-container]"
+            echo "  --keep-container: Keep the container running after test for debugging"
+            exit 1
+            ;;
+    esac
+done
+
 CONTAINER_NAME="bweave"
 IMAGE_TAG="bweave_test"
 IMAGE_NAME="bweave_test:latest"
@@ -63,3 +80,40 @@ docker network connect --ip 203.10.0.2 net203 "$CONTAINER_NAME"
 echo "docker exec $CONTAINER_NAME bash -c \"rm -rf build/ && ./configure --debug --generator=\"Unix Makefiles\" && cd build && make -j8\""
 docker exec "$CONTAINER_NAME" bash -c "rm -rf build/ && ./configure --debug --generator=\"Unix Makefiles\" && cd build && make -j8"
 docker exec "$CONTAINER_NAME" bash -c "cd test/docker && cp ../functional/test_runner.py . && ./test_runner.py test_peer_eviction.py --nocleanup"
+
+# Capture the test exit status
+n_test_status=$?
+
+# Cleanup if test was successful and --keep-container was not specified
+if [ $n_test_status -eq 0 ]; then
+    echo ""
+    echo "Test passed successfully!"
+
+    if [ "$f_keep_container" = true ]; then
+        echo "Container and image kept for debugging (--keep-container specified)"
+        echo "Container name: $CONTAINER_NAME"
+        echo "To stop and remove manually, run:"
+        echo "  docker stop $CONTAINER_NAME"
+        echo "  docker rm $CONTAINER_NAME"
+        echo "  docker rmi $IMAGE_NAME"
+    else
+        echo "Cleaning up container and image to save space..."
+        echo "docker stop $CONTAINER_NAME"
+        docker stop "$CONTAINER_NAME"
+        echo "docker rm $CONTAINER_NAME"
+        docker rm "$CONTAINER_NAME"
+        echo "docker rmi $IMAGE_NAME"
+        docker rmi "$IMAGE_NAME"
+        echo "Removing Docker networks..."
+        docker network rm net10 net8 net203 net81
+        echo "Cleanup complete!"
+    fi
+else
+    echo ""
+    echo "Test failed with exit status $n_test_status"
+    echo "Container kept for debugging"
+    echo "Container name: $CONTAINER_NAME"
+    echo "To inspect: docker exec -it $CONTAINER_NAME bash"
+fi
+
+exit $n_test_status
