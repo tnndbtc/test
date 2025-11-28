@@ -123,7 +123,7 @@ class BlockUtils:
                 cumulative_data_size += len(data.encode('utf-8'))
 
         # Build transaction IDs string for mining
-        # Transaction ID is computed as hash of owner + target + data + reward + timestamp + type
+        # Transaction ID is computed as hash of owner + target + data + reward + timestamp + type + metadata
         tx_ids_str = ""
         for tx in transactions:
             tx_id_input = tx['owner'] + tx['target']
@@ -135,6 +135,10 @@ class BlockUtils:
             tx_id_input += str(tx['reward'])
             tx_id_input += str(tx['timestamp'])
             tx_id_input += str(tx['type'])
+            # Include metadata if present (matches C++ transaction.cpp:110)
+            metadata = tx.get('metadata', '')
+            if metadata:
+                tx_id_input += metadata
 
             # Compute hash (matching C++ implementation)
             tx_id_hash = hashlib.sha256(tx_id_input.encode('utf-8')).digest()

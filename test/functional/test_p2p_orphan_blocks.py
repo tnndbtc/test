@@ -17,6 +17,7 @@ queued in the orphan pool and processed when their parent arrives.
 import sys
 import time
 import unittest
+import json
 from test_framework import TestFramework
 from test_framework.block_utils import BlockUtils
 from test_framework.p2p_utils import MessageType, P2PMessage, P2PConnection
@@ -341,7 +342,147 @@ class OrphanBlocksTest(TestFramework):
         OrphanBlocksTest.latest_block = orphan_block3
         self.log_info(f"Updated latest_block to orphan_block3 (height {orphan_block3['height']}), next_block_height is {OrphanBlocksTest.next_block_height}")
 
-    def test_4_max_orphanpool_size(self):
+    def test_4_block_with_tx(self):
+        """
+        Test orphan blocks containing transactions.
+
+        Verifies that:
+        1. Transactions can be sent via P2P TX messages
+        2. Transactions are added to mempool
+        3. Blocks containing transactions can be created and mined
+        4. Orphan blocks with transactions are properly queued
+        5. When parent arrives, both blocks are processed and transactions removed from mempool
+        6. Transactions are persisted in the blockchain
+        """
+        self.log_info("test_4_block_with_tx: Testing orphan blocks with transactions...")
+
+        # Step 1: Create parent transaction (alice -> bob)
+        parent_tx = {
+            'owner': 'test_4_alice',
+            'target': 'test_4_bob',
+            'data': b'parent_transaction_data',
+            'reward': 1000,
+            'timestamp': int(time.time() * 1e9),  # nanoseconds
+            'type': 0,  # TRANSFER type
+            'metadata': json.dumps({'test': 'parent_tx'})
+        }
+        self.log_info(f"Created parent transaction: alice -> bob")
+
+        # Step 2: Create child transaction (bob -> charlie, depends on parent)
+        child_tx = {
+            'owner': 'test_4_bob',  # Same as parent's target (dependency)
+            'target': 'test_4_charlie',
+            'data': b'child_transaction_data',
+            'reward': 500,
+            'timestamp': int(time.time() * 1e9),
+            'type': 0,  # TRANSFER type
+            'metadata': json.dumps({
+                'test': 'child_tx',
+                'parent_tx_owner': 'test_4_alice',  # Reference to parent
+                'note': 'depends_on_parent'
+            })
+        }
+        self.log_info(f"Created child transaction: bob -> charlie (depends on parent)")
+
+        # Step 3: Send both transactions via P2P TX messages
+        parent_tx_serialized = BlockUtils.serialize_transaction(parent_tx)
+        child_tx_serialized = BlockUtils.serialize_transaction(child_tx)
+
+        with P2PConnection("127.0.0.1", self.node.p2p_port, timeout=10) as conn:
+            self.log_info("Connected to P2P port for sending transactions")
+
+            # Send parent TX
+            parent_tx_msg = P2PMessage(MessageType.TX, parent_tx_serialized)
+            conn.send_message(parent_tx_msg)
+            self.log_info("Sent parent transaction via P2P")
+
+            # Send child TX
+            child_tx_msg = P2PMessage(MessageType.TX, child_tx_serialized)
+            conn.send_message(child_tx_msg)
+            self.log_info("Sent child transaction via P2P")
+
+            # Wait for processing
+            time.sleep(1)
+
+        # Step 4: Verify mempool size = 2
+        chain_info = self.node.get_chain_info()
+        mempool_size = chain_info.get("mempool_size", 0)
+        self.log_info(f"Mempool size after sending transactions: {mempool_size}")
+        self.assert_equal(mempool_size, 2, "Should have 2 transactions in mempool")
+
+        # Step 5: Create parent block with parent transaction
+        parent_block_height = OrphanBlocksTest.next_block_height
+        parent_block = BlockUtils.create_block(
+            prev_hash_hex=OrphanBlocksTest.latest_block['hash_hex'],
+            height=parent_block_height,
+            miner="test_4_parent_miner",
+            transactions=[parent_tx],  # Include parent transaction
+            mine=True
+        )
+        OrphanBlocksTest.next_block_height += 1
+        self.log_info(f"Created parent block (height {parent_block_height}) with parent tx")
+
+        # Step 6: Create child block with child transaction
+        child_block_height = OrphanBlocksTest.next_block_height
+        child_block = BlockUtils.create_block(
+            prev_hash_hex=parent_block['hash_hex'],
+            height=child_block_height,
+            miner="test_4_child_miner",
+            transactions=[child_tx],  # Include child transaction
+            mine=True
+        )
+        OrphanBlocksTest.next_block_height += 1
+        self.log_info(f"Created child block (height {child_block_height}) with child tx")
+
+        # Step 7: Serialize blocks
+        child_block_serialized = BlockUtils.serialize_block(child_block)
+        parent_block_serialized = BlockUtils.serialize_block(parent_block)
+
+        # Step 8: Send child block first (should become orphan)
+        with P2PConnection("127.0.0.1", self.node.p2p_port, timeout=10) as conn:
+            self.log_info("Sending CHILD block first (should become orphan)")
+            child_block_msg = P2PMessage(MessageType.BLOCK, child_block_serialized)
+            conn.send_message(child_block_msg)
+            time.sleep(1)
+
+            # Verify child block is orphaned
+            chain_info = self.node.get_chain_info()
+            orphan_size = chain_info.get("orphan_blocks_size", 0)
+            self.log_info(f"Orphan blocks size after child: {orphan_size}")
+            self.assert_equal(orphan_size, 1, "Child block should be in orphan pool")
+
+            # Step 9: Send parent block (should process both blocks)
+            self.log_info("Sending PARENT block (should process both blocks)")
+            parent_block_msg = P2PMessage(MessageType.BLOCK, parent_block_serialized)
+            conn.send_message(parent_block_msg)
+            time.sleep(2)  # Allow recursive orphan processing
+
+        # Step 10: Final verification
+        chain_info = self.node.get_chain_info()
+        orphan_size = chain_info.get("orphan_blocks_size", 0)
+        mempool_size = chain_info.get("mempool_size", 0)
+        blocks_count = chain_info.get("blocks", 0)
+
+        self.log_info(f"Final state: orphan_size={orphan_size}, mempool_size={mempool_size}, blocks={blocks_count}")
+
+        # Verify orphan pool is empty
+        self.assert_equal(orphan_size, 0, "Orphan pool should be empty after processing")
+
+        # Verify mempool is empty (all transactions consumed by blocks)
+        self.assert_equal(mempool_size, 0, "Mempool should be empty after blocks processed")
+
+        # Verify both blocks added to blockchain
+        # Expected: 1 genesis + test_2 (2 blocks) + test_3 (4 blocks) + test_4 (2 blocks) = 9 blocks
+        expected_blocks = 9
+        self.assert_equal(blocks_count, expected_blocks, f"Should have {expected_blocks} blocks on disk")
+
+        self.log_info("test_4_block_with_tx completed successfully!")
+
+        # Step 11: Update class state
+        OrphanBlocksTest.latest_block = child_block
+        self.log_info(f"Updated latest_block to child block (height {child_block['height']})")
+
+    def test_5_max_orphanpool_size(self):
         """
         Test orphan pool size limit and eviction.
 
@@ -353,7 +494,7 @@ class OrphanBlocksTest(TestFramework):
 
         Note: Eviction is random (not FIFO) due to unordered_map implementation.
         """
-        self.log_info("test_4_max_orphanpool_size: Testing orphan pool size limit...")
+        self.log_info("test_5_max_orphanpool_size: Testing orphan pool size limit...")
 
         MAX_ORPHAN_BLOCKS = 200  # Matches src/utils/settings.h
 
@@ -369,7 +510,7 @@ class OrphanBlocksTest(TestFramework):
             block = BlockUtils.create_block(
                 prev_hash_hex=fake_parent_hash,
                 height=block_height,
-                miner=f"test_4_test_miner_{i}",
+                miner=f"test_5_test_miner_{i}",
                 timestamp=1762553229520435 + i * 1000000,  # Unique timestamps
                 mine=True
             )
@@ -439,8 +580,7 @@ class OrphanBlocksTest(TestFramework):
             self.log_info("Eviction test passed: orphan pool size constraint enforced")
             self.log_info("Note: Eviction is random (unordered_map), cannot predict which block evicted")
 
-            self.log_info("test_4_max_orphanpool_size completed successfully!")
-
+            self.log_info("test_5_max_orphanpool_size completed successfully!")
 
 if __name__ == "__main__":
     unittest.main()
