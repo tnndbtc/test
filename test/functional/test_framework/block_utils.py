@@ -113,13 +113,32 @@ class BlockUtils:
         if transactions is None:
             transactions = []
 
-        # Calculate cumulative data size
-        cumulative_data_size = sum(tx.get('data_size', 0) for tx in transactions)
+        # Calculate cumulative data size from transaction data
+        cumulative_data_size = 0
+        for tx in transactions:
+            data = tx.get('data', b'')
+            if isinstance(data, bytes):
+                cumulative_data_size += len(data)
+            else:
+                cumulative_data_size += len(data.encode('utf-8'))
 
         # Build transaction IDs string for mining
+        # Transaction ID is computed as hash of owner + target + data + reward + timestamp + type
         tx_ids_str = ""
         for tx in transactions:
-            tx_ids_str += tx.get('id', '')
+            tx_id_input = tx['owner'] + tx['target']
+            data = tx.get('data', b'')
+            if isinstance(data, bytes):
+                tx_id_input += data.decode('utf-8', errors='ignore')
+            else:
+                tx_id_input += data
+            tx_id_input += str(tx['reward'])
+            tx_id_input += str(tx['timestamp'])
+            tx_id_input += str(tx['type'])
+
+            # Compute hash (matching C++ implementation)
+            tx_id_hash = hashlib.sha256(tx_id_input.encode('utf-8')).digest()
+            tx_ids_str += tx_id_hash.hex()
 
         block = {
             'prev_hash_hex': prev_hash_hex,
@@ -147,6 +166,54 @@ class BlockUtils:
             block['hash_hex'] = '0' * 64
 
         return block
+
+    @staticmethod
+    def serialize_transaction(tx):
+        """
+        Serialize a transaction to binary format matching C++ implementation.
+
+        Format (from transaction.cpp:115-171):
+        [owner_len:4][owner][target_len:4][target][data_len:4][data]
+        [reward:8][timestamp:8][type:1][metadata_len:4][metadata]
+
+        Args:
+            tx: Transaction dict with keys: owner, target, data, reward, timestamp, type, metadata
+
+        Returns:
+            bytes: Serialized transaction data
+        """
+        result = b''
+
+        # Owner (length + data)
+        owner_bytes = tx['owner'].encode('utf-8')
+        result += struct.pack('!I', len(owner_bytes))
+        result += owner_bytes
+
+        # Target (length + data)
+        target_bytes = tx['target'].encode('utf-8')
+        result += struct.pack('!I', len(target_bytes))
+        result += target_bytes
+
+        # Data (length + data)
+        data_bytes = tx['data'] if isinstance(tx['data'], bytes) else tx['data'].encode('utf-8')
+        result += struct.pack('!I', len(data_bytes))
+        result += data_bytes
+
+        # Reward (8 bytes, network byte order)
+        result += struct.pack('!Q', tx['reward'])
+
+        # Timestamp (8 bytes, network byte order)
+        result += struct.pack('!Q', tx['timestamp'])
+
+        # Type (1 byte)
+        result += struct.pack('!B', tx['type'])
+
+        # Metadata (length + data)
+        metadata_bytes = tx['metadata'].encode('utf-8')
+        result += struct.pack('!I', len(metadata_bytes))
+        result += metadata_bytes
+
+        return result
 
     @staticmethod
     def serialize_block(block):
@@ -208,11 +275,9 @@ class BlockUtils:
         transactions = block.get('transactions', [])
         result += struct.pack('!I', len(transactions))
 
-        # Each transaction (for now, we'll support empty transactions list)
+        # Each transaction
         for tx in transactions:
-            # This would need transaction serialization
-            # For now, just placeholder
-            tx_data = b''  # TODO: Implement transaction serialization if needed
+            tx_data = BlockUtils.serialize_transaction(tx)
             result += struct.pack('!I', len(tx_data))
             result += tx_data
 

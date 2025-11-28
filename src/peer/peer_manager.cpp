@@ -1450,7 +1450,7 @@ void CPeerManager::HandleBlockMessage(std::shared_ptr<CPeerNode> p_peer_shared, 
 
     LOG_INFO("Received BLOCK from peer " + p_peer_shared->GetIdentifier() +
              " (block #" + std::to_string(p_block->GetHeight()) +
-             ", hash: " + p_block->GetHash().GetData() + "...)");
+             ", hash: " + p_block->GetHash().GetData() + "... miner: " + p_block->GetMiner() + ")");
 
     LOG_TRACE("Block contains " + std::to_string(p_block->GetTransactions().size()) +
              " transactions");

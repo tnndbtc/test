@@ -32,10 +32,36 @@ class OrphanBlocksTest(TestFramework):
     # Set num_nodes as class attribute
     num_nodes = 1
 
+    # Class-level attributes that persist across all test methods
+    # These are shared by all test instances to maintain blockchain state
+    next_block_height = None
+    genesis = None
+    latest_block = None
+
     def setup(self):
         """Setup test environment - single node."""
         self.log_info("Setup: Node started, ready for orphan blocks test")
         self.node = self.nodes[0]
+
+        # Initialize class-level attributes only once (first time setup() is called)
+        if OrphanBlocksTest.next_block_height is None:
+            # Global block number counter to track the next block height
+            # This ensures all test cases use correct block heights
+            # Initialize to 1 (since genesis is at height 0)
+            OrphanBlocksTest.next_block_height = 1
+
+            # Create genesis block once in setup, so all test cases can reuse it
+            OrphanBlocksTest.genesis = BlockUtils.create_genesis_block()
+            self.log_info(f"Genesis block created in setup: {OrphanBlocksTest.genesis['hash_hex']}...")
+
+            # Track the latest block in the blockchain
+            # Test cases should create new blocks pointing to latest_block
+            # and update latest_block at the end of each test case
+            OrphanBlocksTest.latest_block = OrphanBlocksTest.genesis
+        else:
+            self.log_info(f"Reusing genesis block from previous test: {OrphanBlocksTest.genesis['hash_hex']}...")
+            self.log_info(f"Current block height counter: {OrphanBlocksTest.next_block_height}")
+            self.log_info(f"Current latest_block height: {OrphanBlocksTest.latest_block['height']}")
 
     def test_1_verify_orphan_size_tracking(self):
         """
@@ -67,7 +93,7 @@ class OrphanBlocksTest(TestFramework):
         self.log_info(f"orphan_blocks_size: {orphan_blocks_size}")
         self.assert_true(
             orphan_blocks_size == 0,
-            f"orphan_blocks_size should be >= 0, got {orphan_blocks_size}"
+            f"orphan_blocks_size should be 0, got {orphan_blocks_size}"
         )
 
         self.log_info("test_1_verify_orphan_size_tracking completed successfully")
@@ -88,33 +114,34 @@ class OrphanBlocksTest(TestFramework):
         """
         self.log_info("test_2_orphan_block_via_p2p: Testing orphan blocks via P2P...")
 
-        # Step 1: Get genesis block hash
-        # For simplicity, use a known genesis hash or create one
-        genesis = BlockUtils.create_genesis_block()
-        genesis_hash_hex = genesis['hash_hex']
-        self.log_info(f"Genesis hash: {genesis_hash_hex[:16]}...")
+        # Step 1: Use genesis block from setup (class-level attribute)
+        self.log_info(f"Using genesis from setup: {OrphanBlocksTest.genesis['hash_hex']}...")
 
-        # Step 2: Create parent block (height 1)
-        self.log_info("Creating parent block (height 1)...")
+        # Step 2: Create parent block pointing to latest_block (class-level attribute)
+        parent_height = OrphanBlocksTest.next_block_height
+        self.log_info(f"Creating parent block (height {parent_height})...")
         parent_block = BlockUtils.create_block(
-            prev_hash_hex=genesis_hash_hex,
-            height=1,
+            prev_hash_hex=OrphanBlocksTest.latest_block['hash_hex'],
+            height=parent_height,
             miner="test_miner",
             mine=True
         )
-        self.log_info(f"Parent block hash: {parent_block['hash_hex'][:16]}...")
+        self.log_info(f"Parent block hash: {parent_block['hash_hex']}...")
         self.log_info(f"Parent block nonce: {parent_block['nonce']}")
+        OrphanBlocksTest.next_block_height += 1
 
-        # Step 3: Create child block (height 2)
-        self.log_info("Creating child block (height 2)...")
+        # Step 3: Create child block using global block height counter (class-level attribute)
+        child_height = OrphanBlocksTest.next_block_height
+        self.log_info(f"Creating child block (height {child_height})...")
         child_block = BlockUtils.create_block(
             prev_hash_hex=parent_block['hash_hex'],
-            height=2,
+            height=child_height,
             miner="test_miner",
             mine=True
         )
-        self.log_info(f"Child block hash: {child_block['hash_hex'][:16]}...")
+        self.log_info(f"Child block hash: {child_block['hash_hex']}...")
         self.log_info(f"Child block nonce: {child_block['nonce']}")
+        OrphanBlocksTest.next_block_height += 1
 
         # Step 4: Serialize blocks
         parent_serialized = BlockUtils.serialize_block(parent_block)
@@ -125,60 +152,294 @@ class OrphanBlocksTest(TestFramework):
         # Step 5: Connect to node P2P port and send child block first
         self.log_info(f"Connecting to node P2P port {self.node.p2p_port}...")
 
-        try:
-            with P2PConnection("127.0.0.1", self.node.p2p_port, timeout=10) as conn:
-                # Context manager automatically performs VERSION/VERACK handshake
-                self.log_info("Connected successfully (handshake completed)")
+        with P2PConnection("127.0.0.1", self.node.p2p_port, timeout=10) as conn:
+            # Context manager automatically performs VERSION/VERACK handshake
+            self.log_info("Connected successfully (handshake completed)")
 
-                # Send child block first (should become orphan)
-                self.log_info("Sending CHILD block (should become orphan)...")
-                child_msg = P2PMessage(MessageType.BLOCK, child_serialized)
-                conn.send_message(child_msg)
+            # Send child block first (should become orphan)
+            self.log_info("Sending CHILD block (should become orphan)...")
+            child_msg = P2PMessage(MessageType.BLOCK, child_serialized)
+            conn.send_message(child_msg)
 
-                # Wait for node to process
-                time.sleep(1)
+            # Wait for node to process
+            time.sleep(1)
 
-                # Step 6: Check orphan_blocks_size (should be 1)
-                chain_info = self.node.get_chain_info()
-                orphan_size_after_child = chain_info.get("orphan_blocks_size", 0)
-                self.log_info(f"Orphan blocks size after child: {orphan_size_after_child}")
+            # Step 6: Check orphan_blocks_size (should be 1)
+            chain_info = self.node.get_chain_info()
+            orphan_size_after_child = chain_info.get("orphan_blocks_size", 0)
+            self.log_info(f"Orphan blocks size after child: {orphan_size_after_child}")
 
-                self.assert_equal(
-                    orphan_size_after_child,
-                    1,
-                    "Should have 1 orphan block after sending child"
-                )
+            self.assert_equal(
+                orphan_size_after_child,
+                1,
+                "Should have 1 orphan block after sending child"
+            )
 
-                # Step 7: Send parent block (should process both)
-                self.log_info("Sending PARENT block (should process child too)...")
-                parent_msg = P2PMessage(MessageType.BLOCK, parent_serialized)
-                conn.send_message(parent_msg)
+            # Step 7: Send parent block (should process both)
+            self.log_info("Sending PARENT block (should process child too)...")
+            parent_msg = P2PMessage(MessageType.BLOCK, parent_serialized)
+            conn.send_message(parent_msg)
 
-                # Wait for node to process
-                time.sleep(1)
+            # Wait for node to process
+            time.sleep(1)
 
-                # Step 8: Check orphan_blocks_size (should be 0)
-                chain_info = self.node.get_chain_info()
-                orphan_size_after_parent = chain_info.get("orphan_blocks_size", 0)
-                self.log_info(f"Orphan blocks size after parent: {orphan_size_after_parent}")
+            # Step 8: Check orphan_blocks_size (should be 0)
+            chain_info = self.node.get_chain_info()
+            orphan_size_after_parent = chain_info.get("orphan_blocks_size", 0)
+            self.log_info(f"Orphan blocks size after parent: {orphan_size_after_parent}")
 
-                self.assert_equal(
-                    orphan_size_after_parent,
-                    0,
-                    "Should have 0 orphan blocks after sending parent (child should be processed)"
-                )
+            self.assert_equal(
+                orphan_size_after_parent,
+                0,
+                "Should have 0 orphan blocks after sending parent (child should be processed)"
+            )
 
-                self.log_info("test_2_orphan_block_via_p2p completed successfully!")
+            self.log_info("test_2_orphan_block_via_p2p completed successfully!")
 
-        except AssertionError:
-            # Re-raise assertion errors so test failures are properly reported
-            raise
-        except Exception as e:
-            self.log_error(f"P2P connection error: {e}")
-            self.log_info("Note: This test requires P2P connection to work.")
-            self.log_info("      The orphan blocks mechanism is implemented and exposed via API.")
-            # Re-raise the exception so the test fails properly
-            raise
+        # Update class-level latest_block to point to the child block (last block in chain)
+        OrphanBlocksTest.latest_block = child_block
+        self.log_info(f"Updated latest_block to child block (height {child_block['height']}), next_block_height is {OrphanBlocksTest.next_block_height}")
+
+    def test_3_chain_of_orphans(self):
+        """
+        Test chain of 3 orphan blocks arriving in reverse order.
+
+        Steps:
+        1. Create a chain of 4 blocks (parent → orphan1 → orphan2 → orphan3)
+        2. Send orphan3, orphan2, orphan1 (all become orphans)
+        3. Send parent → should process orphan1
+        4. Processing orphan1 triggers processing orphan2
+        5. Processing orphan2 triggers processing orphan3
+        6. Verify all blocks are on disk and orphan pool is empty
+
+        Note: Based on testing, orphan processing might happen one level at a time,
+        so we verify intermediate states.
+        """
+        self.log_info("test_3_chain_of_orphans: Testing chain of orphan blocks...")
+
+        # Use genesis block from setup (class-level attribute)
+        self.log_info(f"Using genesis from setup: {OrphanBlocksTest.genesis['hash_hex']}... latest_block height: {OrphanBlocksTest.latest_block['height']} and next_block_height: {OrphanBlocksTest.next_block_height}")
+
+        # Create block chain pointing to latest_block (class-level attribute)
+        # Use global block height counter (class-level attribute)
+        parent_height = OrphanBlocksTest.next_block_height
+        self.log_info(f"Creating parent block (height {parent_height})...")
+        parent_block = BlockUtils.create_block(
+            prev_hash_hex=OrphanBlocksTest.latest_block['hash_hex'],
+            height=parent_height,
+            miner="test_3_test_miner_parent",
+            mine=True
+        )
+        self.log_info(f"Parent block hash: {parent_block['hash_hex']}... miner: test_3_test_miner_parent")
+        OrphanBlocksTest.next_block_height += 1
+
+        orphan1_height = OrphanBlocksTest.next_block_height
+        self.log_info(f"Creating orphan_block1 (height {orphan1_height})...")
+        orphan_block1 = BlockUtils.create_block(
+            prev_hash_hex=parent_block['hash_hex'],
+            height=orphan1_height,
+            miner="test_3_test_miner1",
+            mine=True
+        )
+        self.log_info(f"Orphan1 block hash: {orphan_block1['hash_hex']}... miner: test_3_test_miner1")
+        OrphanBlocksTest.next_block_height += 1
+
+        orphan2_height = OrphanBlocksTest.next_block_height
+        self.log_info(f"Creating orphan_block2 (height {orphan2_height})...")
+        orphan_block2 = BlockUtils.create_block(
+            prev_hash_hex=orphan_block1['hash_hex'],
+            height=orphan2_height,
+            miner="test_3_test_miner2",
+            mine=True
+        )
+        self.log_info(f"Orphan2 block hash: {orphan_block2['hash_hex']}... miner: test_3_test_miner2")
+        OrphanBlocksTest.next_block_height += 1
+
+        orphan3_height = OrphanBlocksTest.next_block_height
+        self.log_info(f"Creating orphan_block3 (height {orphan3_height})...")
+        orphan_block3 = BlockUtils.create_block(
+            prev_hash_hex=orphan_block2['hash_hex'],
+            height=orphan3_height,
+            miner="test_3_test_miner3",
+            mine=True
+        )
+        self.log_info(f"Orphan3 block hash: {orphan_block3['hash_hex']}... miner: test_3_test_miner3")
+        OrphanBlocksTest.next_block_height += 1
+
+        # Serialize all blocks
+        parent_serialized = BlockUtils.serialize_block(parent_block)
+        orphan1_serialized = BlockUtils.serialize_block(orphan_block1)
+        orphan2_serialized = BlockUtils.serialize_block(orphan_block2)
+        orphan3_serialized = BlockUtils.serialize_block(orphan_block3)
+
+        # Send blocks in reverse order via P2P
+        self.log_info(f"Connecting to node P2P port {self.node.p2p_port}...")
+
+        with P2PConnection("127.0.0.1", self.node.p2p_port, timeout=10) as conn:
+            self.log_info("Connected successfully (handshake completed)")
+
+            # Send orphan_block3 (missing parent: orphan_block2)
+            self.log_info("Sending orphan_block3 (should become orphan)...")
+            msg3 = P2PMessage(MessageType.BLOCK, orphan3_serialized)
+            conn.send_message(msg3)
+            time.sleep(1)
+
+            chain_info = self.node.get_chain_info()
+            orphan_size = chain_info.get("orphan_blocks_size", 0)
+            self.log_info(f"Orphan blocks size after orphan3: {orphan_size}")
+            self.assert_equal(orphan_size, 1, "Should have 1 orphan after sending orphan3")
+
+            # Send orphan_block2 (missing parent: orphan_block1)
+            self.log_info("Sending orphan_block2 (should become orphan)...")
+            msg2 = P2PMessage(MessageType.BLOCK, orphan2_serialized)
+            conn.send_message(msg2)
+            time.sleep(1)
+
+            chain_info = self.node.get_chain_info()
+            orphan_size = chain_info.get("orphan_blocks_size", 0)
+            self.log_info(f"Orphan blocks size after orphan2: {orphan_size}")
+            self.assert_equal(orphan_size, 2, "Should have 2 orphans after sending orphan2")
+
+            # Send orphan_block1 (missing parent: parent_block)
+            self.log_info("Sending orphan_block1 (should become orphan)...")
+            msg1 = P2PMessage(MessageType.BLOCK, orphan1_serialized)
+            conn.send_message(msg1)
+            time.sleep(1)
+
+            chain_info = self.node.get_chain_info()
+            orphan_size = chain_info.get("orphan_blocks_size", 0)
+            self.log_info(f"Orphan blocks size after orphan1: {orphan_size}")
+            self.assert_equal(orphan_size, 3, "Should have 3 orphans after sending orphan1")
+
+            # Send parent_block (triggers recursive processing)
+            self.log_info("Sending parent_block (should recursively process all orphans)...")
+            msg_parent = P2PMessage(MessageType.BLOCK, parent_serialized)
+            conn.send_message(msg_parent)
+
+            # Check orphan processing
+            time.sleep(1)
+
+            # Verify all orphans processed
+            chain_info = self.node.get_chain_info()
+            orphan_size = chain_info.get("orphan_blocks_size", -1)
+            blocks_count = chain_info.get("blocks", -1)
+            # height = chain_info.get("height", 0)
+            mempool_size = chain_info.get("mempool_size", -1)
+
+            self.log_info(f"Final orphan blocks size: {orphan_size}")
+            self.log_info(f"Blocks on disk: {blocks_count}")
+            # self.log_info(f"Chain height: {height}")
+            self.log_info(f"Mempool size: {mempool_size}")
+
+            # Verify orphan pool decreased (at least one level processed)
+            self.assert_true(orphan_size == 0 , f"Orphan pool should decrease to 0, got {orphan_size}")
+            self.assert_true(blocks_count == 7, f"Should have at least 2 blocks processed, got {blocks_count}")
+
+            self.log_info("test_3_chain_of_orphans completed successfully!")
+
+        # Update class-level latest_block to point to orphan_block3 (last block in chain)
+        OrphanBlocksTest.latest_block = orphan_block3
+        self.log_info(f"Updated latest_block to orphan_block3 (height {orphan_block3['height']}), next_block_height is {OrphanBlocksTest.next_block_height}")
+
+    def test_4_max_orphanpool_size(self):
+        """
+        Test orphan pool size limit and eviction.
+
+        Steps:
+        1. Create 201 orphan blocks (all with same non-existent parent)
+        2. Send first 200 blocks → orphan pool should reach MAX_ORPHAN_BLOCKS (200)
+        3. Send 201st block → should trigger eviction
+        4. Verify orphan pool size remains at MAX_ORPHAN_BLOCKS (200)
+
+        Note: Eviction is random (not FIFO) due to unordered_map implementation.
+        """
+        self.log_info("test_4_max_orphanpool_size: Testing orphan pool size limit...")
+
+        MAX_ORPHAN_BLOCKS = 200  # Matches src/utils/settings.h
+
+        # Create a non-existent parent hash
+        fake_parent_hash = "0" * 64  # 64 hex zeros (non-existent block)
+        self.log_info(f"Using fake parent hash: {fake_parent_hash}...")
+
+        # Create 201 orphan blocks using global block height counter (class-level attribute)
+        self.log_info("Creating 201 orphan blocks...")
+        orphan_blocks = []
+        for i in range(201):
+            block_height = OrphanBlocksTest.next_block_height
+            block = BlockUtils.create_block(
+                prev_hash_hex=fake_parent_hash,
+                height=block_height,
+                miner=f"test_4_test_miner_{i}",
+                timestamp=1762553229520435 + i * 1000000,  # Unique timestamps
+                mine=True
+            )
+            orphan_blocks.append(block)
+            OrphanBlocksTest.next_block_height += 1
+
+        self.log_info(f"Created {len(orphan_blocks)} orphan blocks")
+
+        # Serialize all blocks
+        self.log_info("Serializing blocks...")
+        serialized_blocks = []
+        for block in orphan_blocks:
+            serialized = BlockUtils.serialize_block(block)
+            serialized_blocks.append(serialized)
+
+        # Track first and last block hashes
+        first_block_hash = orphan_blocks[0]['hash_hex']
+        last_block_hash = orphan_blocks[200]['hash_hex']  # 201st block (index 200)
+
+        self.log_info(f"First block hash: {first_block_hash}...")
+        self.log_info(f"Last block hash: {last_block_hash}...")
+
+        # Send blocks and monitor orphan pool size
+        self.log_info(f"Connecting to node P2P port {self.node.p2p_port}...")
+
+        with P2PConnection("127.0.0.1", self.node.p2p_port, timeout=10) as conn:
+            self.log_info("Connected successfully (handshake completed)")
+
+            # Send first 200 blocks
+            self.log_info("Sending first 200 blocks...")
+            for i in range(200):
+                msg = P2PMessage(MessageType.BLOCK, serialized_blocks[i])
+                conn.send_message(msg)
+
+                # Check size periodically (every 50 blocks to reduce API calls)
+                if (i + 1) % 50 == 0:
+                    time.sleep(0.5)
+                    chain_info = self.node.get_chain_info()
+                    orphan_size = chain_info.get("orphan_blocks_size", 0)
+                    self.log_info(f"After {i + 1} blocks: orphan_size = {orphan_size}")
+
+            # Allow processing to complete
+            time.sleep(2)
+
+            # Verify pool is at MAX_ORPHAN_BLOCKS
+            chain_info = self.node.get_chain_info()
+            orphan_size = chain_info.get("orphan_blocks_size", 0)
+            self.log_info(f"Orphan pool size after 200 blocks: {orphan_size}")
+            self.assert_equal(orphan_size, MAX_ORPHAN_BLOCKS,
+                            f"Should have {MAX_ORPHAN_BLOCKS} orphans after 200 blocks")
+
+            # Send 201st block (should trigger eviction)
+            self.log_info("Sending 201st block (should trigger eviction)...")
+            msg = P2PMessage(MessageType.BLOCK, serialized_blocks[200])
+            conn.send_message(msg)
+            time.sleep(2)
+
+            # Verify pool size still at MAX_ORPHAN_BLOCKS
+            chain_info = self.node.get_chain_info()
+            orphan_size_after = chain_info.get("orphan_blocks_size", 0)
+            self.log_info(f"Orphan pool size after 201st block: {orphan_size_after}")
+            self.assert_equal(orphan_size_after, MAX_ORPHAN_BLOCKS,
+                            f"Should still have {MAX_ORPHAN_BLOCKS} orphans after eviction")
+
+            # We can only verify size constraint is enforced
+            # Cannot verify specific block eviction due to random eviction policy
+            self.log_info("Eviction test passed: orphan pool size constraint enforced")
+            self.log_info("Note: Eviction is random (unordered_map), cannot predict which block evicted")
+
+            self.log_info("test_4_max_orphanpool_size completed successfully!")
 
 
 if __name__ == "__main__":
