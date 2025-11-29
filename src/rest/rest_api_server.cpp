@@ -449,6 +449,24 @@ void CRestApiServer::Stop() {
     LOG_INFO("Stopping REST API server...");
     f_stop_requested = true;
 
+    // Make a dummy connection to unblock accept() before closing acceptor
+    // The REST API server uses synchronous (blocking) I/O, not asynchronous I/O.
+    // The listener thread blocks waiting for connections with accept(), and in
+    // some implementations, closing the acceptor doesn't properly wake up the blocked thread.
+    // thus, caused hanging on m_listener_thread.join();
+    try {
+        tcp::socket dummy_socket(m_io_context);
+        tcp::endpoint endpoint(asio::ip::address_v4::loopback(), n_port);
+        boost::system::error_code ec;
+        dummy_socket.connect(endpoint, ec);
+        // Ignore errors - acceptor might already be closed
+        if (!ec) {
+            dummy_socket.close();
+        }
+    } catch (...) {
+        // Ignore any exceptions - just a best-effort to unblock
+    }
+
     // Close acceptor to unblock listener
     if (m_acceptor && m_acceptor->is_open()) {
         boost::system::error_code ec;
@@ -514,6 +532,12 @@ void CRestApiServer::ListenerThread() {
             // Accept connection (blocking)
             tcp::socket socket(m_io_context);
             m_acceptor->accept(socket);
+
+            // Check for shutdown immediately after accept
+            if (f_stop_requested) {
+                socket.close();
+                break;
+            }
 
             // Extract socket FD for queue
             int n_client_fd = socket.native_handle();
