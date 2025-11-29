@@ -19,6 +19,9 @@
 #include <thread>
 #include <vector>
 #include <memory>
+#include <boost/asio.hpp>
+#include <boost/beast/core.hpp>
+#include <boost/beast/http.hpp>
 
 // Forward declarations
 class CConfig;
@@ -65,7 +68,10 @@ private:
     const CConfig* p_config;                    ///< Configuration object
     std::string str_miner_address;              ///< Mining reward address
     int n_port;                                 ///< HTTP server port
-    int n_server_socket;                        ///< Listening socket file descriptor
+
+    // Boost.Beast components
+    boost::asio::io_context m_io_context;       ///< Asio I/O context for socket operations
+    std::unique_ptr<boost::asio::ip::tcp::acceptor> m_acceptor;  ///< TCP acceptor for incoming connections
 
     std::atomic<bool> f_running;                ///< Server running state
     std::atomic<bool> f_stop_requested;         ///< Shutdown signal flag
@@ -160,21 +166,14 @@ private:
     std::tuple<int, std::string> HandleRpcMineTrigger();
 
     /**
-     * @brief Parse raw HTTP request into structured form
-     * @param str_raw_request Raw HTTP request string from socket
-     * @param n_client_socket Client socket for response
-     * @return Parsed CHttpRequest structure
-     */
-    CHttpRequest ParseHttpRequest(const std::string& str_raw_request, int n_client_socket);
-
-    /**
-     * @brief Send HTTP response to client
-     * @param n_client_socket Client socket to send response on
+     * @brief Send HTTP response to client using Boost.Beast
+     * @param socket Beast TCP socket to send response on
      * @param n_status_code HTTP status code (200, 404, 500, etc.)
      * @param str_content_type Content-Type header value
      * @param str_body Response body content
      */
-    void SendHttpResponse(int n_client_socket, int n_status_code,
+    void SendHttpResponse(boost::asio::ip::tcp::socket& socket,
+                          int n_status_code,
                           const std::string& str_content_type,
                           const std::string& str_body);
 

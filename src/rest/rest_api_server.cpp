@@ -27,35 +27,20 @@
 #include <algorithm>
 #include <cctype>
 
-// Platform-specific socket headers
-#ifndef _WIN32
-    #include <sys/socket.h>
-    #include <netinet/in.h>
-    #include <unistd.h>
-    #include <arpa/inet.h>
-#else
-    #include <winsock2.h>
-    #include <ws2tcpip.h>
-    #define SHUT_RDWR SD_BOTH
-#endif
+// Boost.Beast and Asio headers
+#include <boost/asio.hpp>
+#include <boost/beast/core.hpp>
+#include <boost/beast/http.hpp>
 #include <fstream>
 #include <random>
 #include <iomanip>
 #include <sys/stat.h>
 
-// ============= Platform-specific socket helpers =============
-
-/**
- * @brief Close socket in a platform-independent way
- * @param socket Socket descriptor to close
- */
-static inline void CloseSocket(int socket) {
-#ifdef _WIN32
-    closesocket(socket);
-#else
-    close(socket);
-#endif
-}
+// Namespace aliases for convenience
+namespace beast = boost::beast;
+namespace http = beast::http;
+namespace asio = boost::asio;
+using tcp = asio::ip::tcp;
 
 // ============= Utility Functions =============
 
@@ -367,7 +352,7 @@ CRestApiServer::CRestApiServer(CBlockweave* p_weave, CPeerManager* p_peer_mgr,
                                int n_port_num)
     : p_blockweave(p_weave), p_peer_manager(p_peer_mgr), p_config(p_cfg),
       str_miner_address(str_miner_addr), n_port(n_port_num),
-      n_server_socket(-1), f_running(false), f_stop_requested(false),
+      f_running(false), f_stop_requested(false),
       p_request_queue(std::make_shared<CRequestQueue>()) {
 
     m_worker_threads.reserve(REST_WORKER_THREADS);
@@ -399,64 +384,48 @@ CRestApiServer::~CRestApiServer() {
  * Returns false if socket creation, bind, or listen fails.
  */
 bool CRestApiServer::Start() {
-    LOG_TRACE("Creating REST API server socket");
-
-    // Create socket
-    n_server_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if (n_server_socket < 0) {
-        std::cerr << "[REST API] Failed to create socket\n";
-        LOG_ERROR("Failed to create REST API server socket");
+    if (f_running) {
+        LOG_WARN("REST API server already running");
         return false;
     }
 
-    // Set socket options
-    int n_opt = 1;
-#ifdef _WIN32
-    setsockopt(n_server_socket, SOL_SOCKET, SO_REUSEADDR, (const char*)&n_opt, sizeof(n_opt));
-#else
-    setsockopt(n_server_socket, SOL_SOCKET, SO_REUSEADDR, &n_opt, sizeof(n_opt));
-#endif
+    try {
+        LOG_TRACE("Creating REST API server acceptor on port " + std::to_string(n_port));
 
-    // Bind socket
-    sockaddr_in server_addr{};
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(n_port);
+        // Create acceptor
+        m_acceptor = std::make_unique<tcp::acceptor>(
+            m_io_context,
+            tcp::endpoint(tcp::v4(), n_port)
+        );
 
-    if (bind(n_server_socket, (sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        std::cerr << "[REST API] Failed to bind to port " << n_port << "\n";
-        LOG_ERROR("Failed to bind REST API server to port " + std::to_string(n_port));
-        CloseSocket(n_server_socket);
+        // Enable SO_REUSEADDR
+        m_acceptor->set_option(asio::socket_base::reuse_address(true));
+
+        LOG_INFO("REST API server listening on port " + std::to_string(n_port));
+
+        // Reset flags
+        f_stop_requested = false;
+        f_running = true;
+
+        // Reset request queue for restart (clears shutdown flag from previous Stop())
+        p_request_queue->Reset();
+
+        // Start listener thread
+        m_listener_thread = std::thread(&CRestApiServer::ListenerThread, this);
+
+        // Start worker threads
+        for (size_t n_i = 0; n_i < REST_WORKER_THREADS; n_i++) {
+            m_worker_threads.emplace_back(&CRestApiServer::WorkerThread, this, n_i);
+        }
+
+        LOG_TRACE("REST API worker threads: " + std::to_string(REST_WORKER_THREADS));
+
+        return true;
+
+    } catch (const std::exception& e) {
+        LOG_ERROR("Failed to start REST API server: " + std::string(e.what()));
         return false;
     }
-    LOG_TRACE("REST API server bound to port " + std::to_string(n_port));
-
-    // Listen
-    if (listen(n_server_socket, 10) < 0) {
-        std::cerr << "[REST API] Failed to listen\n";
-        LOG_ERROR("Failed to listen on REST API server socket");
-        CloseSocket(n_server_socket);
-        return false;
-    }
-
-    f_running = true;
-    f_stop_requested = false;
-
-    // Reset request queue for restart (clears shutdown flag from previous Stop())
-    p_request_queue->Reset();
-
-    // Start listener thread
-    m_listener_thread = std::thread(&CRestApiServer::ListenerThread, this);
-
-    // Start worker threads
-    for (size_t n_i = 0; n_i < REST_WORKER_THREADS; n_i++) {
-        m_worker_threads.emplace_back(&CRestApiServer::WorkerThread, this, n_i);
-    }
-
-    LOG_TRACE("REST API server started on port " + std::to_string(n_port));
-    LOG_TRACE("REST API worker threads: " + std::to_string(REST_WORKER_THREADS));
-
-    return true;
 }
 
 /**
@@ -473,28 +442,31 @@ bool CRestApiServer::Start() {
  * Blocks until all threads have terminated.
  */
 void CRestApiServer::Stop() {
-    if (!f_running) return;
-
-    LOG_INFO("Stopping REST API server");
-    f_stop_requested = true;
-    f_running = false;
-
-    // Shutdown queue
-    p_request_queue->Shutdown();
-
-    // Close server socket
-    if (n_server_socket >= 0) {
-        // Shutdown socket first to wake up blocking accept()
-        shutdown(n_server_socket, SHUT_RDWR);
-        CloseSocket(n_server_socket);
-        n_server_socket = -1;
+    if (!f_running) {
+        return;
     }
 
-    // Join threads
+    LOG_INFO("Stopping REST API server...");
+    f_stop_requested = true;
+
+    // Close acceptor to unblock listener
+    if (m_acceptor && m_acceptor->is_open()) {
+        boost::system::error_code ec;
+        m_acceptor->close(ec);
+        if (ec) {
+            LOG_ERROR("Error closing acceptor: " + ec.message());
+        }
+    }
+
+    // Shutdown request queue to unblock workers
+    p_request_queue->Shutdown();
+
+    // Join listener thread
     if (m_listener_thread.joinable()) {
         m_listener_thread.join();
     }
 
+    // Join all worker threads
     for (auto& thread : m_worker_threads) {
         if (thread.joinable()) {
             thread.join();
@@ -503,6 +475,8 @@ void CRestApiServer::Stop() {
 
     // Clear worker threads vector for clean restart
     m_worker_threads.clear();
+
+    f_running = false;
 
     LOG_INFO("REST API server stopped");
 }
@@ -536,54 +510,33 @@ void CRestApiServer::ListenerThread() {
     LOG_INFO("REST API listener thread started");
 
     while (!f_stop_requested) {
-        // Use select() with timeout to avoid blocking forever in accept()
-        fd_set read_fds;
-        FD_ZERO(&read_fds);
-        FD_SET(n_server_socket, &read_fds);
+        try {
+            // Accept connection (blocking)
+            tcp::socket socket(m_io_context);
+            m_acceptor->accept(socket);
 
-        // Timeout of 100ms to check f_stop_requested frequently
-        struct timeval timeout;
-        timeout.tv_sec = 0;
-        timeout.tv_usec = 100000; // 100ms
+            // Extract socket FD for queue
+            int n_client_fd = socket.native_handle();
 
-        int select_result = select(n_server_socket + 1, &read_fds, nullptr, nullptr, &timeout);
+            // Release socket ownership (worker will wrap it)
+            socket.release();
 
-        if (select_result < 0) {
-            // Error in select() - likely socket was closed
-            if (!f_stop_requested) {
-                std::cerr << "[REST API] Select failed\n";
-                LOG_ERROR("REST API select() failed");
+            // Create request object with socket FD
+            CHttpRequest request;
+            request.n_client_socket = n_client_fd;
+
+            // Enqueue for worker processing
+            p_request_queue->Enqueue(request);
+
+        } catch (const boost::system::system_error& e) {
+            if (f_stop_requested) {
+                break;  // Acceptor closed during shutdown
             }
-            break;
+            LOG_ERROR("Accept error: " + std::string(e.what()));
         }
-
-        if (select_result == 0) {
-            // Timeout - no connections pending, loop again to check f_stop_requested
-            continue;
-        }
-
-        // Socket is ready for accept()
-        sockaddr_in client_addr{};
-        socklen_t client_len = sizeof(client_addr);
-
-        int n_client_socket = accept(n_server_socket, (sockaddr*)&client_addr, &client_len);
-
-        if (n_client_socket < 0) {
-            if (!f_stop_requested) {
-                std::cerr << "[REST API] Accept failed\n";
-                LOG_ERROR("REST API accept() failed");
-            }
-            continue;
-        }
-
-        // Enqueue the client socket for worker threads to handle
-        // Worker threads will read the full request, parse it, process it, and send response
-        CHttpRequest request;
-        request.n_client_socket = n_client_socket;
-        p_request_queue->Enqueue(request);
     }
 
-    LOG_TRACE("REST API listener thread stopped");
+    LOG_INFO("REST API listener thread stopped");
 }
 
 /**
@@ -602,176 +555,86 @@ void CRestApiServer::WorkerThread(int n_worker_id) {
     // Set thread name for easier debugging and logging
     SetThreadName("rest_worker" + std::to_string(n_worker_id));
 
-    LOG_TRACE("REST API worker thread " + std::to_string(n_worker_id) + " started");
+    LOG_INFO("REST API worker " + std::to_string(n_worker_id) + " started");
 
     while (!f_stop_requested) {
         CHttpRequest request;
-        if (p_request_queue->Dequeue(request, 100)) {
-            // Read the full HTTP request from the socket
-            std::string str_request_data;
-            char buffer[4096] = {0};
-            size_t n_content_length = 0;
-            size_t n_header_end_pos = std::string::npos;
-            bool f_headers_complete = false;
 
-            // Read until we have complete headers and body
-            while (true) {
-                ssize_t n_bytes_read = recv(request.n_client_socket, buffer, sizeof(buffer) - 1, 0);
+        // Wait for request with timeout
+        if (!p_request_queue->Dequeue(request, 100)) {
+            continue;  // Timeout or shutdown
+        }
 
-                if (n_bytes_read <= 0) {
-                    // Connection closed or error
-                    LOG_ERROR("Failed to read request from client socket");
-                    CloseSocket(request.n_client_socket);
-                    break;
-                }
+        try {
+            // Wrap socket FD with Beast socket
+            tcp::socket socket(m_io_context);
+            socket.assign(tcp::v4(), request.n_client_socket);
 
-                buffer[n_bytes_read] = '\0';
-                str_request_data.append(buffer, n_bytes_read);
+            // Read HTTP request
+            beast::flat_buffer buffer;
+            http::request<http::string_body> req;
+            http::read(socket, buffer, req);
 
-                // Look for end of headers (double CRLF)
-                if (!f_headers_complete) {
-                    n_header_end_pos = str_request_data.find("\r\n\r\n");
-                    if (n_header_end_pos != std::string::npos) {
-                        f_headers_complete = true;
+            // Convert Beast request to CHttpRequest for handlers
+            CHttpRequest parsed_req;
+            parsed_req.str_method = std::string(req.method_string());
+            parsed_req.str_path = std::string(req.target());
+            parsed_req.str_body = req.body();
+            parsed_req.str_content_type = std::string(req[http::field::content_type]);
+            parsed_req.n_client_socket = request.n_client_socket;
 
-                        // Parse Content-Length from headers
-                        size_t n_cl_pos = str_request_data.find("Content-Length:");
-                        if (n_cl_pos == std::string::npos) {
-                            n_cl_pos = str_request_data.find("content-length:");
-                        }
+            // Route to handler (existing code)
+            int n_status_code;
+            std::string str_response_body;
 
-                        if (n_cl_pos != std::string::npos && n_cl_pos < n_header_end_pos) {
-                            size_t n_cl_value_start = n_cl_pos + 15; // Length of "Content-Length:"
-                            size_t n_cl_line_end = str_request_data.find("\r\n", n_cl_value_start);
-                            if (n_cl_line_end != std::string::npos) {
-                                std::string str_cl_value = str_request_data.substr(n_cl_value_start,
-                                                                                   n_cl_line_end - n_cl_value_start);
-                                // Trim whitespace
-                                str_cl_value.erase(0, str_cl_value.find_first_not_of(" \t"));
-                                str_cl_value.erase(str_cl_value.find_last_not_of(" \t") + 1);
-                                try {
-                                    n_content_length = std::stoull(str_cl_value);
-                                } catch (...) {
-                                    n_content_length = 0;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Check if we have the complete request
-                if (f_headers_complete) {
-                    size_t n_body_start = n_header_end_pos + 4; // Skip "\r\n\r\n"
-                    size_t n_body_received = str_request_data.length() - n_body_start;
-
-                    if (n_content_length == 0 || n_body_received >= n_content_length) {
-                        // Complete request received - parse and process it
-                        CHttpRequest parsed_request = ParseHttpRequest(str_request_data, request.n_client_socket);
-                        ProcessRequest(parsed_request);
-                        CloseSocket(request.n_client_socket);
-                        break;
-                    }
-                }
+            if (parsed_req.str_method == "GET") {
+                std::tie(n_status_code, str_response_body) = HandleGET(parsed_req.str_path);
+            } else if (parsed_req.str_method == "POST") {
+                std::tie(n_status_code, str_response_body) = HandlePOST(parsed_req.str_path, parsed_req);
+            } else {
+                n_status_code = 405;  // Method Not Allowed
+                str_response_body = R"({"error": "Method Not Allowed"})";
             }
+
+            // Send response
+            SendHttpResponse(socket, n_status_code, "application/json", str_response_body);
+
+            // Graceful shutdown
+            boost::system::error_code ec;
+            socket.shutdown(tcp::socket::shutdown_both, ec);
+
+        } catch (const boost::system::system_error& e) {
+            LOG_ERROR("Worker error: " + std::string(e.what()));
+            // Continue processing other requests
+        } catch (const std::exception& e) {
+            LOG_ERROR("Worker exception: " + std::string(e.what()));
         }
     }
 
-    LOG_TRACE("REST API worker thread " + std::to_string(n_worker_id) + " stopped");
+    LOG_INFO("REST API worker " + std::to_string(n_worker_id) + " stopped");
 }
 
-CHttpRequest CRestApiServer::ParseHttpRequest(const std::string& str_raw_request,
-                                               int n_client_socket) {
-    CHttpRequest request;
-    request.n_client_socket = n_client_socket;
+void CRestApiServer::SendHttpResponse(tcp::socket& socket,
+                                      int n_status_code,
+                                      const std::string& str_content_type,
+                                      const std::string& str_body) {
+    try {
+        // Build HTTP response
+        http::response<http::string_body> res;
+        res.version(11);  // HTTP/1.1
+        res.result(static_cast<http::status>(n_status_code));
+        res.set(http::field::server, "blockweave/1.0");
+        res.set(http::field::content_type, str_content_type);
+        res.set(http::field::connection, "close");
+        res.body() = str_body;
+        res.prepare_payload();  // Auto-sets Content-Length
 
-    std::istringstream iss(str_raw_request);
-    std::string str_line;
+        // Write response
+        http::write(socket, res);
 
-    // Parse request line
-    if (std::getline(iss, str_line)) {
-        std::istringstream line_stream(str_line);
-        line_stream >> request.str_method >> request.str_path;
+    } catch (const boost::system::system_error& e) {
+        LOG_ERROR("Failed to send response: " + std::string(e.what()));
     }
-
-    // Parse headers
-    while (std::getline(iss, str_line) && str_line != "\r" && !str_line.empty()) {
-        // Remove trailing \r if present
-        if (!str_line.empty() && str_line.back() == '\r') {
-            str_line.pop_back();
-        }
-
-        // Look for Content-Type header
-        size_t n_colon = str_line.find(':');
-        if (n_colon != std::string::npos) {
-            std::string str_header_name = str_line.substr(0, n_colon);
-            std::string str_header_value = str_line.substr(n_colon + 1);
-
-            // Trim whitespace
-            str_header_name.erase(0, str_header_name.find_first_not_of(" \t"));
-            str_header_name.erase(str_header_name.find_last_not_of(" \t") + 1);
-            str_header_value.erase(0, str_header_value.find_first_not_of(" \t"));
-            str_header_value.erase(str_header_value.find_last_not_of(" \t"));
-
-            // Convert header name to lowercase for case-insensitive comparison
-            std::transform(str_header_name.begin(), str_header_name.end(),
-                          str_header_name.begin(), ::tolower);
-
-            if (str_header_name == "content-type") {
-                request.str_content_type = str_header_value;
-            }
-        }
-    }
-
-    // Read body - preserve all characters including newlines
-    std::string remaining;
-    std::getline(iss, remaining, '\0');  // Read everything remaining
-    request.str_body = remaining;
-
-    return request;
-}
-
-void CRestApiServer::SendHttpResponse(int n_client_socket, int n_status_code,
-                                       const std::string& str_content_type,
-                                       const std::string& str_body) {
-    std::ostringstream oss;
-    oss << "HTTP/1.1 " << n_status_code << " OK\r\n";
-    oss << "Content-Type: " << str_content_type << "\r\n";
-    oss << "Content-Length: " << str_body.length() << "\r\n";
-    oss << "Connection: close\r\n";
-    oss << "\r\n";
-    oss << str_body;
-
-    std::string str_response = oss.str();
-    send(n_client_socket, str_response.c_str(), str_response.length(), 0);
-}
-
-void CRestApiServer::ProcessRequest(const CHttpRequest& request) {
-    LOG_INFO("Processing request: " + request.str_method + " " + request.str_path);
-
-    int n_status_code;
-    std::string str_response;
-
-    // Route to appropriate handler based on HTTP method
-    if (request.str_method == "GET") {
-        std::tie(n_status_code, str_response) = HandleGET(request.str_path);
-    }
-    else if (request.str_method == "POST") {
-        std::tie(n_status_code, str_response) = HandlePOST(request.str_path, request);
-    }
-    else {
-        n_status_code = HTTP_METHOD_NOT_ALLOWED;
-        str_response = "{\"error\": \"Method Not Allowed\"}";
-        LOG_ERROR("Unsupported HTTP method: " + request.str_method);
-        SendHttpResponse(request.n_client_socket, n_status_code, "application/json", str_response);
-        return;
-    }
-
-    // Log errors if status code indicates failure
-    if (n_status_code >= 400) {
-        LOG_ERROR("Request failed with status " + std::to_string(n_status_code) + ": " + str_response);
-    }
-
-    SendHttpResponse(request.n_client_socket, n_status_code, "application/json", str_response);
 }
 
 std::tuple<int, std::string> CRestApiServer::HandleGetChain() {
