@@ -48,7 +48,7 @@ class CPeerManager;
  * - POST /transaction - Submit new transaction
  * - POST /files - Upload file as transaction
  * - POST /rpc/addpeer - Add outbound peer connection
- * - POST /rpc/getpeer - Get list of connected peers
+ * - GET /rpc/getpeer - Get list of connected peers
  *
  * Thread safety:
  * - Uses atomic flags for state (f_running, f_stop_requested)
@@ -166,6 +166,27 @@ private:
     std::tuple<int, std::string> HandleRpcMineTrigger();
 
     /**
+     * @brief Load RPC authentication credentials from .cookie file
+     * @param str_cookie_path Path to .cookie file
+     * @return true if loaded successfully, false otherwise
+     */
+    bool LoadCookieFile(const std::string& str_cookie_path);
+
+    /**
+     * @brief Validate HTTP Basic Auth credentials
+     * @param str_auth_header Authorization header value
+     * @return true if valid, false otherwise
+     */
+    bool ValidateBasicAuth(const std::string& str_auth_header) const;
+
+    /**
+     * @brief Check if endpoint requires authentication
+     * @param str_path Request path
+     * @return true if endpoint is /rpc/..., false otherwise
+     */
+    bool RequiresAuth(const std::string& str_path) const;
+
+    /**
      * @brief Send HTTP response to client using Boost.Beast
      * @param socket Beast TCP socket to send response on
      * @param n_status_code HTTP status code (200, 404, 500, etc.)
@@ -176,6 +197,11 @@ private:
                           int n_status_code,
                           const std::string& str_content_type,
                           const std::string& str_body);
+
+    // RPC authentication
+    std::string m_str_cookie_username;  ///< RPC auth username (always "__cookie__")
+    std::string m_str_cookie_password;  ///< RPC auth password from .cookie file
+    bool m_f_auth_enabled;              ///< Whether RPC auth is enabled
 
 public:
     /**

@@ -116,11 +116,9 @@ static const std::string base64_chars =
  * @param c Character to check
  * @return true if valid Base64 character
  */
-/*
 static bool IsBase64(unsigned char c) {
     return (std::isalnum(c) || (c == '+') || (c == '/'));
 }
-*/
 
 /**
  * @brief Decode Base64 string to binary data
@@ -131,7 +129,6 @@ static bool IsBase64(unsigned char c) {
  * Handles padding ('=') characters correctly.
  * Returns empty vector if decoding fails.
  */
-/*
 static std::vector<uint8_t> DecodeBase64(const std::string& str_encoded) {
     std::vector<uint8_t> decoded;
     int n_in_len = str_encoded.size();
@@ -179,7 +176,6 @@ static std::vector<uint8_t> DecodeBase64(const std::string& str_encoded) {
 
     return decoded;
 }
-*/
 
 /**
  * @brief Extract filename and file data from multipart/form-data
@@ -353,7 +349,10 @@ CRestApiServer::CRestApiServer(CBlockweave* p_weave, CPeerManager* p_peer_mgr,
     : p_blockweave(p_weave), p_peer_manager(p_peer_mgr), p_config(p_cfg),
       str_miner_address(str_miner_addr), n_port(n_port_num),
       f_running(false), f_stop_requested(false),
-      p_request_queue(std::make_shared<CRequestQueue>()) {
+      p_request_queue(std::make_shared<CRequestQueue>()),
+      m_str_cookie_username("__cookie__"),
+      m_str_cookie_password(""),
+      m_f_auth_enabled(false) {
 
     m_worker_threads.reserve(REST_WORKER_THREADS);
 }
@@ -389,6 +388,11 @@ bool CRestApiServer::Start() {
         return false;
     }
 
+    if (!p_config) {
+        LOG_ERROR("Cannot start REST API server: Config is null");
+        return false;
+    }
+
     try {
         LOG_TRACE("Creating REST API server acceptor on port " + std::to_string(n_port));
 
@@ -402,6 +406,26 @@ bool CRestApiServer::Start() {
         m_acceptor->set_option(asio::socket_base::reuse_address(true));
 
         LOG_INFO("REST API server listening on port " + std::to_string(n_port));
+
+        // Load RPC authentication credentials
+        try {
+            std::string str_network = p_config->GetNetwork();
+            std::string str_data_dir = p_config->GetNetworkDataDir(str_network);
+            std::string str_cookie_path = str_data_dir + "/.cookie";
+
+            if (LoadCookieFile(str_cookie_path)) {
+                m_f_auth_enabled = true;
+                LOG_INFO("RPC authentication enabled");
+            } else {
+                m_f_auth_enabled = false;
+                LOG_WARN("RPC authentication disabled - .cookie file not found or invalid");
+                // Continue without authentication (useful for testing and localnet)
+            }
+        } catch (const std::exception& e) {
+            LOG_ERROR("Error loading RPC authentication: " + std::string(e.what()));
+            m_f_auth_enabled = false;
+            LOG_WARN("RPC authentication disabled due to error");
+        }
 
         // Reset flags
         f_stop_requested = false;
@@ -424,6 +448,11 @@ bool CRestApiServer::Start() {
 
     } catch (const std::exception& e) {
         LOG_ERROR("Failed to start REST API server: " + std::string(e.what()));
+        f_running = false;
+        return false;
+    } catch (...) {
+        LOG_ERROR("Failed to start REST API server: Unknown exception");
+        f_running = false;
         return false;
     }
 }
@@ -507,6 +536,124 @@ void CRestApiServer::Stop() {
  */
 bool CRestApiServer::IsRunning() const {
     return f_running;
+}
+
+/**
+ * @brief Load RPC authentication credentials from .cookie file
+ */
+bool CRestApiServer::LoadCookieFile(const std::string& str_cookie_path) {
+    std::ifstream cookie_file(str_cookie_path);
+    if (!cookie_file.is_open()) {
+        LOG_ERROR("Failed to open cookie file: " + str_cookie_path);
+        return false;
+    }
+
+    std::string line;
+    if (!std::getline(cookie_file, line)) {
+        LOG_ERROR("Failed to read cookie file");
+        return false;
+    }
+
+    cookie_file.close();
+
+    // Parse format: __cookie__:password
+    size_t colon_pos = line.find(':');
+    if (colon_pos == std::string::npos) {
+        LOG_ERROR("Invalid cookie file format (missing colon)");
+        return false;
+    }
+
+    std::string username = line.substr(0, colon_pos);
+    std::string password = line.substr(colon_pos + 1);
+
+    // Validate format
+    if (username != "__cookie__") {
+        LOG_ERROR("Invalid cookie file username (expected '__cookie__')");
+        return false;
+    }
+
+    if (password.length() != 64) {
+        LOG_ERROR("Invalid cookie file password length (expected 64 hex chars)");
+        return false;
+    }
+
+    // Validate hex characters
+    for (char c : password) {
+        if (!std::isxdigit(c)) {
+            LOG_ERROR("Invalid cookie file password (non-hex character)");
+            return false;
+        }
+    }
+
+    m_str_cookie_password = password;
+    LOG_TRACE("Loaded RPC authentication credentials");
+    return true;
+}
+
+/**
+ * @brief Check if endpoint requires authentication
+ */
+bool CRestApiServer::RequiresAuth(const std::string& str_path) const {
+    // Check if path starts with /rpc/
+    return str_path.length() >= 5 && str_path.substr(0, 5) == "/rpc/";
+}
+
+/**
+ * @brief Validate HTTP Basic Auth credentials
+ */
+bool CRestApiServer::ValidateBasicAuth(const std::string& str_auth_header) const {
+    if (!m_f_auth_enabled) {
+        return true; // Auth disabled, allow all requests
+    }
+
+    // Check for "Basic " prefix (case-insensitive)
+    if (str_auth_header.length() < 6) {
+        return false;
+    }
+
+    std::string prefix = str_auth_header.substr(0, 6);
+    std::transform(prefix.begin(), prefix.end(), prefix.begin(), ::tolower);
+    if (prefix != "basic ") {
+        return false;
+    }
+
+    // Extract Base64-encoded credentials
+    std::string str_encoded = str_auth_header.substr(6);
+
+    // Decode Base64
+    std::vector<uint8_t> decoded = DecodeBase64(str_encoded);
+    if (decoded.empty()) {
+        return false;
+    }
+
+    // Convert to string
+    std::string str_credentials(decoded.begin(), decoded.end());
+
+    // Parse username:password
+    size_t colon_pos = str_credentials.find(':');
+    if (colon_pos == std::string::npos) {
+        return false;
+    }
+
+    std::string username = str_credentials.substr(0, colon_pos);
+    std::string password = str_credentials.substr(colon_pos + 1);
+
+    // Validate username
+    if (username != m_str_cookie_username) {
+        return false;
+    }
+
+    // Constant-time password comparison (prevent timing attacks)
+    if (password.length() != m_str_cookie_password.length()) {
+        return false;
+    }
+
+    int result = 0;
+    for (size_t i = 0; i < password.length(); ++i) {
+        result |= password[i] ^ m_str_cookie_password[i];
+    }
+
+    return result == 0;
 }
 
 /**
@@ -606,6 +753,32 @@ void CRestApiServer::WorkerThread(int n_worker_id) {
             parsed_req.str_body = req.body();
             parsed_req.str_content_type = std::string(req[http::field::content_type]);
             parsed_req.n_client_socket = request.n_client_socket;
+
+            // Check if endpoint requires authentication
+            if (RequiresAuth(parsed_req.str_path)) {
+                std::string str_auth_header = std::string(req[http::field::authorization]);
+
+                if (!ValidateBasicAuth(str_auth_header)) {
+                    // Authentication failed - return 401 Unauthorized
+                    http::response<http::string_body> res;
+                    res.version(11);
+                    res.result(http::status::unauthorized);
+                    res.set(http::field::server, "blockweave/1.0");
+                    res.set(http::field::www_authenticate, "Basic realm=\"Blockweave RPC\"");
+                    res.set(http::field::content_type, "application/json");
+                    res.set(http::field::connection, "close");
+                    res.body() = R"({"error": "Unauthorized", "message": "Valid credentials required for RPC endpoints"})";
+                    res.prepare_payload();
+
+                    http::write(socket, res);
+
+                    LOG_WARN("Unauthorized RPC request to " + parsed_req.str_path);
+
+                    boost::system::error_code ec;
+                    socket.shutdown(tcp::socket::shutdown_both, ec);
+                    continue;
+                }
+            }
 
             // Route to handler (existing code)
             int n_status_code;

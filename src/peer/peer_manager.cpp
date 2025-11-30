@@ -321,8 +321,8 @@ bool CPeerManager::CreateAcceptor() {
         // Bind to configured IP (or all interfaces if bind_ip is empty)
         boost::asio::ip::tcp::endpoint endpoint;
         if (str_bind_ip.empty()) {
-            // Bind to all interfaces
-            endpoint = boost::asio::ip::tcp::endpoint(boost::asio::ip::tcp::v4(), n_listen_port);
+            // Bind to all interfaces (0.0.0.0)
+            endpoint = boost::asio::ip::tcp::endpoint(boost::asio::ip::address_v4::any(), n_listen_port);
         } else {
             // Bind to specific IP address
             boost::system::error_code ec;
@@ -337,8 +337,10 @@ bool CPeerManager::CreateAcceptor() {
         // Start listening with backlog of 10
         m_p_acceptor->listen(10);
 
-        std::string str_bind_desc = str_bind_ip.empty() ? "all interfaces" : str_bind_ip;
-        LOG_INFO("Acceptor created and listening on " + str_bind_desc + " port " + std::to_string(n_listen_port));
+        // Log the actual bind address
+        auto local_ep = m_p_acceptor->local_endpoint();
+        std::string str_bind_desc = local_ep.address().to_string() + ":" + std::to_string(local_ep.port());
+        LOG_INFO("Acceptor created and listening on " + str_bind_desc);
         return true;
 
     } catch (const boost::system::system_error& e) {
@@ -1511,13 +1513,15 @@ bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
         // Create Boost.Asio socket
         auto p_socket = std::make_shared<boost::asio::ip::tcp::socket>(m_io_context);
 
-        // Create endpoint
+        // Create remote endpoint first to determine protocol
         boost::system::error_code addr_ec;
         auto addr = boost::asio::ip::make_address(str_address, addr_ec);
         if (addr_ec) {
             LOG_ERROR("Invalid peer address: " + str_address + " - " + addr_ec.message());
             return false;
         }
+
+        boost::asio::ip::tcp::endpoint endpoint(addr, n_port);
 
         // --- Choose local binding IP, to honor bind_ip  ---
         if (str_bind_ip.empty() == false) {
@@ -1528,17 +1532,26 @@ bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
                 LOG_ERROR("Invalid local bind IP: " + str_bind_ip + " - " + ec_local.message());
                 return false;
             }
+
+            // Verify protocol compatibility between local and remote addresses
+            if (local_addr.is_v4() != addr.is_v4()) {
+                LOG_ERROR("Protocol mismatch: bind_ip is " +
+                         std::string(local_addr.is_v4() ? "IPv4" : "IPv6") +
+                         " but remote address " + str_address + " is " +
+                         std::string(addr.is_v4() ? "IPv4" : "IPv6"));
+                return false;
+            }
+
             // Bind socket to chosen local IP (ephemeral port 0)
+            // Use remote endpoint's protocol to ensure compatibility
             boost::asio::ip::tcp::endpoint local_endpoint(local_addr, 0);
-            p_socket->open(local_endpoint.protocol());
+            p_socket->open(endpoint.protocol());  // Use remote endpoint's protocol
             p_socket->bind(local_endpoint, ec_local);
             if (ec_local) {
                 LOG_ERROR("Failed to bind local endpoint " + str_bind_ip + ": " + ec_local.message());
                 return false;
             }
         }
-
-        boost::asio::ip::tcp::endpoint endpoint(addr, n_port);
 
         // Connect to peer (synchronous for now)
         boost::system::error_code ec;

@@ -17,6 +17,10 @@
 #include <chrono>
 #include <cstring>
 #include <sys/stat.h>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
+#include <openssl/rand.h>
 
 #ifdef _WIN32
     #include <direct.h>  // for _getcwd on Windows
@@ -308,6 +312,36 @@ int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode, c
     }
     LOG_INFO("REST worker threads: " + std::to_string(REST_WORKER_THREADS));
     LOG_INFO("Data directory: " + str_data_dir);
+
+    // Generate .cookie file for RPC authentication
+    std::string str_cookie_path = str_data_dir + "/.cookie";
+    unsigned char random_bytes[32];
+    if (RAND_bytes(random_bytes, 32) == 1) {
+        // Convert to 64-character hex string
+        std::ostringstream oss;
+        for (int i = 0; i < 32; ++i) {
+            oss << std::hex << std::setw(2) << std::setfill('0') << (int)random_bytes[i];
+        }
+        std::string str_password = oss.str();
+
+        // Write to file with format: __cookie__:password
+        std::ofstream cookie_file(str_cookie_path);
+        if (cookie_file.is_open()) {
+            cookie_file << "__cookie__:" << str_password << std::endl;
+            cookie_file.close();
+
+            // Set restrictive file permissions (Unix only)
+            #ifndef _WIN32
+            chmod(str_cookie_path.c_str(), S_IRUSR | S_IWUSR); // 0600
+            #endif
+
+            LOG_INFO("Generated RPC authentication cookie file: " + str_cookie_path);
+        } else {
+            LOG_WARN("Failed to create cookie file, RPC endpoints will be insecure");
+        }
+    } else {
+        LOG_WARN("Failed to generate random bytes for cookie file, RPC endpoints will be insecure");
+    }
 
     // Note: Data directory is automatically created by config.GetNetworkDataDir()
     // Create blockweave with data/blocks subdirectory for block storage
