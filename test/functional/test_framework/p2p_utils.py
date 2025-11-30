@@ -137,6 +137,8 @@ def perform_version_verack_handshake(connection):
         if not received_verack or received_verack.msg_type != MessageType.VERACK:
             print(f"Handshake failed: Expected VERACK, got {received_verack.msg_type if received_verack else 'None'}")
             return False
+        # this sleep is critical on windows to ensure handshake finishes before sending other p2p messages
+        time.sleep(1)
 
         return True
 
