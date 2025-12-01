@@ -185,16 +185,23 @@ bool CPeerNode::operator<(const CPeerNode& other) const {
 }
 
 std::string CPeerNode::GetInfo() const {
-    // call this before holding the lock
+    // get identifier outside of the lock
     std::string str_identifier = GetIdentifier();
+
     std::lock_guard<std::mutex> lock(cs_peer_node);
+    // Build identifier directly instead of calling GetIdentifier() to avoid double-locking
+    // Check handshake state directly instead of calling IsHandshakeComplete() to avoid double-locking
+    bool f_handshake_complete = (m_handshake_state == HandshakeState::COMPLETE);
+
     std::string str_info = "{\n";
     str_info += "  \"address\": \"" + str_address + "\",\n";
     str_info += "  \"port\": " + std::to_string(n_port) + ",\n";
     str_info += "  \"identifier\": \"" + str_identifier + "\",\n";
     str_info += "  \"connection_time\": " + std::to_string(n_connection_time) + ",\n";
     str_info += "  \"ping_roundtrip_time\": " + std::to_string(d_ping_roundtrip_time) + ",\n";
-    str_info += "  \"inbound\": " + std::string(f_inbound ? "true" : "false") + "\n";
+    str_info += "  \"inbound\": " + std::string(f_inbound ? "true" : "false") + ",\n";
+    str_info += "  \"handshake_complete\": " + std::string(f_handshake_complete ? "true" : "false") + ",\n";
+    str_info += "  \"handshake_state\": " + std::to_string(static_cast<int>(m_handshake_state)) + "\n";
     str_info += "}";
     return str_info;
 }

@@ -8,6 +8,7 @@
 #include "utils/config.h"
 #include "utils/network.h"
 #include "utils/threadname.h"
+#include "utils/pathutil.h"
 #include "logger/logger.h"
 #include "utils/settings.h"
 #include <iostream>
@@ -190,17 +191,9 @@ int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode, c
 
     std::string str_miner_address = config.GetMinerAddress();
 
-    // Use network-specific default ports if not set in config
+    // Use ports directly from config file (config file is single source of truth)
     int n_rest_port = config.GetRestApiPort();
     int n_p2p_port = config.GetP2PPort();
-
-    // Override with network defaults if using default values
-    if (n_rest_port == REST_API_PORT) {
-        n_rest_port = network_params.default_rest_port;
-    }
-    if (n_p2p_port == P2P_PORT) {
-        n_p2p_port = network_params.default_p2p_port;
-    }
 
     std::string str_log_dir = config.GetLogDir();
     std::string str_log_level = config.GetLogLevel();
@@ -313,6 +306,9 @@ int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode, c
     LOG_INFO("REST worker threads: " + std::to_string(REST_WORKER_THREADS));
     LOG_INFO("Data directory: " + str_data_dir);
 
+    // Ensure data directory exists before creating .cookie file
+    CreateDirectoryRecursive(str_data_dir);
+
     // Generate .cookie file for RPC authentication
     std::string str_cookie_path = str_data_dir + "/.cookie";
     unsigned char random_bytes[32];
@@ -366,7 +362,8 @@ int RunApplicationMain(const std::string& str_config_file, bool f_daemon_mode, c
     LOG_INFO("Starting REST API server on port " + std::to_string(n_rest_port));
     CRestApiServer rest_api(p_weave.get(), &peer_manager, &config, str_miner_address, n_rest_port);
     if (!rest_api.Start()) {
-        LOG_ERROR("Failed to start REST API server on port " + std::to_string(n_rest_port));
+        LOG_ERROR("Failed to start REST API server - check .cookie file exists");
+        LOG_ERROR("Cookie file location: " + config.GetNetworkDataDir(config.GetNetwork()) + "/.cookie");
         return 1;
     }
     LOG_INFO("REST API server started successfully");

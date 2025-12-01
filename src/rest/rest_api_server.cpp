@@ -407,7 +407,7 @@ bool CRestApiServer::Start() {
 
         LOG_INFO("REST API server listening on port " + std::to_string(n_port));
 
-        // Load RPC authentication credentials
+        // Load RPC authentication credentials (REQUIRED)
         try {
             std::string str_network = p_config->GetNetwork();
             std::string str_data_dir = p_config->GetNetworkDataDir(str_network);
@@ -415,16 +415,19 @@ bool CRestApiServer::Start() {
 
             if (LoadCookieFile(str_cookie_path)) {
                 m_f_auth_enabled = true;
-                LOG_INFO("RPC authentication enabled");
+                LOG_INFO("RPC authentication enabled using: " + str_cookie_path);
             } else {
+                // .cookie file missing or invalid - FAIL TO START
                 m_f_auth_enabled = false;
-                LOG_WARN("RPC authentication disabled - .cookie file not found or invalid");
-                // Continue without authentication (useful for testing and localnet)
+                LOG_ERROR("REST API server requires .cookie file: " + str_cookie_path);
+                LOG_ERROR("Generate with: ./wallet or manually create");
+                m_acceptor.reset();
+                return false;  // Fail to start
             }
         } catch (const std::exception& e) {
             LOG_ERROR("Error loading RPC authentication: " + std::string(e.what()));
-            m_f_auth_enabled = false;
-            LOG_WARN("RPC authentication disabled due to error");
+            m_acceptor.reset();
+            return false;  // Fail to start
         }
 
         // Reset flags
