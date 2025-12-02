@@ -25,7 +25,6 @@
 #include "utils/network.h"
 #include "utils/config.h"
 #include "utils/get_public_ip.h"
-#include "utils/time_util.h"
 #include "logger/logger.h"
 #include <iostream>
 #include <cstring>
@@ -39,6 +38,10 @@
     #include <winsock2.h>
     #include <ws2tcpip.h>
     #include <windows.h>
+    // Undefine Windows macros that interfere with TimeUtil functions
+    #ifdef GetCurrentTime
+        #undef GetCurrentTime
+    #endif
     // Don't define close as closesocket - Boost.Asio handles this
     #define SHUT_RDWR SD_BOTH
     // Helper function for closing raw sockets (not Boost.Asio wrapped ones)
@@ -53,6 +56,9 @@
     #include <errno.h>
     inline void close_socket(int sock) { close(sock); }
 #endif
+
+// Include time_util.h after platform headers to avoid Windows macro conflicts
+#include "utils/time_util.h"
 
 // ============= CPeerManager Implementation =============
 
