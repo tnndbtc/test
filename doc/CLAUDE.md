@@ -63,18 +63,55 @@ cmake --version  # Should show >= 3.10
 
 ## Build
 
+**Standard CMake Workflow:**
+
 ```bash
-./configure
-cd build && make
+# Debug build (with sanitizers on Linux/macOS)
+mkdir -p build
+cd build
+cmake -DCMAKE_BUILD_TYPE=Debug ..
+cmake --build . -- -j$(nproc)
+
+# Release build (optimized)
+mkdir -p build
+cd build
+cmake -DCMAKE_BUILD_TYPE=Release ..
+cmake --build . -- -j$(nproc)
+
+# Build with tests enabled
+mkdir -p build
+cd build
+cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON ..
+cmake --build . -- -j$(nproc)
+
+# Run tests (when built with -DBUILD_TESTS=ON)
+./src/test/test_all
+# Or use CTest
+ctest --output-on-failure
+```
+
+**One-liner for quick builds:**
+```bash
+# Without tests (default)
+mkdir -p build && cd build && cmake -DCMAKE_BUILD_TYPE=Debug .. && cmake --build . -- -j$(nproc)
+
+# With tests
+mkdir -p build && cd build && cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON .. && cmake --build . -- -j$(nproc)
 ```
 
 **Executables:**
 - `bweave` - Main daemon
 - `bweave_cli` - Control utility
 - `wallet` - Address generator
-- `test_all` - Unit tests (in src/test/build/)
+- `test_all` - Unit tests (in build/src/test/, only built with -DBUILD_TESTS=ON)
 
 **Libraries:** libbwthreadname, libbwlogger, libbwutils, libbwpeer, libbwblockcore, libbwrest
+
+**Build Options:**
+- `-DCMAKE_BUILD_TYPE=Debug` - Debug build with sanitizers (Linux/macOS)
+- `-DCMAKE_BUILD_TYPE=Release` - Optimized release build
+- `-DBUILD_TESTS=ON` - Build unit tests (default: OFF)
+- OpenSSL detection automatically handles macOS Homebrew paths
 
 ## Quick Start
 
@@ -204,28 +241,40 @@ All threads are named using `SetThreadName()` for debugging. Use mutexes (`cs_` 
 
 ## Testing
 
-**Unit Tests:** 136 tests across 12 modules
+**Unit Tests:** 262 tests across 13 modules
+
+Tests are built when `-DBUILD_TESTS=ON` is specified:
 
 ```bash
-cd src/test
-./build.sh
-cd build
-./test_all
+# Build with tests enabled
+mkdir -p build && cd build
+cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON ..
+cmake --build . -- -j$(nproc)
+
+# Run tests directly
+./src/test/test_all
+
+# Or use CTest
+ctest --output-on-failure
 ```
+
+**Note:** By default, tests are NOT built. Use `-DBUILD_TESTS=ON` to enable test building.
 
 **Test Modules:**
 - test_peer_manager (18 tests)
 - test_peer_message (21 tests)
-- test_peer_filter (18 tests)
+- test_peer_filter (21 tests)
 - test_request_queue (10 tests)
 - test_api_server (5 tests)
 - test_block (4 tests)
 - test_transaction (5 tests)
 - test_blockweave (7 tests)
 - test_wallet (3 tests)
-- test_hash (2 tests)
+- test_hash (10 tests)
 - test_blockfile (17 tests)
 - test_logger (26 tests)
+- test_network (14 tests)
+- test_get_public_ip (6 tests)
 
 Custom test framework in `unit_test.h`, no external dependencies.
 
@@ -382,14 +431,17 @@ lsof -i :28333  # P2P port
 
 **Debug Build:**
 ```bash
-./configure --debug
-cd build && make
+mkdir -p build && cd build
+cmake -DCMAKE_BUILD_TYPE=Debug ..
+cmake --build . -- -j$(nproc)
 ```
 
 **Clean Build:**
 ```bash
 rm -rf build
-./configure && cd build && make
+mkdir -p build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release ..
+cmake --build . -- -j$(nproc)
 ```
 
 ## Security Notes

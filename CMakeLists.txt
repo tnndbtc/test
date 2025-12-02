@@ -84,6 +84,16 @@ if(POLICY CMP0167)
 endif()
 
 # Find OpenSSL
+# Add hints for macOS Homebrew paths
+if(APPLE)
+    set(OPENSSL_ROOT_DIR
+        /opt/homebrew/opt/openssl@3
+        /usr/local/opt/openssl@3
+        /opt/homebrew/opt/openssl@1.1
+        /usr/local/opt/openssl@1.1
+    )
+endif()
+
 find_package(OpenSSL REQUIRED)
 if(OPENSSL_FOUND)
     message(STATUS "OpenSSL found: ${OPENSSL_VERSION}")
@@ -628,4 +638,22 @@ if(TARGET bweave_cli)
     install(TARGETS bweave wallet bweave_cli DESTINATION bin)
 else()
     install(TARGETS bweave wallet DESTINATION bin)
+endif()
+
+# ============================================================
+# Unit Tests
+# Add test subdirectory to build unit tests alongside main project
+# Use -DBUILD_TESTS=ON to enable test building (default: OFF)
+# ============================================================
+option(BUILD_TESTS "Build unit tests" OFF)
+
+if(BUILD_TESTS)
+    message(STATUS "Unit tests: Enabled")
+    add_subdirectory(src/test)
+
+    # Enable CTest for running tests
+    enable_testing()
+    add_test(NAME unit_tests COMMAND test_all WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/src/test)
+else()
+    message(STATUS "Unit tests: Disabled (use -DBUILD_TESTS=ON to enable)")
 endif()
