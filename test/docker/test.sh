@@ -30,14 +30,35 @@ IMAGE_TAG="bweave_test"
 IMAGE_NAME="bweave_test:latest"
 #IMAGE_NAME="bweave_test"
 
-echo "docker stop $CONTAINER_NAME"
-docker stop "$CONTAINER_NAME"
+# Check if docker is running
+if ! docker info > /dev/null 2>&1; then
+    echo "Error: Docker is not running. Please start Docker and try again."
+    exit 1
+fi
 
-echo "docker rm $CONTAINER_NAME"
-docker rm "$CONTAINER_NAME"
+# Stop container if it exists and is running
+if docker ps -q -f name="$CONTAINER_NAME" | grep -q .; then
+    echo "docker stop $CONTAINER_NAME"
+    docker stop "$CONTAINER_NAME"
+else
+    echo "Container $CONTAINER_NAME is not running, skipping stop"
+fi
 
-echo "docker rmi $IMAGE_NAME"
-docker rmi "$IMAGE_NAME"
+# Remove container if it exists
+if docker ps -aq -f name="$CONTAINER_NAME" | grep -q .; then
+    echo "docker rm $CONTAINER_NAME"
+    docker rm "$CONTAINER_NAME"
+else
+    echo "Container $CONTAINER_NAME does not exist, skipping rm"
+fi
+
+# Remove image if it exists
+if docker images -q "$IMAGE_NAME" | grep -q .; then
+    echo "docker rmi $IMAGE_NAME"
+    docker rmi "$IMAGE_NAME"
+else
+    echo "Image $IMAGE_NAME does not exist, skipping rmi"
+fi
 
 echo "docker build -f test/docker/dockerfile.dev -t $IMAGE_TAG ."
 docker build -f test/docker/dockerfile.dev -t "$IMAGE_TAG" .
