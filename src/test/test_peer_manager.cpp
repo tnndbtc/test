@@ -13,26 +13,18 @@
 using namespace UnitTest;
 
 /**
- * @brief Test CPeerNode default constructor
+ * @brief Test CPeerNode constructor with socket
  */
-TEST(PeerNode_DefaultConstructor) {
-    CPeerNode peer;
+TEST(PeerNode_ConstructorWithSocket) {
+    // Create a dummy io_context and socket for testing
+    boost::asio::io_context io_context;
+    auto p_socket = std::make_shared<boost::asio::ip::tcp::socket>(io_context);
 
-    ASSERT_TRUE(peer.GetSocket() == nullptr, "Default socket should be nullptr");
-    ASSERT_TRUE(peer.GetAddress().empty(), "Default address should be empty");
-    ASSERT_EQUAL(peer.GetPort(), 0, "Default port should be 0");
-    ASSERT_FALSE(peer.IsConnected(), "Default connection status should be false");
-}
+    CPeerNode peer("127.0.0.1", 8333, p_socket);
 
-/**
- * @brief Test CPeerNode parameterized constructor
- */
-TEST(PeerNode_ParameterizedConstructor) {
-    CPeerNode peer("127.0.0.1", 8333);
-
+    ASSERT_TRUE(peer.GetSocket() != nullptr, "Socket should be set");
     ASSERT_EQUAL(peer.GetAddress(), std::string("127.0.0.1"), "Address should be set");
     ASSERT_EQUAL(peer.GetPort(), 8333, "Port should be set");
-    ASSERT_TRUE(peer.GetSocket() == nullptr, "Socket should initially be nullptr");
     ASSERT_FALSE(peer.IsConnected(), "Should not be connected initially");
 }
 
@@ -192,7 +184,10 @@ TEST(PeerManager_BroadcastMessage_InventoryPayload) {
  * from multiple threads using getter/setter methods protected by mutex.
  */
 TEST(PeerNode_ThreadSafeAccessors) {
-    CPeerNode peer("127.0.0.1", 8080);
+    // Create a dummy io_context and socket for testing
+    boost::asio::io_context io_context;
+    auto p_socket = std::make_shared<boost::asio::ip::tcp::socket>(io_context);
+    CPeerNode peer("127.0.0.1", 8080, p_socket);
 
     std::atomic<int> read_count{0};
     std::atomic<bool> stop_flag{false};

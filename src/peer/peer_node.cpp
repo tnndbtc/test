@@ -4,36 +4,6 @@
 
 // CPeerNode implementation
 
-CPeerNode::CPeerNode()
-    : p_socket(nullptr),
-      f_connected(false),
-      m_handshake_state(HandshakeState::NONE),
-      n_last_ping_nonce(0),
-      m_last_ping_send_time(),
-      str_address(""),
-      n_port(0),
-      n_connection_time(0),
-      d_ping_roundtrip_time(0.0),
-      f_inbound(false),
-      n_protocol_version(0),
-      n_services(0) {
-}
-
-CPeerNode::CPeerNode(const std::string& str_addr, int n_port_num)
-    : p_socket(nullptr),
-      f_connected(false),
-      m_handshake_state(HandshakeState::NONE),
-      n_last_ping_nonce(0),
-      m_last_ping_send_time(),
-      str_address(str_addr),
-      n_port(n_port_num),
-      n_connection_time(0),
-      d_ping_roundtrip_time(0.0),
-      f_inbound(false),
-      n_protocol_version(0),
-      n_services(0) {
-}
-
 CPeerNode::CPeerNode(const std::string& str_addr, int n_port_num,
                      std::shared_ptr<boost::asio::ip::tcp::socket> socket)
     : p_socket(socket),

@@ -446,10 +446,17 @@ void CPeerManager::HandleAccept(const boost::system::error_code& ec, boost::asio
     std::string str_ip = remote_endpoint.address().to_string();
     int n_peer_port = remote_endpoint.port();
 
+    // Create shared_ptr from moved socket early (keep socket in Boost.Asio, no release)
+    auto p_socket = std::make_shared<boost::asio::ip::tcp::socket>(std::move(socket));
+
+    // Create peer node with socket for ban checking and duplicate detection
+    // This ensures the peer always has a socket, which is the requirement from todo4
+    auto p_peer = std::make_shared<CPeerNode>(str_ip, n_peer_port, p_socket);
+
     // Check if peer is banned
-    if (IsPeerBanned(str_ip)) {
+    if (IsPeerBanned(p_peer)) {
         LOG_WARN("Rejecting connection from banned peer: " + str_ip);
-        socket.close();
+        p_socket->close();
 
         // Chain next accept
         if (!f_stop_requested) {
@@ -463,11 +470,11 @@ void CPeerManager::HandleAccept(const boost::system::error_code& ec, boost::asio
         std::lock_guard<std::mutex> lock(cs_peers);
 
         // Check inbound peers
-        for (const auto& p_peer : m_inbound_peers) {
-            if (p_peer && p_peer->GetAddress() == str_ip && p_peer->GetPort() == n_peer_port) {
+        for (const auto& p_existing_peer : m_inbound_peers) {
+            if (p_existing_peer && p_existing_peer->GetAddress() == str_ip && p_existing_peer->GetPort() == n_peer_port) {
                 LOG_WARN("Rejecting duplicate inbound connection from " + str_ip + ":" + std::to_string(n_peer_port) +
                          " (already in inbound peers list)");
-                socket.close();
+                p_socket->close();
                 if (!f_stop_requested) {
                     StartAccept();
                 }
@@ -476,11 +483,11 @@ void CPeerManager::HandleAccept(const boost::system::error_code& ec, boost::asio
         }
 
         // Check outbound peers
-        for (const auto& p_peer : m_outbound_peers) {
-            if (p_peer && p_peer->GetAddress() == str_ip && p_peer->GetPort() == n_peer_port) {
-                LOG_WARN("Rejecting duplicate inbound connection from " + str_ip + ":" + std::to_string(n_peer_port) + 
+        for (const auto& p_existing_peer : m_outbound_peers) {
+            if (p_existing_peer && p_existing_peer->GetAddress() == str_ip && p_existing_peer->GetPort() == n_peer_port) {
+                LOG_WARN("Rejecting duplicate inbound connection from " + str_ip + ":" + std::to_string(n_peer_port) +
                          " (already in outbound peers list)");
-                socket.close();
+                p_socket->close();
                 if (!f_stop_requested) {
                     StartAccept();
                 }
@@ -488,9 +495,6 @@ void CPeerManager::HandleAccept(const boost::system::error_code& ec, boost::asio
             }
         }
     }
-
-    // Create shared_ptr from moved socket (keep socket in Boost.Asio, no release)
-    auto p_socket = std::make_shared<boost::asio::ip::tcp::socket>(std::move(socket));
 
     // Check peer limits and enforce subnet diversity
     // Collect peer to evict (if needed) while holding lock, then disconnect outside lock
@@ -564,8 +568,6 @@ void CPeerManager::HandleAccept(const boost::system::error_code& ec, boost::asio
         // Set socket keepalive on shared_ptr socket
         SetSocketKeepAlive(p_socket);
 
-        // Create peer node with socket
-        auto p_peer = std::make_shared<CPeerNode>(str_ip, n_peer_port, p_socket);
         // SetConnected to true after VERSION/VERACK handshakes
         p_peer->SetConnected(false);
 
@@ -1276,6 +1278,8 @@ void CPeerManager::HandleVersionMessage(std::shared_ptr<CPeerNode> p_peer_shared
 
     // Add VERSION_RCVD flag to handshake state bitmap
     if (p_peer_shared->AddHandshakeFlag(HandshakeState::VERSION_RCVD) == false) {
+        LOG_WARN("Duplicate VERSION message from peer " + p_peer_shared->GetIdentifier());
+        IncreaseMisbehaviorScore(p_peer_shared, 20);
         DisconnectPeer(p_peer_shared);
         return;
     }
@@ -1328,6 +1332,8 @@ void CPeerManager::HandleVersionMessage(std::shared_ptr<CPeerNode> p_peer_shared
         }
         SendMessageAsync(p_peer_shared, response_version);
         if (p_peer_shared->AddHandshakeFlag(HandshakeState::VERSION_SENT) == false) { // Add VERSION_SENT flag
+            LOG_WARN("Duplicate VERSION_SENT flag for peer " + p_peer_shared->GetIdentifier());
+            IncreaseMisbehaviorScore(p_peer_shared, 20);
             DisconnectPeer(p_peer_shared);
             return;
         }
@@ -1346,6 +1352,8 @@ void CPeerManager::HandleVerackMessage(std::shared_ptr<CPeerNode> p_peer_shared,
 
     // Add VERACK_RCVD flag to handshake state bitmap
     if (p_peer_shared->AddHandshakeFlag(HandshakeState::VERACK_RCVD) == false) {
+        LOG_WARN("Duplicate VERACK message from peer " + p_peer_shared->GetIdentifier());
+        IncreaseMisbehaviorScore(p_peer_shared, 20);
         DisconnectPeer(p_peer_shared);
         return;
     }
@@ -1454,18 +1462,35 @@ void CPeerManager::HandleBlockMessage(std::shared_ptr<CPeerNode> p_peer_shared, 
 
     if (!p_block) {
         LOG_WARN("Failed to get block from BLOCK message from peer " + p_peer_shared->GetIdentifier());
+        IncreaseMisbehaviorScore(p_peer_shared, 100);
         return;
     }
 
+    std::string str_block_hash = p_block->GetHash().GetData();
     LOG_INFO("Received BLOCK from peer " + p_peer_shared->GetIdentifier() +
              " (block #" + std::to_string(p_block->GetHeight()) +
-             ", hash: " + p_block->GetHash().GetData() + "... miner: " + p_block->GetMiner() + ")");
+             ", hash: " + str_block_hash + "... miner: " + p_block->GetMiner() + ")");
 
     LOG_TRACE("Block contains " + std::to_string(p_block->GetTransactions().size()) +
              " transactions");
 
+    // Check if block already exists (duplicate block)
+    if (p_blockweave) {
+        CHash block_hash(str_block_hash);
+        auto p_existing_block = p_blockweave->GetBlock(block_hash);
+        if (p_existing_block) {
+            LOG_WARN("Duplicate block received from peer " + p_peer_shared->GetIdentifier() +
+                     " (block #" + std::to_string(p_block->GetHeight()) + ")");
+            IncreaseMisbehaviorScore(p_peer_shared, 10);
+            return;
+        }
+    }
+
     // Verify and add block to blockchain
     if (p_blockweave) {
+        // Track orphan count before verification
+        size_t orphan_count_before = p_blockweave->GetOrphanBlocksSize();
+
         auto [f_success, vec_blocks_to_broadcast] = p_blockweave->VerifyBlock(p_block);
 
         if (f_success) {
@@ -1485,8 +1510,18 @@ void CPeerManager::HandleBlockMessage(std::shared_ptr<CPeerNode> p_peer_shared, 
                 });
             }
         } else {
-            LOG_INFO("Block #" + std::to_string(p_block->GetHeight()) +
-                     " verification failed or added to orphan pool");
+            // VerifyBlock returns false for: invalid POW, invalid height, or orphan (parent not found)
+            // Check if orphan count increased (block was added to orphan pool)
+            size_t orphan_count_after = p_blockweave->GetOrphanBlocksSize();
+            if (orphan_count_after > orphan_count_before) {
+                LOG_INFO("Block #" + std::to_string(p_block->GetHeight()) +
+                         " added to orphan pool (waiting for parent)");
+            } else {
+                // Block verification failed (invalid POW or invalid height)
+                LOG_WARN("Block #" + std::to_string(p_block->GetHeight()) +
+                         " verification failed from peer " + p_peer_shared->GetIdentifier());
+                IncreaseMisbehaviorScore(p_peer_shared, 100);
+            }
         }
     } else {
         LOG_WARN("Cannot verify block: blockweave not initialized");
@@ -2266,44 +2301,52 @@ void CPeerManager::EnforceSubnetDiversity() {
 
 // ============= Malicious Peer Detection and Banning =============
 
-void CPeerManager::IncreaseMisbehaviorScore(const std::string& str_peer_address, int n_score_increase) {
-    std::lock_guard<std::mutex> lock(cs_bans);
+void CPeerManager::IncreaseMisbehaviorScore(std::shared_ptr<IPeerNode> p_peer_node, int n_score_increase) {
+    if (!p_peer_node) {
+        return;
+    }
 
-    map_peer_misbehavior[str_peer_address] += n_score_increase;
-    int n_total_score = map_peer_misbehavior[str_peer_address];
+    std::shared_ptr<CPeerNode> p_peer_to_disconnect;
+    std::string str_peer_address = p_peer_node->GetIdentifier();
 
-    LOG_WARN("Peer " + str_peer_address + " misbehavior score increased by " +
-             std::to_string(n_score_increase) + " to " + std::to_string(n_total_score));
+    // Update misbehavior score and ban status
+    {
+        std::lock_guard<std::mutex> lock(cs_bans);
 
-    // Ban peer if score exceeds threshold
-    if (n_total_score >= PEER_BAN_THRESHOLD) {
-        int64_t ban_expiry = TimeUtil::GetCurrentTime() + PEER_BAN_DURATION;
-        map_banned_peers[str_peer_address] = ban_expiry;
+        map_peer_misbehavior[p_peer_node] += n_score_increase;
+        int n_total_score = map_peer_misbehavior[p_peer_node];
 
-        LOG_ERROR("Peer " + str_peer_address + " banned for " + std::to_string(PEER_BAN_DURATION) +
-                 " seconds (score: " + std::to_string(n_total_score) + ")");
+        LOG_WARN("Peer " + str_peer_address + " misbehavior score increased by " +
+                 std::to_string(n_score_increase) + " to " + std::to_string(n_total_score));
 
-        // Disconnect peer
-        std::lock_guard<std::mutex> peer_lock(cs_peers);
-        for (auto& p_peer : m_inbound_peers) {
-            if (p_peer && p_peer->GetIdentifier() == str_peer_address) {
-                DisconnectPeer(p_peer);
-                break;
-            }
+        // Ban peer if score exceeds threshold
+        if (n_total_score >= PEER_BAN_THRESHOLD) {
+            int64_t ban_expiry = TimeUtil::GetCurrentTime() + PEER_BAN_DURATION;
+            map_banned_peers[p_peer_node] = ban_expiry;
+
+            LOG_ERROR("Peer " + str_peer_address + " banned for " + std::to_string(PEER_BAN_DURATION) +
+                     " seconds (score: " + std::to_string(n_total_score) + ")");
+
+            // Cast to CPeerNode for disconnection
+            p_peer_to_disconnect = std::dynamic_pointer_cast<CPeerNode>(p_peer_node);
         }
-        for (auto& p_peer : m_outbound_peers) {
-            if (p_peer && p_peer->GetIdentifier() == str_peer_address) {
-                DisconnectPeer(p_peer);
-                break;
-            }
-        }
+    }
+
+    // Disconnect peer outside of lock to avoid deadlock
+    // DisconnectPeer acquires cs_peers, so we must not hold any lock here
+    if (p_peer_to_disconnect) {
+        DisconnectPeer(p_peer_to_disconnect);
     }
 }
 
-bool CPeerManager::IsPeerBanned(const std::string& str_peer_address) {
+bool CPeerManager::IsPeerBanned(std::shared_ptr<IPeerNode> p_peer_node) {
+    if (!p_peer_node) {
+        return false;
+    }
+
     std::lock_guard<std::mutex> lock(cs_bans);
 
-    auto it = map_banned_peers.find(str_peer_address);
+    auto it = map_banned_peers.find(p_peer_node);
     if (it == map_banned_peers.end()) {
         return false;
     }
@@ -2312,8 +2355,9 @@ bool CPeerManager::IsPeerBanned(const std::string& str_peer_address) {
     int64_t now = TimeUtil::GetCurrentTime();
     if (now >= it->second) {
         // Ban expired
+        std::string str_peer_address = p_peer_node->GetIdentifier();
         map_banned_peers.erase(it);
-        map_peer_misbehavior.erase(str_peer_address);
+        map_peer_misbehavior.erase(p_peer_node);
         LOG_INFO("Ban expired for peer " + str_peer_address);
         return false;
     }
@@ -2329,7 +2373,8 @@ void CPeerManager::CleanupExpiredBans() {
 
     while (it != map_banned_peers.end()) {
         if (now >= it->second) {
-            LOG_INFO("Removing expired ban for peer " + it->first);
+            std::string str_peer_address = it->first ? it->first->GetIdentifier() : "unknown";
+            LOG_INFO("Removing expired ban for peer " + str_peer_address);
             map_peer_misbehavior.erase(it->first);
             it = map_banned_peers.erase(it);
         } else {

@@ -116,8 +116,8 @@ private:
     int64_t m_last_rotation_time;  ///< Last time outbound connections were rotated (UNIX timestamp in seconds)
 
     // Peer banning
-    std::map<std::string, int> map_peer_misbehavior;           ///< Map of peer address -> misbehavior score
-    std::map<std::string, int64_t> map_banned_peers;  ///< Map of banned peer address -> ban expiry time (UNIX timestamp in seconds)
+    std::map<std::shared_ptr<IPeerNode>, int, PeerNodePtrComparator> map_peer_misbehavior;           ///< Map of peer node -> misbehavior score
+    std::map<std::shared_ptr<IPeerNode>, int64_t, PeerNodePtrComparator> map_banned_peers;  ///< Map of banned peer node -> ban expiry time (UNIX timestamp in seconds)
     mutable std::mutex cs_bans;                                 ///< Mutex protecting ban tracking
 
     // Blockweave integration
@@ -416,19 +416,19 @@ private:
 
     /**
      * @brief Increase misbehavior score for peer
-     * @param str_peer_address Peer address
+     * @param p_peer_node Shared pointer to peer node
      * @param n_score_increase Amount to increase score by
      *
      * Tracks peer misbehavior. Bans peer if score exceeds threshold.
      */
-    void IncreaseMisbehaviorScore(const std::string& str_peer_address, int n_score_increase);
+    void IncreaseMisbehaviorScore(std::shared_ptr<IPeerNode> p_peer_node, int n_score_increase);
 
     /**
      * @brief Check if peer is banned
-     * @param str_peer_address Peer address
+     * @param p_peer_node Shared pointer to peer node
      * @return true if peer is currently banned
      */
-    bool IsPeerBanned(const std::string& str_peer_address);
+    bool IsPeerBanned(std::shared_ptr<IPeerNode> p_peer_node);
 
     /**
      * @brief Clean up expired bans

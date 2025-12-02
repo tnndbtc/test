@@ -136,18 +136,6 @@ private:
 
 public:
     /**
-     * @brief Default constructor - creates invalid peer without socket
-     */
-    CPeerNode();
-
-    /**
-     * @brief Construct peer node with address and port (no socket)
-     * @param str_addr Peer IP address or hostname
-     * @param n_port_num Peer listening port
-     */
-    CPeerNode(const std::string& str_addr, int n_port_num);
-
-    /**
      * @brief Construct peer node with address, port, and socket
      * @param str_addr Peer IP address or hostname
      * @param n_port_num Peer listening port
