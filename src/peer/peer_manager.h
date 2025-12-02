@@ -104,7 +104,7 @@ private:
     std::thread m_monitor_inbound_thread;///< Monitors inbound sockets via I/O multiplexing and async accept
 
     // PING timer
-    std::chrono::steady_clock::time_point m_last_ping_time;  ///< Last time PING was sent to peers
+    int64_t m_last_ping_time;  ///< Last time PING was sent to peers (UNIX timestamp in seconds)
 
     // Inventory broadcasting and relay
     // Map structure: peer_node -> object_type -> set of inventory hashes
@@ -113,11 +113,11 @@ private:
     mutable std::mutex cs_inventory;                                   ///< Mutex protecting inventory tracking
 
     // Connection rotation
-    std::chrono::steady_clock::time_point m_last_rotation_time;  ///< Last time outbound connections were rotated
+    int64_t m_last_rotation_time;  ///< Last time outbound connections were rotated (UNIX timestamp in seconds)
 
     // Peer banning
     std::map<std::string, int> map_peer_misbehavior;           ///< Map of peer address -> misbehavior score
-    std::map<std::string, std::chrono::steady_clock::time_point> map_banned_peers;  ///< Map of banned peer address -> ban expiry time
+    std::map<std::string, int64_t> map_banned_peers;  ///< Map of banned peer address -> ban expiry time (UNIX timestamp in seconds)
     mutable std::mutex cs_bans;                                 ///< Mutex protecting ban tracking
 
     // Blockweave integration
@@ -126,7 +126,7 @@ private:
     // Public IP discovery
     std::string m_str_public_ip;                                ///< Current public IP address (default: "127.0.0.1")
     std::vector<std::string> m_vec_stun_addresses;               ///< STUN server addresses for periodic IP updates
-    std::chrono::steady_clock::time_point m_last_public_ip_check;///< Last time public IP was checked
+    int64_t m_last_public_ip_check;///< Last time public IP was checked (UNIX timestamp in seconds)
 
     // Protocol support
     uint64_t m_n_services;                                      ///< 64-bit bitmap of services (e.g., NODE_NETWORK)
@@ -407,14 +407,6 @@ private:
                                 const std::vector<std::pair<ObjectType::Type, std::string>>& vec_items);
 
     /**
-     * @brief Rotate outbound peer connections
-     *
-     * Disconnects 1-2 oldest outbound connections and attempts
-     * to establish new connections to increase network diversity.
-     */
-    void RotateOutboundConnections();
-
-    /**
      * @brief Check and enforce subnet diversity for inbound connections
      *
      * Limits connections per /24 subnet (IPv4) to increase global
@@ -529,6 +521,28 @@ public:
      * Each CPeerNode can be queried for address, port, identifier, and info.
      */
     virtual std::vector<std::shared_ptr<CPeerNode>> GetConnectedPeers() const override;
+
+    /**
+     * @brief Rotate outbound peer connections
+     *
+     * Disconnects 1-2 oldest outbound connections and attempts
+     * to establish new connections to increase network diversity.
+     *
+     * This is exposed publicly for testing purposes (via /rpc/triggerrotation endpoint).
+     * In normal operation, this is called automatically by PeerManagerThread every 30 minutes.
+     */
+    void RotateOutboundConnections();
+
+    /**
+     * @brief Disconnect a specific peer by address and port
+     * @param str_address Peer IP address
+     * @param n_port Peer port
+     * @return true if peer was found and disconnected, false otherwise
+     *
+     * This is exposed publicly for testing purposes (via /rpc/disconnectpeer endpoint).
+     * Localnet only.
+     */
+    bool DisconnectPeerByAddress(const std::string& str_address, int n_port);
 
     /**
      * @brief Send a message to a specific peer

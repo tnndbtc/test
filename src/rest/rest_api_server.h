@@ -166,6 +166,26 @@ private:
     std::tuple<int, std::string> HandleRpcMineTrigger();
 
     /**
+     * @brief Handle POST /rpc/setmocktime endpoint - set mock time for testing (localnet only)
+     * @param str_body Request body containing timestamp in seconds
+     * @return Tuple of (HTTP status code, JSON response with result)
+     */
+    std::tuple<int, std::string> HandleRpcSetMockTime(const std::string& str_body);
+
+    /**
+     * @brief Handle POST /rpc/triggerrotation endpoint - trigger peer rotation check (localnet only)
+     * @return Tuple of (HTTP status code, JSON response with result)
+     */
+    std::tuple<int, std::string> HandleRpcTriggerRotation();
+
+    /**
+     * @brief Handle POST /rpc/disconnectpeer endpoint - disconnect a specific peer (localnet only)
+     * @param str_body Request body containing peer address and port
+     * @return Tuple of (HTTP status code, JSON response with result)
+     */
+    std::tuple<int, std::string> HandleRpcDisconnectPeer(const std::string& str_body);
+
+    /**
      * @brief Load RPC authentication credentials from .cookie file
      * @param str_cookie_path Path to .cookie file
      * @return true if loaded successfully, false otherwise

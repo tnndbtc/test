@@ -25,6 +25,7 @@
 #include "utils/network.h"
 #include "utils/config.h"
 #include "utils/get_public_ip.h"
+#include "utils/time_util.h"
 #include "logger/logger.h"
 #include <iostream>
 #include <cstring>
@@ -72,14 +73,15 @@ CPeerManager::CPeerManager(int n_port, int n_max_outbound, int n_max_inbound, in
       n_max_inbound_peers(n_max_inbound), n_max_outbound_peers(n_max_outbound),
       n_peers_ping_time(n_ping_time), m_n_network_magic(n_magic),
       f_running(false), f_stop_requested(false), f_stop_monitor(false),
-      m_last_ping_time(std::chrono::steady_clock::now()),
-      m_last_rotation_time(std::chrono::steady_clock::now()),
+      m_last_ping_time(TimeUtil::GetCurrentTime()),
+      m_last_rotation_time(TimeUtil::GetCurrentTime()),
       p_blockweave(nullptr),
       m_str_public_ip("127.0.0.1"),
-      m_last_public_ip_check(std::chrono::steady_clock::now()),
+      m_last_public_ip_check(TimeUtil::GetCurrentTime()),
       m_n_services(NODE_NETWORK) {
     m_inbound_peers.reserve(n_max_inbound_peers);
     m_outbound_peers.reserve(n_max_outbound_peers);
+    LOG_TRACE("m_last_rotation_time: " + std::to_string(m_last_rotation_time));
 
     // Initialize Boost.Asio I/O infrastructure for inbound connections
     m_io_work = std::make_unique<boost::asio::executor_work_guard<boost::asio::io_context::executor_type>>(
@@ -562,8 +564,7 @@ void CPeerManager::HandleAccept(const boost::system::error_code& ec, boost::asio
         p_peer->SetConnected(false);
 
         // Set connection_time for inbound peer
-        int64_t n_now = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
+        int64_t n_now = TimeUtil::GetCurrentTime();
         p_peer->SetConnectionTime(n_now);
         p_peer->SetInbound(true);  // Mark as inbound connection
         LOG_INFO("Set connection_time for inbound peer " + str_ip + " to " + std::to_string(n_now));
@@ -737,10 +738,10 @@ void CPeerManager::PeerManagerThread() {
         }
 
         // Check if it's time to send PING messages (every n_peers_ping_time seconds)
-        auto now = std::chrono::steady_clock::now();
-        auto elapsed_ping = std::chrono::duration_cast<std::chrono::seconds>(now - m_last_ping_time);
+        int64_t now = TimeUtil::GetCurrentTime();
+        int64_t elapsed_ping = now - m_last_ping_time;
 
-        if (elapsed_ping.count() >= n_peers_ping_time) {
+        if (elapsed_ping >= n_peers_ping_time) {
             // Send PING to all connected peers (periodic keep-alive)
             SendPingToAllPeers();
             m_last_ping_time = now;
@@ -751,8 +752,8 @@ void CPeerManager::PeerManagerThread() {
         CConfig config;
         bool f_is_manual_ip = (config.GetPublicIP() != "127.0.0.1");
         if (!f_is_manual_ip && m_n_network_magic != LOCALNET_MAGIC) {
-            auto elapsed_ip = std::chrono::duration_cast<std::chrono::seconds>(now - m_last_public_ip_check);
-            if (elapsed_ip.count() >= 300) {  // 5 minutes = 300 seconds
+            int64_t elapsed_ip = now - m_last_public_ip_check;
+            if (elapsed_ip >= 300) {  // 5 minutes = 300 seconds
                 std::string str_new_ip = ::GetPublicIP(m_vec_stun_addresses, 3000);
                 if (str_new_ip != "127.0.0.1" && str_new_ip != m_str_public_ip) {
                     LOG_INFO("Public IP changed: " + m_str_public_ip + " -> " + str_new_ip);
@@ -766,8 +767,8 @@ void CPeerManager::PeerManagerThread() {
 
         // Periodic maintenance tasks
 
-        // Rotate outbound connections (every 30 minutes), enable it after AddressManager is implemented so it can establish new outbound connection
-        // RotateOutboundConnections();
+        // Rotate outbound connections (every 30 minutes)
+        RotateOutboundConnections();
 
         // Clean up expired bans
         CleanupExpiredBans();
@@ -857,7 +858,7 @@ void CPeerManager::RegisterSocket(std::shared_ptr<CPeerNode> p_peer) {
             return;
         }
 
-        LOG_INFO("Registered inbound socket for async I/O: " + p_peer->GetIdentifier());
+        LOG_INFO("Registered socket for async I/O: " + p_peer->GetIdentifier());
 
         // Allocate read buffer (8KB for P2P messages)
         auto p_buffer = std::make_shared<std::vector<uint8_t>>(8192);
@@ -1577,8 +1578,7 @@ bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
         auto p_peer = std::make_shared<CPeerNode>(str_address, n_port, p_socket);
 
         // Set connection_time to current timestamp
-        int64_t n_now = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
+        int64_t n_now = TimeUtil::GetCurrentTime();
         p_peer->SetConnectionTime(n_now);
         p_peer->SetInbound(false);  // Mark as outbound connection
         LOG_INFO("Set connection_time for outbound peer " + p_peer->GetIdentifier() + " to " + std::to_string(n_now));
@@ -1678,6 +1678,8 @@ void CPeerManager::DisconnectPeer(std::shared_ptr<CPeerNode> p_peer_shared) {
     }
 
     LOG_INFO("Disconnected peer " + p_peer_shared->GetIdentifier());
+    LOG_INFO("Outbound peer size after remove: " + std::to_string(m_outbound_peers.size()));
+    LOG_INFO("Inbound peer size after remove: " + std::to_string(m_inbound_peers.size()));
 }
 
 /**
@@ -2099,12 +2101,24 @@ void CPeerManager::ScheduleGetDataMessage(std::shared_ptr<CPeerNode> p_peer,
 // ============= Connection Rotation =============
 
 void CPeerManager::RotateOutboundConnections() {
-    auto now = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_last_rotation_time).count();
+    int64_t now = TimeUtil::GetCurrentTime();
+    int64_t elapsed = now - m_last_rotation_time;
+    LOG_TRACE("RotateOutboundConnections: before rotate m_last_rotation_time: " + std::to_string(m_last_rotation_time));
+
+    // Handle negative elapsed time (can happen when mock time is set to earlier value)
+    // Treat negative elapsed as if no time has passed (reset the clock)
+    if (elapsed < 0) {
+        LOG_TRACE("RotateOutboundConnections: Mock time jumped backwards (elapsed: " + std::to_string(elapsed) + "), resetting rotation clock");
+        m_last_rotation_time = now;
+        LOG_TRACE("RotateOutboundConnections: m_last_rotation_time: " + std::to_string(m_last_rotation_time));
+        return;
+    }
 
     if (elapsed < PEER_ROTATION_INTERVAL) {
+        LOG_INFO("RotateOutboundConnections: Rotating not happening: only elapsed: " + std::to_string(elapsed) + " seconds");
         return;  // Not time to rotate yet
     }
+    LOG_INFO("RotateOutboundConnections: Rotating start (elapsed: " + std::to_string(elapsed) + " seconds)");
 
     std::vector<std::shared_ptr<CPeerNode>> peers_to_disconnect;
     {
@@ -2137,6 +2151,7 @@ void CPeerManager::RotateOutboundConnections() {
 
         m_last_rotation_time = now;
     }
+    LOG_TRACE("RotateOutboundConnections: after rotate m_last_rotation_time: " + std::to_string(m_last_rotation_time));
 
     // Disconnect peers outside the lock to avoid deadlock
     // DisconnectPeer() needs cs_peers, so we must not hold it here
@@ -2147,6 +2162,45 @@ void CPeerManager::RotateOutboundConnections() {
     if (!peers_to_disconnect.empty()) {
         LOG_INFO("Rotated " + std::to_string(peers_to_disconnect.size()) + " outbound connections");
     }
+}
+
+bool CPeerManager::DisconnectPeerByAddress(const std::string& str_address, int n_port) {
+    std::shared_ptr<CPeerNode> p_peer_to_disconnect;
+
+    {
+        std::lock_guard<std::mutex> lock(cs_peers);
+
+        // Search outbound peers
+        for (auto& p_peer : m_outbound_peers) {
+            if (p_peer && p_peer->IsConnected()) {
+                if (p_peer->GetAddress() == str_address && p_peer->GetPort() == n_port) {
+                    p_peer_to_disconnect = p_peer;
+                    break;
+                }
+            }
+        }
+
+        // If not found in outbound, search inbound peers
+        if (!p_peer_to_disconnect) {
+            for (auto& p_peer : m_inbound_peers) {
+                if (p_peer && p_peer->IsConnected()) {
+                    if (p_peer->GetAddress() == str_address && p_peer->GetPort() == n_port) {
+                        p_peer_to_disconnect = p_peer;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if (p_peer_to_disconnect) {
+        LOG_INFO("Disconnecting peer: " + p_peer_to_disconnect->GetIdentifier());
+        DisconnectPeer(p_peer_to_disconnect);
+        return true;
+    }
+
+    LOG_WARN("Peer not found: " + str_address + ":" + std::to_string(n_port));
+    return false;
 }
 
 // ============= Subnet-Based Inbound Rotation =============
@@ -2217,7 +2271,7 @@ void CPeerManager::IncreaseMisbehaviorScore(const std::string& str_peer_address,
 
     // Ban peer if score exceeds threshold
     if (n_total_score >= PEER_BAN_THRESHOLD) {
-        auto ban_expiry = std::chrono::steady_clock::now() + std::chrono::seconds(PEER_BAN_DURATION);
+        int64_t ban_expiry = TimeUtil::GetCurrentTime() + PEER_BAN_DURATION;
         map_banned_peers[str_peer_address] = ban_expiry;
 
         LOG_ERROR("Peer " + str_peer_address + " banned for " + std::to_string(PEER_BAN_DURATION) +
@@ -2249,7 +2303,7 @@ bool CPeerManager::IsPeerBanned(const std::string& str_peer_address) {
     }
 
     // Check if ban has expired
-    auto now = std::chrono::steady_clock::now();
+    int64_t now = TimeUtil::GetCurrentTime();
     if (now >= it->second) {
         // Ban expired
         map_banned_peers.erase(it);
@@ -2264,7 +2318,7 @@ bool CPeerManager::IsPeerBanned(const std::string& str_peer_address) {
 void CPeerManager::CleanupExpiredBans() {
     std::lock_guard<std::mutex> lock(cs_bans);
 
-    auto now = std::chrono::steady_clock::now();
+    int64_t now = TimeUtil::GetCurrentTime();
     auto it = map_banned_peers.begin();
 
     while (it != map_banned_peers.end()) {

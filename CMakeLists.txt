@@ -198,6 +198,7 @@ add_library(bwutils SHARED
     src/utils/config.cpp
     src/utils/network.cpp
     src/utils/get_public_ip.cpp
+    src/utils/time_util.cpp
 )
 
 # Suppress false positive -Warray-bounds and -Wstringop-overflow warnings from GCC in Boost.Asio

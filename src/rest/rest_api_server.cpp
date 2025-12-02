@@ -19,6 +19,7 @@
 #include "utils/config.h"
 #include "utils/threadname.h"
 #include "utils/httpcode.h"
+#include "utils/time_util.h"
 #include "logger/logger.h"
 #include "blockcore/transaction.h"
 #include <iostream>
@@ -1232,6 +1233,118 @@ std::tuple<int, std::string> CRestApiServer::HandleRpcMineTrigger() {
     }
 }
 
+std::tuple<int, std::string> CRestApiServer::HandleRpcSetMockTime(const std::string& str_body) {
+    try {
+        // Check network - only allow on localnet
+        std::string str_network = p_config->GetNetwork();
+        if (str_network != "localnet") {
+            LOG_ERROR("POST /rpc/setmocktime: Only allowed on localnet (current: " + str_network + ")");
+            return {HTTP_FORBIDDEN, "{\"error\": \"setmocktime only available on localnet\"}"};
+        }
+
+        // Parse JSON body for "time" field
+        std::string str_time = ExtractJsonValue(str_body, "time");
+        if (str_time.empty()) {
+            LOG_ERROR("POST /rpc/setmocktime: Missing required field 'time'");
+            return {HTTP_BAD_REQUEST, "{\"error\": \"Missing required field 'time'\"}"};
+        }
+
+        // Parse time value
+        int64_t n_mock_time = 0;
+        try {
+            n_mock_time = std::stoll(str_time);
+        } catch (...) {
+            LOG_ERROR("POST /rpc/setmocktime: Invalid time value: " + str_time);
+            return {HTTP_BAD_REQUEST, "{\"error\": \"Invalid time value\"}"};
+        }
+
+        // Set mock time
+        TimeUtil::SetMockTime(n_mock_time);
+
+        LOG_INFO("Mock time set to: " + std::to_string(n_mock_time) +
+                 (n_mock_time == 0 ? " (disabled)" : ""));
+
+        std::ostringstream oss;
+        oss << "{"
+            << "\"result\": \"success\", "
+            << "\"mocktime\": " << n_mock_time << ", "
+            << "\"enabled\": " << (n_mock_time != 0 ? "true" : "false")
+            << "}";
+
+        return {HTTP_OK, oss.str()};
+
+    } catch (const std::exception& e) {
+        LOG_ERROR("POST /rpc/setmocktime exception: " + std::string(e.what()));
+        return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Internal server error\"}"};
+    }
+}
+
+std::tuple<int, std::string> CRestApiServer::HandleRpcTriggerRotation() {
+    try {
+        // Check network - only allow on localnet
+        std::string str_network = p_config->GetNetwork();
+        if (str_network != "localnet") {
+            LOG_ERROR("POST /rpc/triggerrotation: Only allowed on localnet (current: " + str_network + ")");
+            return {HTTP_FORBIDDEN, "{\"error\": \"triggerrotation only available on localnet\"}"};
+        }
+
+        // Trigger rotation check immediately
+        p_peer_manager->RotateOutboundConnections();
+
+        LOG_INFO("Manual rotation check triggered");
+
+        return {HTTP_OK, "{\"result\": \"success\", \"message\": \"Rotation check executed\"}"};
+
+    } catch (const std::exception& e) {
+        LOG_ERROR("POST /rpc/triggerrotation exception: " + std::string(e.what()));
+        return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Internal server error\"}"};
+    }
+}
+
+std::tuple<int, std::string> CRestApiServer::HandleRpcDisconnectPeer(const std::string& str_body) {
+    try {
+        // Check network - only allow on localnet
+        std::string str_network = p_config->GetNetwork();
+        if (str_network != "localnet") {
+            LOG_ERROR("POST /rpc/disconnectpeer: Only allowed on localnet (current: " + str_network + ")");
+            return {HTTP_FORBIDDEN, "{\"error\": \"disconnectpeer only available on localnet\"}"};
+        }
+
+        // Parse JSON body for "address" and "port" fields
+        std::string str_address = ExtractJsonValue(str_body, "address");
+        std::string str_port = ExtractJsonValue(str_body, "port");
+
+        if (str_address.empty() || str_port.empty()) {
+            LOG_ERROR("POST /rpc/disconnectpeer: Missing required fields 'address' or 'port'");
+            return {HTTP_BAD_REQUEST, "{\"error\": \"Missing required fields 'address' or 'port'\"}"};
+        }
+
+        // Parse port value
+        int n_port = 0;
+        try {
+            n_port = std::stoi(str_port);
+        } catch (...) {
+            LOG_ERROR("POST /rpc/disconnectpeer: Invalid port value: " + str_port);
+            return {HTTP_BAD_REQUEST, "{\"error\": \"Invalid port value\"}"};
+        }
+
+        // Disconnect the peer
+        bool f_success = p_peer_manager->DisconnectPeerByAddress(str_address, n_port);
+
+        if (f_success) {
+            LOG_INFO("Disconnected peer: " + str_address + ":" + std::to_string(n_port));
+            return {HTTP_OK, "{\"result\": \"success\", \"message\": \"Peer disconnected\"}"};
+        } else {
+            LOG_WARN("Peer not found: " + str_address + ":" + std::to_string(n_port));
+            return {HTTP_NOT_FOUND, "{\"error\": \"Peer not found\"}"};
+        }
+
+    } catch (const std::exception& e) {
+        LOG_ERROR("POST /rpc/disconnectpeer exception: " + std::string(e.what()));
+        return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Internal server error\"}"};
+    }
+}
+
 // ============= HTTP Method Handlers (Interface Implementation) =============
 
 std::tuple<int, std::string> CRestApiServer::HandleGET(const std::string& str_endpoint) {
@@ -1274,6 +1387,15 @@ std::tuple<int, std::string> CRestApiServer::HandlePOST(const std::string& str_e
     }
     else if (str_endpoint == "/rpc/minetrigger") {
         return HandleRpcMineTrigger();
+    }
+    else if (str_endpoint == "/rpc/setmocktime") {
+        return HandleRpcSetMockTime(request.str_body);
+    }
+    else if (str_endpoint == "/rpc/triggerrotation") {
+        return HandleRpcTriggerRotation();
+    }
+    else if (str_endpoint == "/rpc/disconnectpeer") {
+        return HandleRpcDisconnectPeer(request.str_body);
     }
     else {
         LOG_ERROR("POST endpoint not found: " + str_endpoint);

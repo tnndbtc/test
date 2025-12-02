@@ -726,6 +726,125 @@ class BlockweaveNode:
             }
 
     # def connect_to_peer(self, peer_address, peer_port, wait=True):
+    def set_mock_time(self, timestamp):
+        """
+        Set mock time for testing time-dependent logic (localnet only).
+
+        Args:
+            timestamp: UNIX timestamp in seconds, or 0 to disable mock time
+
+        Returns:
+            dict: Response with keys 'result', 'mocktime', 'enabled'
+        """
+        try:
+            response = self.post("/rpc/setmocktime", json_data={"time": timestamp})
+
+            if response.status_code == 200:
+                data = response.json()
+                self.logger.info(
+                    f"Mock time set to {timestamp} " +
+                    ("(disabled)" if timestamp == 0 else "")
+                )
+                return data
+            else:
+                self.logger.error(
+                    f"Failed to set mock time: HTTP {response.status_code}, "
+                    f"Body: {response.text}"
+                )
+                return {"error": f"HTTP {response.status_code}"}
+
+        except Exception as e:
+            self.logger.error(f"Exception setting mock time: {e}")
+            return {"error": str(e)}
+
+    def get_mock_time(self):
+        """
+        Get current mock time value.
+
+        Returns:
+            int: Current mock time (0 if not set)
+        """
+        try:
+            # Query by setting time to 0 (which disables, but returns current value)
+            response = self.post("/rpc/setmocktime", json_data={"time": 0})
+
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("mocktime", 0)
+            else:
+                self.logger.warning(f"Failed to get mock time: HTTP {response.status_code}")
+                return 0
+
+        except Exception as e:
+            self.logger.error(f"Exception getting mock time: {e}")
+            return 0
+
+    def trigger_rotation(self):
+        """
+        Trigger peer rotation check immediately (localnet only).
+
+        Forces the peer manager to check rotation logic immediately
+        instead of waiting for the next periodic check (5 seconds).
+
+        Returns:
+            dict: Response with 'result' and 'message' keys
+        """
+        try:
+            response = self.post("/rpc/triggerrotation")
+
+            if response.status_code == 200:
+                data = response.json()
+                self.logger.info("Triggered rotation check")
+                return data
+            else:
+                self.logger.error(
+                    f"Failed to trigger rotation: HTTP {response.status_code}, "
+                    f"Body: {response.text}"
+                )
+                return {"error": f"HTTP {response.status_code}"}
+
+        except Exception as e:
+            self.logger.error(f"Exception triggering rotation: {e}")
+            return {"error": str(e)}
+
+    def disconnect_peer(self, peer_node):
+        """
+        Disconnect a specific peer (localnet only).
+
+        Args:
+            peer_node: BlockweaveNode instance to disconnect from
+
+        Returns:
+            bool: True if peer was disconnected successfully, False otherwise
+        """
+        peer_address = "127.0.0.1"
+        if peer_node.bind_ip is not None:
+            peer_address = peer_node.bind_ip
+
+        try:
+            response = self.post("/rpc/disconnectpeer", json_data={
+                "address": peer_address,
+                "port": peer_node.p2p_port
+            })
+
+            if response.status_code == 200:
+                data = response.json()
+                self.logger.info(f"Disconnected peer: {peer_address}:{peer_node.p2p_port}")
+                return True
+            elif response.status_code == 404:
+                self.logger.warning(f"Peer not found: {peer_address}:{peer_node.p2p_port}")
+                return False
+            else:
+                self.logger.error(
+                    f"Failed to disconnect peer: HTTP {response.status_code}, "
+                    f"Body: {response.text}"
+                )
+                return False
+
+        except Exception as e:
+            self.logger.error(f"Exception disconnecting peer: {e}")
+            return False
+
     def connect_to_peer(self, peer_node, wait=True):
         """
         Connect to another peer node using RPC.
@@ -780,6 +899,39 @@ class BlockweaveNode:
         except Exception as e:
             self.logger.error(f"Exception connecting to peer: {e}")
             return False
+
+    def count_outbound_peers(self):
+        """
+        Count number of outbound peer connections.
+
+        Returns:
+            int: Number of outbound connections
+        """
+        peer_info = self.get_peer_info()
+        if peer_info.get("status") == "success":
+            return peer_info.get("outbound_peers", 0)
+        return 0
+
+    def is_connected_to(self, peer_node):
+        """
+        Check if connected to a specific peer by port number.
+
+        Args:
+            peer_node: BlockweaveNode instance to check connection to
+
+        Returns:
+            bool: True if connected to the peer, False otherwise
+        """
+        peer_info = self.get_peer_info()
+        if peer_info.get("status") != "success":
+            return False
+
+        # Check outbound peers for matching port
+        for peer in peer_info.get("peers", []):
+            if peer.get("port") == peer_node.p2p_port:
+                return True
+
+        return False
 
     def __enter__(self):
         """Context manager entry - start the node."""

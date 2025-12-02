@@ -357,6 +357,222 @@ curl -X POST http://localhost:48443/rpc/minetrigger
 
 ---
 
+### POST /rpc/setmocktime
+
+Set mock time for testing time-dependent logic (localnet only).
+
+**Request:**
+```bash
+curl -X POST http://localhost:48443/rpc/setmocktime \
+  -H "Content-Type: application/json" \
+  -d '{"time": 1234567890}'
+```
+
+**Request Body:**
+- `time` (integer, required) - UNIX timestamp in seconds, or 0 to disable mock time
+
+**Response (Success):**
+```json
+{
+  "result": "success",
+  "mocktime": 1234567890,
+  "enabled": true
+}
+```
+
+**Response (Disabled):**
+```json
+{
+  "result": "success",
+  "mocktime": 0,
+  "enabled": false
+}
+```
+
+**Response (Forbidden - Wrong Network):**
+```json
+{
+  "error": "setmocktime only available on localnet"
+}
+```
+
+**Response (Bad Request - Invalid Time):**
+```json
+{
+  "error": "Invalid time value"
+}
+```
+
+**Response (Bad Request - Missing Field):**
+```json
+{
+  "error": "Missing required field 'time'"
+}
+```
+
+**Status Codes:**
+- 200 OK - Mock time set successfully
+- 400 Bad Request - Invalid time value or missing field
+- 403 Forbidden - Not running on localnet
+- 500 Internal Server Error - Server error
+
+**Notes:**
+- **Localnet only** - Returns 403 Forbidden on mainnet/testnet
+- When mock time is set (non-zero), all time-dependent operations use the mock time instead of real system time
+- Set to 0 to disable mock time and return to real system time
+- Mock time is not persisted - restarting the daemon resets to real time
+- Affects time-dependent operations:
+  - Outbound peer rotation (every 1800 seconds)
+  - Ban expiry (24 hours = 86400 seconds)
+  - Peer connection timestamps
+- Thread-safe with atomic operations
+- Useful for functional tests to control time progression without real-time waits
+
+**Example Usage in Tests:**
+```bash
+# Set mock time to specific timestamp
+curl -X POST http://localhost:48443/rpc/setmocktime -d '{"time": 10000}'
+
+# Advance time by 1800 seconds
+curl -X POST http://localhost:48443/rpc/setmocktime -d '{"time": 11800}'
+
+# Disable mock time (return to real time)
+curl -X POST http://localhost:48443/rpc/setmocktime -d '{"time": 0}'
+```
+
+---
+
+### POST /rpc/triggerrotation
+
+Trigger immediate peer rotation check (localnet only).
+
+**Request:**
+```bash
+curl -X POST http://localhost:48443/rpc/triggerrotation
+```
+
+**Request Body:**
+- None
+
+**Response (Success):**
+```json
+{
+  "result": "success",
+  "message": "Rotation check executed"
+}
+```
+
+**Response (Forbidden - Wrong Network):**
+```json
+{
+  "error": "triggerrotation only available on localnet"
+}
+```
+
+**Status Codes:**
+- 200 OK - Rotation check executed
+- 403 Forbidden - Not running on localnet
+- 500 Internal Server Error - Server error
+
+**Notes:**
+- **Localnet only** - Returns 403 Forbidden on mainnet/testnet
+- Forces immediate execution of `RotateOutboundConnections()` without waiting for the periodic check (normally every 5 seconds)
+- Rotation still respects the time interval requirement (1800 seconds since last rotation) and minimum peer count (2 peers)
+- Used by functional tests to trigger rotation deterministically after setting mock time
+- If rotation conditions are not met (e.g., elapsed time < 1800s or fewer than 2 peers), the method returns without disconnecting any peers
+
+**Example Usage in Tests:**
+```bash
+# Set mock time to trigger rotation interval
+curl -X POST http://localhost:48443/rpc/setmocktime -d '{"time": 11800}'
+
+# Force rotation check immediately (instead of waiting 5 seconds)
+curl -X POST http://localhost:48443/rpc/triggerrotation
+```
+
+---
+
+### POST /rpc/disconnectpeer
+
+Disconnect a specific peer connection (localnet only).
+
+**Request:**
+```bash
+curl -X POST http://localhost:48443/rpc/disconnectpeer \
+  -H "Content-Type: application/json" \
+  -d '{
+    "address": "127.0.0.1",
+    "port": 48334
+  }'
+```
+
+**Request Body:**
+- `address` (string, required) - Peer IP address
+- `port` (integer, required) - Peer P2P port
+
+**Response (Success):**
+```json
+{
+  "result": "success",
+  "message": "Peer disconnected"
+}
+```
+
+**Response (Not Found):**
+```json
+{
+  "error": "Peer not found"
+}
+```
+
+**Response (Forbidden - Wrong Network):**
+```json
+{
+  "error": "disconnectpeer only available on localnet"
+}
+```
+
+**Response (Bad Request - Missing Fields):**
+```json
+{
+  "error": "Missing required fields 'address' or 'port'"
+}
+```
+
+**Response (Bad Request - Invalid Port):**
+```json
+{
+  "error": "Invalid port value"
+}
+```
+
+**Status Codes:**
+- 200 OK - Peer disconnected successfully
+- 400 Bad Request - Missing or invalid fields
+- 403 Forbidden - Not running on localnet
+- 404 Not Found - Peer not found (not connected)
+- 500 Internal Server Error - Server error
+
+**Notes:**
+- **Localnet only** - Returns 403 Forbidden on mainnet/testnet
+- Searches both outbound and inbound peer lists for the specified address:port combination
+- Gracefully closes the peer connection and cleans up resources
+- Used by functional tests for explicit peer cleanup between test cases
+- Returns 404 if the peer is not currently connected
+
+**Example Usage in Tests:**
+```bash
+# Disconnect peer1
+curl -X POST http://localhost:48443/rpc/disconnectpeer \
+  -d '{"address": "127.0.0.1", "port": 48334}'
+
+# Disconnect peer2
+curl -X POST http://localhost:48443/rpc/disconnectpeer \
+  -d '{"address": "127.0.0.1", "port": 48335}'
+```
+
+---
+
 ## CLI Utilities
 
 ### bweave_cli

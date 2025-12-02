@@ -37,12 +37,18 @@ class TestFramework(unittest.TestCase):
 
         This helps detect orphaned processes from previous test runs that could
         interfere with the current test by holding ports or resources.
+
+        Enhanced to avoid false positives from:
+        - Text editors opening bweave.log or bweave.conf
+        - tail/cat/less viewing log files
+        - Other utilities operating on bweave-related files
         """
         running_processes = []
 
         try:
             if platform.system() == "Windows":
                 # Windows: Use tasklist command
+                # This directly filters for bweave.exe processes, so it's precise
                 result = subprocess.run(
                     ["tasklist", "/FI", "IMAGENAME eq bweave.exe", "/FO", "CSV", "/NH"],
                     capture_output=True,
@@ -62,7 +68,7 @@ class TestFramework(unittest.TestCase):
                                 except ValueError:
                                     pass
             else:
-                # Unix-like systems (Linux, macOS): Use ps command
+                # Unix-like systems (Linux, macOS): Use ps command with better filtering
                 result = subprocess.run(
                     ["ps", "aux"],
                     capture_output=True,
@@ -72,22 +78,78 @@ class TestFramework(unittest.TestCase):
 
                 if result.returncode == 0:
                     for line in result.stdout.split('\n'):
-                        # Look for bweave in the command line, but exclude:
-                        # - grep itself
-                        # - bweave_cli (the CLI tool, not the daemon)
-                        # - this script
-                        if 'bweave' in line and 'grep' not in line and 'bweave_cli' not in line:
-                            parts = line.split()
-                            if len(parts) >= 2:
-                                try:
-                                    pid = int(parts[1])
-                                    # Get the command (everything from the 11th column onwards)
-                                    command = ' '.join(parts[10:]) if len(parts) > 10 else 'bweave'
-                                    # Only add if it's actually the bweave executable
-                                    if '/bweave' in command or command.startswith('bweave') or command == './bweave':
-                                        running_processes.append((pid, command))
-                                except (ValueError, IndexError):
-                                    pass
+                        # Skip lines that don't contain 'bweave'
+                        if 'bweave' not in line:
+                            continue
+
+                        parts = line.split()
+                        if len(parts) < 11:
+                            continue
+
+                        try:
+                            pid = int(parts[1])
+                            # Get the command (everything from the 11th column onwards)
+                            command = ' '.join(parts[10:])
+
+                            # Enhanced filtering to avoid false positives:
+                            # 1. Exclude processes that are clearly not the bweave daemon:
+                            exclude_patterns = [
+                                'grep',           # grep bweave
+                                'bweave_cli',     # CLI tool, not daemon
+                                'python',         # Python scripts mentioning bweave
+                                'vim',            # vim bweave.log
+                                'vi ',            # vi bweave.conf
+                                'nano',           # nano bweave.log
+                                'emacs',          # emacs bweave.conf
+                                'tail',           # tail -f bweave.log
+                                'cat',            # cat bweave.log
+                                'less',           # less bweave.log
+                                'more',           # more bweave.log
+                                'head',           # head bweave.log
+                                'sed',            # sed editing files
+                                'awk',            # awk processing files
+                                'code',           # VSCode: code bweave.conf
+                                'sublime',        # Sublime Text
+                                'atom',           # Atom editor
+                                'wallet',         # wallet executable, not daemon
+                            ]
+
+                            # Check if command matches any exclusion pattern
+                            if any(pattern in command for pattern in exclude_patterns):
+                                continue
+
+                            # 2. Include only if it's actually the bweave executable:
+                            # Match patterns like:
+                            # - /path/to/bweave
+                            # - ./bweave
+                            # - bweave (bare command)
+                            # - bweave -c config.conf (with args)
+                            include_patterns = [
+                                '/bweave ',       # /path/to/bweave with args
+                                '/bweave\n',      # /path/to/bweave at end of line
+                                '/bweave$',       # /path/to/bweave (exact match)
+                                './bweave ',      # ./bweave with args
+                                './bweave\n',     # ./bweave at end of line
+                                './bweave$',      # ./bweave (exact match)
+                            ]
+
+                            # Also check if command starts with 'bweave' (bare command)
+                            # but not 'bweave_cli' or 'bweave.log' etc.
+                            command_parts = command.split()
+                            if command_parts:
+                                first_part = command_parts[0]
+                                # Check if first part is exactly 'bweave' or ends with '/bweave'
+                                if first_part == 'bweave' or first_part.endswith('/bweave'):
+                                    running_processes.append((pid, command))
+                                    continue
+
+                            # Check include patterns
+                            if any(pattern in command for pattern in include_patterns):
+                                running_processes.append((pid, command))
+
+                        except (ValueError, IndexError):
+                            pass
+
         except subprocess.TimeoutExpired:
             print("Warning: Timeout while checking for running bweave processes")
         except Exception as e:
