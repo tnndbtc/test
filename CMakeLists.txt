@@ -42,8 +42,8 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
             # UndefinedBehaviorSanitizer: Detects undefined behavior
             # LeakSanitizer: Detects memory leaks (enabled by default with ASan)
             # Note: MemorySanitizer requires special instrumented libraries, so it's commented out
-            add_compile_options(-fsanitize=address -fsanitize=undefined)
-            add_link_options(-fsanitize=address -fsanitize=undefined)
+            add_compile_options(-fsanitize=address,leak -fsanitize=undefined)
+            add_link_options(-fsanitize=address,leak -fsanitize=undefined)
             message(STATUS "Linux Debug: Enabled -g -ggdb -O0 with AddressSanitizer and UndefinedBehaviorSanitizer")
         elseif(APPLE)
             # macOS-specific: Enable sanitizers if supported
