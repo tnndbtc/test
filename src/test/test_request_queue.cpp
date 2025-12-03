@@ -161,7 +161,11 @@ TEST(RequestQueue_ThreadSafeEnqueue) {
 
     std::vector<std::thread> threads;
     for (int i = 0; i < n_threads; i++) {
+#ifdef _WIN32
+        threads.emplace_back([&queue, i, n_requests_per_thread]() {
+#else
         threads.emplace_back([&queue, i]() {
+#endif
             for (int j = 0; j < n_requests_per_thread; j++) {
                 CHttpRequest request;
                 request.str_method = "GET";
