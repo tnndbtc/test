@@ -98,8 +98,8 @@ docker network connect --ip 8.8.0.2 net8 "$CONTAINER_NAME"
 echo "docker network connect --ip 203.10.0.2 net203 $CONTAINER_NAME"
 docker network connect --ip 203.10.0.2 net203 "$CONTAINER_NAME"
 
-echo "docker exec $CONTAINER_NAME bash -c \"rm -rf build/ && ./configure --debug --generator=\"Unix Makefiles\" && cd build && make -j8\""
-docker exec "$CONTAINER_NAME" bash -c "rm -rf build/ && ./configure --debug --generator=\"Unix Makefiles\" && cd build && make -j8"
+echo "docker exec "$CONTAINER_NAME" bash -c \"rm -rf build/ && cmake -B build -DCMAKE_CXX_COMPILER=/usr/bin/clang++ -DCMAKE_C_COMPILER=/usr/bin/clang -DCMAKE_BUILD_TYPE=Debug && cmake --build build -- -j$(nproc)\""
+docker exec "$CONTAINER_NAME" bash -c "rm -rf build/ && cmake -B build -DCMAKE_CXX_COMPILER=/usr/bin/clang++ -DCMAKE_C_COMPILER=/usr/bin/clang -DCMAKE_BUILD_TYPE=Debug && cmake --build build -- -j$(nproc)"
 docker exec "$CONTAINER_NAME" bash -c "cd test/docker && cp ../functional/test_runner.py . && ./test_runner.py test_peer_eviction.py --nocleanup"
 
 # Capture the test exit status
