@@ -24,7 +24,7 @@ TEST(Network_ParseNetworkType_Invalid) {
     bool f_exception_thrown = false;
     try {
         ParseNetworkType("invalid");
-    } catch (const std::runtime_error& e) {
+    } catch (const std::runtime_error&) {
         f_exception_thrown = true;
     }
     ASSERT_TRUE(f_exception_thrown, "Invalid network type should throw exception");

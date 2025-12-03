@@ -182,7 +182,7 @@ ELogLevel CLogger::ParseLogLevel(const std::string& str_level) {
     std::string str_upper = str_level;
     // Convert to uppercase for case-insensitive comparison
     for (char& c : str_upper) {
-        c = std::toupper(c);
+        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     }
 
     if (str_upper == "TRACE") return ELogLevel::TRACE;

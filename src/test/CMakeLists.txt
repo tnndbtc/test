@@ -263,6 +263,72 @@ endif()
 if(WIN32)
     target_compile_definitions(test_all PRIVATE _WIN32_WINNT=0x0601)
     target_link_libraries(test_all PRIVATE ws2_32)
+
+    # ============================================================
+    # Copy runtime DLLs to test directory for execution
+    # ============================================================
+
+    # Copy project DLLs to test directory
+    set(PROJECT_DLLS
+        bwthreadname bwpathutil bwlogger bwutils
+        bwpeer bwpeermsg bwblockcore bwrest
+    )
+
+    foreach(dll ${PROJECT_DLLS})
+        add_custom_command(TARGET test_all POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_FILE:${dll}>
+                $<TARGET_FILE_DIR:test_all>
+            COMMENT "Copying ${dll}.dll to test directory"
+        )
+    endforeach()
+
+    # Copy OpenSSL DLLs if they exist
+    if(OPENSSL_FOUND)
+        # Get the library directory and derive the bin directory
+        get_filename_component(OPENSSL_LIB_DIR "${OPENSSL_CRYPTO_LIBRARY}" DIRECTORY)
+        get_filename_component(OPENSSL_ROOT "${OPENSSL_LIB_DIR}" DIRECTORY)
+
+        # Handle different possible OpenSSL directory structures
+        # 1. Standard: bin/ alongside lib/
+        # 2. Custom MSVC: bin/ alongside lib/VC/x64/MD/
+        # 3. vcpkg: bin/ in the same root
+
+        # For custom MSVC structure (lib/VC/x64/MD/), go up more levels
+        if(OPENSSL_LIB_DIR MATCHES "lib/VC/x64/MD")
+            get_filename_component(OPENSSL_ROOT "${OPENSSL_ROOT}/../../../.." ABSOLUTE)
+        elseif(OPENSSL_LIB_DIR MATCHES "lib/mingw")
+            get_filename_component(OPENSSL_ROOT "${OPENSSL_ROOT}/../.." ABSOLUTE)
+        endif()
+
+        set(OPENSSL_BIN_DIR "${OPENSSL_ROOT}/bin")
+
+        # Check for OpenSSL 3.x DLLs (libssl-3-x64.dll, libcrypto-3-x64.dll)
+        if(EXISTS "${OPENSSL_BIN_DIR}/libssl-3-x64.dll")
+            add_custom_command(TARGET test_all POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${OPENSSL_BIN_DIR}/libssl-3-x64.dll"
+                    $<TARGET_FILE_DIR:test_all>
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${OPENSSL_BIN_DIR}/libcrypto-3-x64.dll"
+                    $<TARGET_FILE_DIR:test_all>
+                COMMENT "Copying OpenSSL 3.x DLLs to test directory"
+            )
+        # Check for OpenSSL 1.1.x DLLs (libssl-1_1-x64.dll, libcrypto-1_1-x64.dll)
+        elseif(EXISTS "${OPENSSL_BIN_DIR}/libssl-1_1-x64.dll")
+            add_custom_command(TARGET test_all POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${OPENSSL_BIN_DIR}/libssl-1_1-x64.dll"
+                    $<TARGET_FILE_DIR:test_all>
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${OPENSSL_BIN_DIR}/libcrypto-1_1-x64.dll"
+                    $<TARGET_FILE_DIR:test_all>
+                COMMENT "Copying OpenSSL 1.1.x DLLs to test directory"
+            )
+        else()
+            message(WARNING "OpenSSL DLLs not found at ${OPENSSL_BIN_DIR}. Tests may fail to run if OpenSSL DLLs are not in PATH.")
+        endif()
+    endif()
 endif()
 
 # Print build information

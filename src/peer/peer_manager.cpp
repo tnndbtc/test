@@ -35,8 +35,12 @@
 
 // Platform-specific socket headers
 #ifdef _WIN32
+    #ifndef NOMINMAX
+        #define NOMINMAX
+    #endif
     #include <winsock2.h>
     #include <ws2tcpip.h>
+    #include <mstcpip.h>  // For tcp_keepalive and SIO_KEEPALIVE_VALS
     #include <windows.h>
     // Undefine Windows macros that interfere with TimeUtil functions
     #ifdef GetCurrentTime
@@ -75,7 +79,7 @@
  * Call Start() to begin accepting connections.
  */
 CPeerManager::CPeerManager(int n_port, int n_max_outbound, int n_max_inbound, int n_max_workers, int n_ping_time, uint32_t n_magic, const std::string& str_bind)
-    : n_listen_port(n_port), str_bind_ip(str_bind), m_p_acceptor(nullptr),
+    : n_listen_port(static_cast<uint16_t>(n_port)), str_bind_ip(str_bind), m_p_acceptor(nullptr),
       n_max_inbound_peers(n_max_inbound), n_max_outbound_peers(n_max_outbound),
       n_peers_ping_time(n_ping_time), m_n_network_magic(n_magic),
       f_running(false), f_stop_requested(false), f_stop_monitor(false),
@@ -518,7 +522,7 @@ void CPeerManager::HandleAccept(const boost::system::error_code& ec, boost::asio
 
             if (!same_subnet_indices.empty()) {
                 // Drop a random peer from the same subnet
-                std::srand(std::time(nullptr));
+                std::srand(static_cast<unsigned int>(std::time(nullptr)));
                 size_t random_idx = same_subnet_indices[std::rand() % same_subnet_indices.size()];
 
                 LOG_INFO("Max inbound peers reached. Dropping peer " + m_inbound_peers[random_idx]->GetIdentifier() + " from same subnet " + str_new_subnet +
@@ -535,7 +539,7 @@ void CPeerManager::HandleAccept(const boost::system::error_code& ec, boost::asio
                 }
 
                 if (!connected_indices.empty()) {
-                    std::srand(std::time(nullptr));
+                    std::srand(static_cast<unsigned int>(std::time(nullptr)));
                     size_t random_idx = connected_indices[std::rand() % connected_indices.size()];
 
                     LOG_INFO("Max inbound peers reached. All peers from different subnets. "
@@ -616,9 +620,8 @@ bool CPeerManager::SetSocketKeepAlive(std::shared_ptr<boost::asio::ip::tcp::sock
     }
 
     // Extract native handle for platform-specific socket options
-    int n_socket = p_socket->native_handle();
-
 #ifdef _WIN32
+    SOCKET n_socket = p_socket->native_handle();
     // Windows: Enable keepalive and configure timing
     BOOL n_keepalive = TRUE;
     if (setsockopt(n_socket, SOL_SOCKET, SO_KEEPALIVE, (const char*)&n_keepalive, sizeof(n_keepalive)) < 0) {
@@ -639,6 +642,7 @@ bool CPeerManager::SetSocketKeepAlive(std::shared_ptr<boost::asio::ip::tcp::sock
     }
 #else
     // POSIX (Linux/macOS)
+    int n_socket = p_socket->native_handle();
     int n_keepalive = 1;
     int n_keepidle = 60;      // Start sending keepalive probes after 60 seconds
     int n_keepintvl = 10;     // Send keepalive probes every 10 seconds
@@ -1242,13 +1246,13 @@ void CPeerManager::HandleInventoryMessage(std::shared_ptr<CPeerNode> p_peer_shar
 
     // Request missing items via GETDATA (scheduled asynchronously)
     if (!vec_missing_items.empty()) {
-        std::vector<std::pair<ObjectType::Type, std::string>> items = vec_missing_items;
-        size_t item_count = items.size();
+        std::vector<std::pair<ObjectType::Type, std::string>> missing_items_copy = vec_missing_items;
+        size_t item_count = missing_items_copy.size();
         std::string peer_addr = p_peer_shared->GetIdentifier();
 
         // Capture peer to keep it alive during async operation
-        boost::asio::post(*m_thread_pool, [this, p_peer_shared, items, item_count, peer_addr]() {
-            ScheduleGetDataMessage(p_peer_shared, items);
+        boost::asio::post(*m_thread_pool, [this, p_peer_shared, missing_items_copy, item_count, peer_addr]() {
+            ScheduleGetDataMessage(p_peer_shared, missing_items_copy);
             LOG_INFO("Sent GETDATA request for " + std::to_string(item_count) +
                      " items to peer " + peer_addr);
         });
@@ -1550,7 +1554,7 @@ void CPeerManager::HandleBlockMessage(std::shared_ptr<CPeerNode> p_peer_shared, 
  * Note: Since Boost.Asio migration, outbound peers use the same async I/O
  * infrastructure as inbound peers (no dedicated thread per connection).
  */
-bool CPeerManager::ConnectToPeer(const std::string& str_address, int n_port) {
+bool CPeerManager::ConnectToPeer(const std::string& str_address, uint16_t n_port) {
     try {
         // Create Boost.Asio socket
         auto p_socket = std::make_shared<boost::asio::ip::tcp::socket>(m_io_context);
@@ -1767,7 +1771,7 @@ bool CPeerManager::AddPeer(const std::string& str_address, int n_port) {
 
             if (!connected_indices.empty()) {
                 // Drop a random connected outbound peer
-                std::srand(std::time(nullptr));
+                std::srand(static_cast<unsigned int>(std::time(nullptr)));
                 size_t random_idx = connected_indices[std::rand() % connected_indices.size()];
 
                 LOG_INFO("Dropping random outbound peer " + m_outbound_peers[random_idx]->GetIdentifier() +
@@ -1791,7 +1795,7 @@ bool CPeerManager::AddPeer(const std::string& str_address, int n_port) {
     }
 
     // Perform blocking connection outside the lock
-    bool f_success = ConnectToPeer(str_address, n_port);
+    bool f_success = ConnectToPeer(str_address, static_cast<uint16_t>(n_port));
 
     if (!f_success) {
         // Connection failed, remove the placeholder we added
@@ -2184,7 +2188,7 @@ void CPeerManager::RotateOutboundConnections() {
                   });
 
         // Store peers to disconnect
-        int n_to_disconnect = std::min(2, static_cast<int>(oldest_peers.size()));
+        int n_to_disconnect = (std::min)(2, static_cast<int>(oldest_peers.size()));
         for (int i = 0; i < n_to_disconnect; i++) {
             LOG_INFO("Rotating out outbound peer: " + oldest_peers[i]->GetIdentifier());
             peers_to_disconnect.push_back(oldest_peers[i]);

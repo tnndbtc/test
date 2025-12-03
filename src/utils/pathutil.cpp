@@ -12,6 +12,10 @@
 #ifdef _WIN32
     #include <direct.h>
     #define mkdir(path, mode) _mkdir(path)
+    // Windows doesn't have S_ISDIR, use _S_IFDIR instead
+    #ifndef S_ISDIR
+        #define S_ISDIR(mode) (((mode) & _S_IFMT) == _S_IFDIR)
+    #endif
 #else
     #include <sys/types.h>
 #endif

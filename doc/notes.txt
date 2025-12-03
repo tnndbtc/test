@@ -119,16 +119,24 @@ vscode: launch.json
 #
 # install git: https://git-scm.com/install/windows
 # install openssl: https://slproweb.com/products/Win32OpenSSL.html win64 exe, OpenSSL 3.6
-# install LLVM: https://github.com/llvm/llvm-project/releases
 # install cmake: https://cmake.org/download/
 # install boost: https://www.boost.org/releases/latest/
 # install python3: type python3 on command prompt and it will open Microsoft Store to download
 # install nodejs/npm: https://nodejs.org/en/download
-# install ninja: https://github.com/ninja-build/ninja/releases
-to build:
-configure.bat
-cd build
-cmake --build . -- -j4
+# install MSVC Build tool: https://visualstudio.microsoft.com/downloads/
+Build Tools for Visual Studio
+  MSVC Build Tools for x64/x86 (Latest)
+  Windows 11 SDK (10.0.26100.6901)
+  C++ CMake tools for Windows (for /m:4)
+
+  MSVC v143 - VS 2022 is optional
+
+to config:
+cmake -B build -DBUILD_TESTS=ON
+cmake --build build --config Debug -- /m:4
+cmake --build build --config Release -- /m:4
+
+-DCMAKE_BUILD_TYPE=Debug is NOT supported by MSBuild
 --------------------------
 install boost:
 	mac: brew install boost

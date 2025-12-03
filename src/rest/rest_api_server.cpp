@@ -37,6 +37,12 @@
 #include <iomanip>
 #include <sys/stat.h>
 
+// Platform-specific includes for directory operations
+#ifdef _WIN32
+    #include <direct.h>  // For _mkdir
+    #define S_ISDIR(m) (((m) & _S_IFMT) == _S_IFDIR)
+#endif
+
 // Namespace aliases for convenience
 namespace beast = boost::beast;
 namespace http = beast::http;
@@ -132,10 +138,10 @@ static bool IsBase64(unsigned char c) {
  */
 static std::vector<uint8_t> DecodeBase64(const std::string& str_encoded) {
     std::vector<uint8_t> decoded;
-    int n_in_len = str_encoded.size();
+    size_t n_in_len = str_encoded.size();
     int n_i = 0;
     int n_j = 0;
-    int n_in = 0;
+    size_t n_in = 0;
     unsigned char char_array_4[4], char_array_3[3];
 
     while (n_in_len-- && (str_encoded[n_in] != '=') && IsBase64(str_encoded[n_in])) {
@@ -143,7 +149,7 @@ static std::vector<uint8_t> DecodeBase64(const std::string& str_encoded) {
         n_in++;
         if (n_i == 4) {
             for (n_i = 0; n_i < 4; n_i++) {
-                char_array_4[n_i] = base64_chars.find(char_array_4[n_i]);
+                char_array_4[n_i] = static_cast<unsigned char>(base64_chars.find(char_array_4[n_i]));
             }
 
             char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
@@ -163,7 +169,7 @@ static std::vector<uint8_t> DecodeBase64(const std::string& str_encoded) {
         }
 
         for (n_j = 0; n_j < 4; n_j++) {
-            char_array_4[n_j] = base64_chars.find(char_array_4[n_j]);
+            char_array_4[n_j] = static_cast<unsigned char>(base64_chars.find(char_array_4[n_j]));
         }
 
         char_array_3[0] = (char_array_4[0] << 2) + ((char_array_4[1] & 0x30) >> 4);
@@ -324,7 +330,7 @@ static bool CreateDirectoryRecursive(const std::string& str_path) {
 
     // Create this directory
 #ifdef _WIN32
-    return mkdir(str_path.c_str()) == 0;
+    return _mkdir(str_path.c_str()) == 0;
 #else
     return mkdir(str_path.c_str(), 0755) == 0;
 #endif
@@ -400,7 +406,7 @@ bool CRestApiServer::Start() {
         // Create acceptor
         m_acceptor = std::make_unique<tcp::acceptor>(
             m_io_context,
-            tcp::endpoint(tcp::v4(), n_port)
+            tcp::endpoint(tcp::v4(), static_cast<uint16_t>(n_port))
         );
 
         // Enable SO_REUSEADDR
@@ -443,7 +449,7 @@ bool CRestApiServer::Start() {
 
         // Start worker threads
         for (size_t n_i = 0; n_i < REST_WORKER_THREADS; n_i++) {
-            m_worker_threads.emplace_back(&CRestApiServer::WorkerThread, this, n_i);
+            m_worker_threads.emplace_back(&CRestApiServer::WorkerThread, this, static_cast<int>(n_i));
         }
 
         LOG_TRACE("REST API worker threads: " + std::to_string(REST_WORKER_THREADS));
@@ -489,7 +495,7 @@ void CRestApiServer::Stop() {
     // thus, caused hanging on m_listener_thread.join();
     try {
         tcp::socket dummy_socket(m_io_context);
-        tcp::endpoint endpoint(asio::ip::address_v4::loopback(), n_port);
+        tcp::endpoint endpoint(asio::ip::address_v4::loopback(), static_cast<uint16_t>(n_port));
         boost::system::error_code ec;
         dummy_socket.connect(endpoint, ec);
         // Ignore errors - acceptor might already be closed
@@ -691,10 +697,19 @@ void CRestApiServer::ListenerThread() {
             }
 
             // Extract socket FD for queue
-            int n_client_fd = socket.native_handle();
+            int n_client_fd = static_cast<int>(socket.native_handle());
 
             // Release socket ownership (worker will wrap it)
+            // Suppress C4996 warning for socket.release() on Windows < 8.1
+            // This is a known Boost.Asio limitation, but we handle it properly
+#ifdef _MSC_VER
+    #pragma warning(push)
+    #pragma warning(disable: 4996)
+#endif
             socket.release();
+#ifdef _MSC_VER
+    #pragma warning(pop)
+#endif
 
             // Create request object with socket FD
             CHttpRequest request;
@@ -875,7 +890,7 @@ std::tuple<int, std::string> CRestApiServer::HandlePostTransaction(const std::st
         if (!str_fee.empty()) {
             try {
                 n_fee = std::stoull(str_fee);
-            } catch (const std::exception& e) {
+            } catch (const std::exception&) {
                 LOG_ERROR("POST /transaction: Invalid fee value: " + str_fee);
                 return {HTTP_BAD_REQUEST, "{\"error\": \"Bad Request\", \"message\": \"Invalid fee value\"}"};
             }
@@ -1036,33 +1051,33 @@ std::tuple<int, std::string> CRestApiServer::HandleRpcAddPeer(const std::string&
         }
 
         // Parse port (optional, default to P2P_PORT)
-        int n_port = P2P_PORT;
+        int n_peer_port = P2P_PORT;
         if (!str_port.empty()) {
             try {
-                n_port = std::stoi(str_port);
-                if (n_port <= 0 || n_port > 65535) {
+                n_peer_port = std::stoi(str_port);
+                if (n_peer_port <= 0 || n_peer_port > 65535) {
                     LOG_ERROR("POST /rpc/addpeer: Invalid port value: " + str_port);
                     return {HTTP_BAD_REQUEST, "{\"error\": \"Bad Request\", \"message\": \"Invalid port value (must be 1-65535)\"}"};
                 }
-            } catch (const std::exception& e) {
+            } catch (const std::exception&) {
                 LOG_ERROR("POST /rpc/addpeer: Invalid port value: " + str_port);
                 return {HTTP_BAD_REQUEST, "{\"error\": \"Bad Request\", \"message\": \"Invalid port value\"}"};
             }
         }
 
         // Add peer via peer manager
-        bool f_success = p_peer_manager->AddPeer(str_address, n_port);
+        bool f_success = p_peer_manager->AddPeer(str_address, n_peer_port);
 
         // Build response
         std::ostringstream oss;
         oss << "{\n";
         oss << "  \"status\": \"" << (f_success ? "success" : "failed") << "\",\n";
         oss << "  \"address\": \"" << str_address << "\",\n";
-        oss << "  \"port\": " << n_port << ",\n";
+        oss << "  \"port\": " << n_peer_port << ",\n";
         oss << "  \"message\": \"" << (f_success ? "Peer connection initiated" : "Failed to initiate peer connection") << "\"\n";
         oss << "}";
 
-        LOG_INFO("RPC addpeer: " + str_address + ":" + std::to_string(n_port) + " - " +
+        LOG_INFO("RPC addpeer: " + str_address + ":" + std::to_string(n_peer_port) + " - " +
                  (f_success ? "successfully sent, waiting for confirmation." : "failed to send"));
 
         return {HTTP_OK, oss.str()};
@@ -1320,22 +1335,22 @@ std::tuple<int, std::string> CRestApiServer::HandleRpcDisconnectPeer(const std::
         }
 
         // Parse port value
-        int n_port = 0;
+        int n_peer_port = 0;
         try {
-            n_port = std::stoi(str_port);
+            n_peer_port = std::stoi(str_port);
         } catch (...) {
             LOG_ERROR("POST /rpc/disconnectpeer: Invalid port value: " + str_port);
             return {HTTP_BAD_REQUEST, "{\"error\": \"Invalid port value\"}"};
         }
 
         // Disconnect the peer
-        bool f_success = p_peer_manager->DisconnectPeerByAddress(str_address, n_port);
+        bool f_success = p_peer_manager->DisconnectPeerByAddress(str_address, n_peer_port);
 
         if (f_success) {
-            LOG_INFO("Disconnected peer: " + str_address + ":" + std::to_string(n_port));
+            LOG_INFO("Disconnected peer: " + str_address + ":" + std::to_string(n_peer_port));
             return {HTTP_OK, "{\"result\": \"success\", \"message\": \"Peer disconnected\"}"};
         } else {
-            LOG_WARN("Peer not found: " + str_address + ":" + std::to_string(n_port));
+            LOG_WARN("Peer not found: " + str_address + ":" + std::to_string(n_peer_port));
             return {HTTP_NOT_FOUND, "{\"error\": \"Peer not found\"}"};
         }
 

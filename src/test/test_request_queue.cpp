@@ -202,7 +202,7 @@ TEST(RequestQueue_ThreadSafeConcurrent) {
                 request.str_path = "/data";
                 queue.Enqueue(request);
                 enqueue_count++;
-                std::this_thread::sleep_for(std::chrono::microseconds(100));
+                std::this_thread::yield();
             }
         });
     }

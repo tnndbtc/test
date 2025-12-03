@@ -31,10 +31,20 @@ public:
 // Global flag for shutdown signal
 // Set by signal handler (POSIX), console control handler (Windows console),
 // or service control handler (Windows service)
-#ifndef _WIN32
-    extern volatile sig_atomic_t g_f_shutdown_requested;
+#ifdef _WIN32
+    #ifdef BUILDING_BWBLOCKCORE
+        #define BWBLOCKCORE_API __declspec(dllexport)
+    #else
+        #define BWBLOCKCORE_API __declspec(dllimport)
+    #endif
 #else
-    extern volatile int g_f_shutdown_requested;
+    #define BWBLOCKCORE_API
+#endif
+
+#ifndef _WIN32
+    extern BWBLOCKCORE_API volatile sig_atomic_t g_f_shutdown_requested;
+#else
+    extern BWBLOCKCORE_API volatile int g_f_shutdown_requested;
 #endif
 
 #endif

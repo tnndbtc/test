@@ -15,60 +15,66 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # Build type configuration
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    message(STATUS "Build type: Debug")
-    if(MSVC)
-        # MSVC Debug flags
-        add_compile_options(/Od /Zi /RTC1)
-        # Generate PDB files for debugging
-        add_link_options(/DEBUG /INCREMENTAL)
-        message(STATUS "MSVC Debug: Enabled /Od /Zi /RTC1 /DEBUG")
-    else()
+# Note: For multi-config generators (Visual Studio, Xcode), CMAKE_BUILD_TYPE is empty
+# at configure time. We use generator expressions to set flags per-configuration.
+if(MSVC)
+    # Visual Studio: Multi-config generator
+    # Use generator expressions to set flags per configuration
+    message(STATUS "MSVC: Using multi-config generator (Debug/Release determined at build time)")
+
+    # Debug configuration flags
+    add_compile_options($<$<CONFIG:Debug>:/Od>)       # Disable optimization
+    add_compile_options($<$<CONFIG:Debug>:/Zi>)       # Generate debug info
+    add_compile_options($<$<CONFIG:Debug>:/RTC1>)     # Runtime checks
+    add_link_options($<$<CONFIG:Debug>:/DEBUG>)       # Generate PDB
+    add_link_options($<$<CONFIG:Debug>:/INCREMENTAL>) # Incremental linking
+
+    # Release configuration flags
+    add_compile_options($<$<CONFIG:Release>:/O2>)     # Optimize for speed
+    add_compile_options($<$<CONFIG:Release>:/DNDEBUG>) # Disable assertions
+    add_compile_options($<$<CONFIG:Release>:/D_ITERATOR_DEBUG_LEVEL=0>) # Disable debug iterator checks
+    # Note: /GL (whole program optimization) is applied per-target for executables only
+    # to avoid conflicts with CMake's automatic DLL export generation
+    add_link_options($<$<CONFIG:Release>:/OPT:REF>)   # Remove unreferenced functions/data
+    add_link_options($<$<CONFIG:Release>:/OPT:ICF>)   # Identical COMDAT folding
+
+    message(STATUS "MSVC Debug flags: /Od /Zi /RTC1 /DEBUG /INCREMENTAL")
+    message(STATUS "MSVC Release flags: /O2 /DNDEBUG /D_ITERATOR_DEBUG_LEVEL=0 /OPT:REF /OPT:ICF (+ /GL /LTCG for executables)")
+else()
+    # GCC/Clang/MinGW: Single-config generator
+    # Set default build type if not specified
+    if(NOT CMAKE_BUILD_TYPE)
+        set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type (Debug or Release)" FORCE)
+        message(STATUS "Build type not specified, defaulting to Release")
+    endif()
+
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        message(STATUS "Build type: Debug")
         # GCC/MinGW Debug flags
-        # -g: Generate debug information in OS native format
-        # -O0: Disable optimization
-        # -ggdb: Generate debug info for GDB (on Windows, useful for GDB debugging)
-        # -fno-omit-frame-pointer: Keep frame pointer for better stack traces
-        # -fno-optimize-sibling-calls: Better debugging experience
         add_compile_options(-g -ggdb -O0 -fno-omit-frame-pointer -fno-optimize-sibling-calls)
 
         if(WIN32)
             # Windows-specific: Generate DWARF debug info for MinGW
-            # This creates proper debug symbols for tools like GDB on Windows
             message(STATUS "MinGW Debug: Enabled -g -ggdb -O0 (DWARF debug symbols)")
         elseif(UNIX AND NOT APPLE)
             # Linux-specific: Enable sanitizers for Debug builds
-            # AddressSanitizer: Detects memory errors (buffer overflows, use-after-free, etc.)
-            # UndefinedBehaviorSanitizer: Detects undefined behavior
-            # LeakSanitizer: Detects memory leaks (enabled by default with ASan)
-            # Note: MemorySanitizer requires special instrumented libraries, so it's commented out
             add_compile_options(-fsanitize=address,leak -fsanitize=undefined)
             add_link_options(-fsanitize=address,leak -fsanitize=undefined)
             message(STATUS "Linux Debug: Enabled -g -ggdb -O0 with AddressSanitizer and UndefinedBehaviorSanitizer")
         elseif(APPLE)
             # macOS-specific: Enable sanitizers if supported
-            # AddressSanitizer and UndefinedBehaviorSanitizer are well-supported on macOS
-            # MemorySanitizer is not well-supported on macOS, so we omit it
             add_compile_options(-fsanitize=address -fsanitize=undefined)
             add_link_options(-fsanitize=address -fsanitize=undefined)
             message(STATUS "macOS Debug: Enabled -g -ggdb -O0 with AddressSanitizer and UndefinedBehaviorSanitizer")
         else()
             message(STATUS "GCC/Clang Debug: Enabled -g -ggdb -O0")
         endif()
-    endif()
-elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
-    message(STATUS "Build type: Release")
-    if(MSVC)
-        add_compile_options(/O2)
-    else()
+    elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+        message(STATUS "Build type: Release")
         add_compile_options(-O3)
-    endif()
-else()
-    message(WARNING "Unknown build type: ${CMAKE_BUILD_TYPE}. Using Release.")
-    set(CMAKE_BUILD_TYPE Release)
-    if(MSVC)
-        add_compile_options(/O2)
     else()
+        message(WARNING "Unknown build type: ${CMAKE_BUILD_TYPE}. Using Release.")
+        set(CMAKE_BUILD_TYPE Release)
         add_compile_options(-O3)
     endif()
 endif()
@@ -84,6 +90,51 @@ if(POLICY CMP0167)
 endif()
 
 # Find OpenSSL
+# Add hints for Windows common installation paths
+if(WIN32)
+    # If user hasn't specified OPENSSL_ROOT_DIR, search common locations
+    if(NOT DEFINED OPENSSL_ROOT_DIR)
+        # Check vcpkg first
+        if(DEFINED ENV{VCPKG_ROOT})
+            if(EXISTS "$ENV{VCPKG_ROOT}/installed/x64-windows/include/openssl/ssl.h")
+                set(OPENSSL_ROOT_DIR "$ENV{VCPKG_ROOT}/installed/x64-windows" CACHE PATH "OpenSSL root directory")
+                message(STATUS "Found OpenSSL via vcpkg: ${OPENSSL_ROOT_DIR}")
+            endif()
+        endif()
+
+        # Check common installation paths
+        if(NOT DEFINED OPENSSL_ROOT_DIR)
+            foreach(path
+                "C:/OpenSSL-Win64"
+                "C:/Program Files/OpenSSL-Win64"
+                "C:/Program Files/OpenSSL"
+                "C:/OpenSSL"
+            )
+                if(EXISTS "${path}/include/openssl/ssl.h")
+                    set(OPENSSL_ROOT_DIR "${path}" CACHE PATH "OpenSSL root directory")
+                    message(STATUS "Found OpenSSL at: ${OPENSSL_ROOT_DIR}")
+                    break()
+                endif()
+            endforeach()
+        endif()
+    endif()
+
+    # For non-vcpkg OpenSSL with custom lib structure (e.g., lib/VC/x64/MD/ or lib/mingw/)
+    if(DEFINED OPENSSL_ROOT_DIR AND NOT DEFINED OPENSSL_CRYPTO_LIBRARY)
+        # MSVC-style paths: lib/VC/x64/MD/
+        if(MSVC AND EXISTS "${OPENSSL_ROOT_DIR}/lib/VC/x64/MD/libssl.lib")
+            set(OPENSSL_SSL_LIBRARY "${OPENSSL_ROOT_DIR}/lib/VC/x64/MD/libssl.lib" CACHE FILEPATH "OpenSSL SSL library")
+            set(OPENSSL_CRYPTO_LIBRARY "${OPENSSL_ROOT_DIR}/lib/VC/x64/MD/libcrypto.lib" CACHE FILEPATH "OpenSSL Crypto library")
+            message(STATUS "Using MSVC-style OpenSSL libraries: ${OPENSSL_ROOT_DIR}/lib/VC/x64/MD/")
+        # MinGW-style paths: lib/mingw/
+        elseif(MINGW AND EXISTS "${OPENSSL_ROOT_DIR}/lib/mingw/libssl.dll.a")
+            set(OPENSSL_SSL_LIBRARY "${OPENSSL_ROOT_DIR}/lib/mingw/libssl.dll.a" CACHE FILEPATH "OpenSSL SSL library")
+            set(OPENSSL_CRYPTO_LIBRARY "${OPENSSL_ROOT_DIR}/lib/mingw/libcrypto.dll.a" CACHE FILEPATH "OpenSSL Crypto library")
+            message(STATUS "Using MinGW-style OpenSSL libraries: ${OPENSSL_ROOT_DIR}/lib/mingw/")
+        endif()
+    endif()
+endif()
+
 # Add hints for macOS Homebrew paths
 if(APPLE)
     set(OPENSSL_ROOT_DIR
@@ -103,6 +154,28 @@ endif()
 
 # Find Boost (minimum version 1.70)
 # Note: Boost.Asio can be used header-only (no linking required)
+
+# Add hints for Windows common installation paths
+if(WIN32)
+    # If user hasn't specified BOOST_ROOT or Boost_ROOT, search common locations
+    if(NOT DEFINED BOOST_ROOT AND NOT DEFINED Boost_ROOT)
+        foreach(path
+            "C:/local/boost_1_89_0"
+            "C:/local/boost_1_88_0"
+            "C:/local/boost_1_87_0"
+            "C:/local/boost"
+            "C:/Boost"
+            "C:/Program Files/Boost"
+        )
+            if(EXISTS "${path}/boost/version.hpp")
+                set(BOOST_ROOT "${path}" CACHE PATH "Boost root directory")
+                message(STATUS "Found Boost at: ${BOOST_ROOT}")
+                break()
+            endif()
+        endforeach()
+    endif()
+endif()
+
 find_package(Boost 1.70 REQUIRED)
 if(Boost_FOUND)
     message(STATUS "Boost found: ${Boost_VERSION}")
@@ -140,6 +213,7 @@ set_target_properties(bwthreadname PROPERTIES
     SOVERSION 1
     POSITION_INDEPENDENT_CODE ON
     CXX_VISIBILITY_PRESET default
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
 
 if(APPLE)
@@ -162,6 +236,7 @@ set_target_properties(bwpathutil PROPERTIES
     SOVERSION 1
     POSITION_INDEPENDENT_CODE ON
     CXX_VISIBILITY_PRESET default
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
 
 if(APPLE)
@@ -179,11 +254,20 @@ add_library(bwlogger SHARED
     src/logger/logger.cpp
 )
 
+# Define BUILDING_BWLOGGER when compiling this library (for DLL export on Windows)
+target_compile_definitions(bwlogger PRIVATE BUILDING_BWLOGGER)
+
+# Suppress Windows CRT security warnings for standard C functions
+if(MSVC)
+    target_compile_definitions(bwlogger PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
 set_target_properties(bwlogger PROPERTIES
     VERSION 1.0.0
     SOVERSION 1
     POSITION_INDEPENDENT_CODE ON
     CXX_VISIBILITY_PRESET default
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
 
 if(APPLE)
@@ -219,11 +303,17 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     )
 endif()
 
+# Suppress Windows CRT security warnings for standard C functions (getenv, etc.)
+if(MSVC)
+    target_compile_definitions(bwutils PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+
 set_target_properties(bwutils PROPERTIES
     VERSION 1.0.0
     SOVERSION 1
     POSITION_INDEPENDENT_CODE ON
     CXX_VISIBILITY_PRESET default
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
 
 if(APPLE)
@@ -258,6 +348,7 @@ set_target_properties(bwpeer PROPERTIES
     SOVERSION 1
     POSITION_INDEPENDENT_CODE ON
     CXX_VISIBILITY_PRESET default
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
 
 if(APPLE)
@@ -312,6 +403,7 @@ set_target_properties(bwpeermsg PROPERTIES
     SOVERSION 1
     POSITION_INDEPENDENT_CODE ON
     CXX_VISIBILITY_PRESET default
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
 
 if(APPLE)
@@ -349,11 +441,23 @@ add_library(bwblockcore SHARED
     src/blockcore/block_file.cpp
 )
 
+# Define BUILDING_BWBLOCKCORE when compiling this library (for DLL export on Windows)
+target_compile_definitions(bwblockcore PRIVATE BUILDING_BWBLOCKCORE)
+
+# Windows-specific compile definitions
+if(MSVC)
+    target_compile_definitions(bwblockcore PRIVATE
+        _CRT_SECURE_NO_WARNINGS  # Suppress gmtime warnings
+        NOMINMAX                  # Prevent Windows min/max macro conflicts with std::min/std::max
+    )
+endif()
+
 set_target_properties(bwblockcore PROPERTIES
     VERSION 1.0.0
     SOVERSION 1
     POSITION_INDEPENDENT_CODE ON
     CXX_VISIBILITY_PRESET default
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
 
 if(APPLE)
@@ -392,6 +496,7 @@ set_target_properties(bwrest PROPERTIES
     SOVERSION 1
     POSITION_INDEPENDENT_CODE ON
     CXX_VISIBILITY_PRESET default
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
 
 if(APPLE)
@@ -440,6 +545,12 @@ target_link_libraries(bweave
     PRIVATE OpenSSL::Crypto
 )
 
+# MSVC Release: Enable link-time code generation for executables
+if(MSVC)
+    target_compile_options(bweave PRIVATE $<$<CONFIG:Release>:/GL>)
+    target_link_options(bweave PRIVATE $<$<CONFIG:Release>:/LTCG>)
+endif()
+
 # Set rpath so bweave can find the shared libraries
 if(APPLE)
     set_target_properties(bweave PROPERTIES
@@ -476,6 +587,12 @@ target_link_libraries(wallet
     PRIVATE OpenSSL::Crypto
 )
 
+# MSVC Release: Enable link-time code generation for executables
+if(MSVC)
+    target_compile_options(wallet PRIVATE $<$<CONFIG:Release>:/GL>)
+    target_link_options(wallet PRIVATE $<$<CONFIG:Release>:/LTCG>)
+endif()
+
 # Set rpath so wallet can find the shared libraries
 if(APPLE)
     set_target_properties(wallet PROPERTIES
@@ -503,12 +620,22 @@ add_executable(bweave_cli
     src/cli/bweave_cli.cpp
 )
 
+# MSVC Release: Enable link-time code generation for executables
+if(MSVC)
+    target_compile_options(bweave_cli PRIVATE $<$<CONFIG:Release>:/GL>)
+    target_link_options(bweave_cli PRIVATE $<$<CONFIG:Release>:/LTCG>)
+endif()
+
 # bweave_cli doesn't need libraries on POSIX - it only starts/stops bweave
 # On Windows, it needs advapi32 for Service Control Manager APIs
 
 # Platform-specific libraries
 if(WIN32)
-    # Windows specific settings
+    # Windows specific settings - Define _WIN32_WINNT for all targets to suppress warnings
+    # 0x0601 = Windows 7, required for Boost.Asio and Windows Service APIs
+    target_compile_definitions(bwutils PRIVATE _WIN32_WINNT=0x0601)
+    target_compile_definitions(bwpeer PRIVATE _WIN32_WINNT=0x0601)
+    target_compile_definitions(bwrest PRIVATE _WIN32_WINNT=0x0601)
     target_compile_definitions(bweave PRIVATE _WIN32_WINNT=0x0601)
     target_compile_definitions(wallet PRIVATE _WIN32_WINNT=0x0601)
     if(TARGET bweave_cli)

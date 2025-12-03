@@ -18,6 +18,11 @@
 #include <vector>
 #include <fstream>
 #include <sstream>
+
+#ifdef _WIN32
+    #include <sys/stat.h>
+    #define S_ISDIR(m) (((m) & _S_IFMT) == _S_IFDIR)
+#endif
 #include <cstdio>
 #include <sys/stat.h>
 #include <filesystem>

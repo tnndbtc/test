@@ -24,7 +24,7 @@
  */
 class CPingMessage : public CPeerMessage {
 private:
-    uint64_t m_n_nonce;  ///< Random nonce for matching with PONG response
+    uint32_t m_n_nonce;  ///< Random nonce for matching with PONG response
 
 public:
     /**

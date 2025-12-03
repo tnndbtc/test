@@ -74,7 +74,17 @@ class BlockweaveNode:
         if (Path.cwd() / exe_name).exists():
             self.bweave = Path.cwd() / exe_name
         else:
-            self.bweave = self.project_root / "build" / exe_name
+            # On Windows, check build/Debug first (default CMake build location)
+            if platform.system() == "Windows":
+                debug_path = self.project_root / "build" / "Debug" / exe_name
+                if debug_path.exists():
+                    self.bweave = debug_path
+                else:
+                    # Fallback to build/ directory
+                    self.bweave = self.project_root / "build" / exe_name
+            else:
+                # On Linux/Mac, use build/ directory
+                self.bweave = self.project_root / "build" / exe_name
 
         self.base_url = f"http://localhost:{self.port}"
         self.process = None
@@ -313,7 +323,9 @@ class BlockweaveNode:
             # On Windows, run from the same directory as the executable to find DLLs
             # On Unix, can run from project root
             if platform.system() == "Windows":
-                run_dir = str(self.bweave.parent)  # Run from directory containing bweave.exe
+                # Run from directory containing bweave.exe (e.g., build/Debug/)
+                # This ensures DLLs in the same directory are found
+                run_dir = str(self.bweave.parent)
             else:
                 run_dir = str(self.project_root)  # Run from project root on Unix
 

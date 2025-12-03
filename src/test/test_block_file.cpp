@@ -13,6 +13,10 @@
 #include "blockcore/transaction.h"
 #include "logger/logger.h"
 #include "utils/hash.h"
+
+#ifdef _WIN32
+    #include <direct.h>  // For _mkdir
+#endif
 #include <memory>
 #include <string>
 #include <vector>
@@ -36,7 +40,7 @@ std::string CreateTempDir() {
     std::string str_dir = "./test_blockfile_" + std::to_string(time(nullptr)) +
                           "_" + std::to_string(rand() % 10000);
 #ifdef _WIN32
-    mkdir(str_dir.c_str());
+    _mkdir(str_dir.c_str());
 #else
     mkdir(str_dir.c_str(), 0755);
 #endif

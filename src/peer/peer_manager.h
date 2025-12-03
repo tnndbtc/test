@@ -81,7 +81,7 @@ private:
     std::unique_ptr<boost::asio::thread_pool> m_thread_pool;           ///< Thread pool (MAX_INBOUND_PEERS workers) for message processing
 
     // Network configuration
-    int n_listen_port;               ///< Port for listening to incoming connections
+    uint16_t n_listen_port;          ///< Port for listening to incoming connections
     std::string str_bind_ip;         ///< IP address to bind to (empty means all interfaces)
     std::unique_ptr<boost::asio::ip::tcp::acceptor> m_p_acceptor;  ///< Boost.Asio acceptor for async accept (destructs BEFORE io_context)
     int n_max_inbound_peers;         ///< Maximum number of inbound peer connections
@@ -323,7 +323,7 @@ private:
      *
      * Creates socket, connects to peer, and spawns connection thread.
      */
-    bool ConnectToPeer(const std::string& str_address, int n_port);
+    bool ConnectToPeer(const std::string& str_address, uint16_t n_port);
 
     /**
      * @brief Disconnect from peer and cleanup resources

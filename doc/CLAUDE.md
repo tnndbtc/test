@@ -99,6 +99,80 @@ mkdir -p build && cd build && cmake -DCMAKE_BUILD_TYPE=Debug .. && cmake --build
 mkdir -p build && cd build && cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON .. && cmake --build . -- -j$(nproc)
 ```
 
+**Windows-Specific Build Instructions:**
+
+Windows developers should use the modern CMake workflow. The old `configure.bat` and `src/test/build.bat` scripts have been removed in favor of standard CMake commands.
+
+```cmd
+REM Debug build with MSVC (Visual Studio generator - multi-config)
+cmake -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON
+cmake --build build --config Debug
+
+REM Run tests
+build\src\test\Debug\test_all.exe
+
+REM Release build
+cmake -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON
+cmake --build build --config Release
+```
+
+```cmd
+REM Single-config build with Ninja (faster builds)
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON
+cmake --build build
+
+REM Run tests
+build\src\test\test_all.exe
+```
+
+**Specifying Dependency Paths (Windows):**
+
+If OpenSSL or Boost are not automatically detected:
+
+```cmd
+REM Specify OpenSSL location
+cmake -B build -DCMAKE_BUILD_TYPE=Debug -DOPENSSL_ROOT_DIR="C:\OpenSSL-Win64" -DBUILD_TESTS=ON
+cmake --build build
+
+REM Specify Boost location
+cmake -B build -DCMAKE_BUILD_TYPE=Debug -DBoost_ROOT="C:\local\boost_1_89_0" -DBUILD_TESTS=ON
+cmake --build build
+
+REM Specify both
+cmake -B build -DCMAKE_BUILD_TYPE=Debug ^
+  -DOPENSSL_ROOT_DIR="C:\OpenSSL-Win64" ^
+  -DBoost_ROOT="C:\local\boost_1_89_0" ^
+  -DBUILD_TESTS=ON
+cmake --build build
+```
+
+**Automatic Dependency Detection (Windows):**
+
+CMake will automatically search these locations:
+
+OpenSSL:
+- vcpkg: `%VCPKG_ROOT%\installed\x64-windows`
+- `C:\OpenSSL-Win64`
+- `C:\Program Files\OpenSSL-Win64`
+- `C:\Program Files\OpenSSL`
+- `C:\OpenSSL`
+
+Boost:
+- `C:\local\boost_1_89_0` through `boost_1_87_0`
+- `C:\local\boost`
+- `C:\Boost`
+- `C:\Program Files\Boost`
+
+**Migration from Old Batch Files:**
+
+| Old Command | New Command |
+|-------------|-------------|
+| `configure.bat --debug` | `cmake -B build -DCMAKE_BUILD_TYPE=Debug` |
+| `configure.bat --release` | `cmake -B build -DCMAKE_BUILD_TYPE=Release` |
+| `configure.bat --openssl-root C:\OpenSSL-Win64` | `cmake -B build -DCMAKE_BUILD_TYPE=Debug -DOPENSSL_ROOT_DIR="C:\OpenSSL-Win64"` |
+| `configure.bat --boost-root C:\local\boost` | `cmake -B build -DCMAKE_BUILD_TYPE=Debug -DBoost_ROOT="C:\local\boost"` |
+| `src\test\build.bat --debug` | `cmake -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON` then `cmake --build build` |
+
 **Executables:**
 - `bweave` - Main daemon
 - `bweave_cli` - Control utility
@@ -111,7 +185,14 @@ mkdir -p build && cd build && cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON ..
 - `-DCMAKE_BUILD_TYPE=Debug` - Debug build with sanitizers (Linux/macOS)
 - `-DCMAKE_BUILD_TYPE=Release` - Optimized release build
 - `-DBUILD_TESTS=ON` - Build unit tests (default: OFF)
-- OpenSSL detection automatically handles macOS Homebrew paths
+- `-DOPENSSL_ROOT_DIR=path` - Specify OpenSSL installation directory (Windows)
+- `-DBoost_ROOT=path` - Specify Boost installation directory (Windows)
+- OpenSSL detection automatically handles:
+  - macOS Homebrew paths
+  - Windows common paths (vcpkg, C:\OpenSSL-Win64, etc.)
+  - Windows MSVC library structure (lib/VC/x64/MD/)
+  - Windows MinGW library structure (lib/mingw/)
+- On Windows with `-DBUILD_TESTS=ON`, runtime DLLs are automatically copied to test directory
 
 ## Quick Start
 

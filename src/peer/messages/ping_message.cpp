@@ -17,7 +17,7 @@
  */
 CPingMessage::CPingMessage(uint32_t n_magic)
     : CPeerMessage(n_magic), m_n_nonce(0) {
-    m_n_nonce = GenerateNonce();
+    m_n_nonce = static_cast<uint32_t>(GenerateNonce());
 }
 
 /**

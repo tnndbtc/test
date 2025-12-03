@@ -12,6 +12,15 @@
 #ifdef ERROR
 #undef ERROR
 #endif
+
+// DLL export/import macros for Windows
+#ifdef BUILDING_BWLOGGER
+    #define BWLOGGER_API __declspec(dllexport)
+#else
+    #define BWLOGGER_API __declspec(dllimport)
+#endif
+#else
+    #define BWLOGGER_API
 #endif
 
 /**
@@ -203,7 +212,7 @@ public:
 };
 
 /// Global shared pointer to logger instance (initialized by InitializeLogger)
-extern std::shared_ptr<CLogger> g_p_logger;
+extern BWLOGGER_API std::shared_ptr<CLogger> g_p_logger;
 
 /**
  * @brief Parse log level from string (wrapper for CLogger::ParseLogLevel)

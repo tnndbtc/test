@@ -93,7 +93,7 @@ TEST(Blockweave_ThreadSafeAddTransaction) {
 
     std::vector<std::thread> threads;
     for (int i = 0; i < n_threads; i++) {
-        threads.emplace_back([&blockweave, &tx_count, i]() {
+        threads.emplace_back([&blockweave, &tx_count, i, n_tx_per_thread]() {
             for (int j = 0; j < n_tx_per_thread; j++) {
                 std::vector<uint8_t> data = {'t', 'x', (uint8_t)i, (uint8_t)j};
                 auto tx = std::make_shared<CTransaction>(

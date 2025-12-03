@@ -19,9 +19,6 @@ SERVICE_STATUS g_service_status = {};
 // Static checkpoint counter for pending states
 static DWORD s_dw_checkpoint = 1;
 
-// Forward declaration of external shutdown flag
-extern volatile int g_f_shutdown_requested;
-
 /**
  * @brief Service main entry point called by SCM
  */

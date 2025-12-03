@@ -91,7 +91,8 @@ TEST(PeerManager_ThreadSafe_GetOutboundPeerCount) {
                 size_t count = manager.GetOutboundPeerCount();
                 ASSERT_EQUAL(count, 0, "Outbound peer should be 0");
                 query_count++;
-                std::this_thread::sleep_for(std::chrono::microseconds(10));
+                // Short yield to allow other threads to run
+                std::this_thread::yield();
             }
         });
     }
@@ -127,7 +128,7 @@ TEST(PeerManager_ThreadSafe_GetConnectedPeers) {
             while (!stop_flag) {
                 auto peers = manager.GetConnectedPeers();
                 query_count++;
-                std::this_thread::sleep_for(std::chrono::microseconds(10));
+                std::this_thread::yield();
             }
         });
     }
@@ -210,7 +211,7 @@ TEST(PeerNode_ThreadSafeAccessors) {
                 bool value = peer.IsConnected();
                 (void)value; // Suppress unused warning
                 read_count++;
-                std::this_thread::sleep_for(std::chrono::microseconds(1));
+                std::this_thread::yield();
             }
         });
     }
@@ -262,7 +263,7 @@ TEST(PeerManager_ThreadSafe_GetInboundPeerCount) {
                 size_t count = manager.GetInboundPeerCount();
                 ASSERT_EQUAL(count, 0, "Inbound peer count should be 0");
                 query_count++;
-                std::this_thread::sleep_for(std::chrono::microseconds(10));
+                std::this_thread::yield();
             }
         });
     }
@@ -333,7 +334,7 @@ TEST(PeerManager_ThreadSafe_BothPeerCounts) {
                 size_t count = manager.GetInboundPeerCount();
                 ASSERT_EQUAL(count, 0, "Inbound count should be 0");
                 inbound_queries++;
-                std::this_thread::sleep_for(std::chrono::microseconds(10));
+                std::this_thread::yield();
             }
         });
     }
@@ -346,7 +347,7 @@ TEST(PeerManager_ThreadSafe_BothPeerCounts) {
                 size_t count = manager.GetOutboundPeerCount();
                 ASSERT_EQUAL(count, 0, "Outbound count should be 0");
                 outbound_queries++;
-                std::this_thread::sleep_for(std::chrono::microseconds(10));
+                std::this_thread::yield();
             }
         });
     }
@@ -494,7 +495,7 @@ TEST(PeerManager_ThreadSafe_GetPublicIP) {
                 std::string ip = manager.GetPublicIP();
                 (void)ip; // Suppress unused warning
                 query_count++;
-                std::this_thread::sleep_for(std::chrono::microseconds(10));
+                std::this_thread::yield();
             }
         });
     }

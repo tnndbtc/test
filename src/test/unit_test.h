@@ -102,7 +102,7 @@ inline void RegisterTest(const std::string& name, const std::string& file, std::
 inline std::string ToLower(const std::string& str) {
     std::string result = str;
     for (char& c : result) {
-        c = std::tolower(static_cast<unsigned char>(c));
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     }
     return result;
 }

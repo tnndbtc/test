@@ -231,32 +231,27 @@ TEST(PeerFilter_Clear) {
  */
 TEST(PeerFilter_ThreadSafeAddTxId) {
     CPeerFilter filter;
-    std::atomic<bool> stop_flag{false};
 
     // Multiple threads adding TX IDs for different peers
     std::vector<std::thread> threads;
     for (int i = 0; i < 5; i++) {
-        threads.emplace_back([&filter, i, &stop_flag]() {
+        threads.emplace_back([&filter, i]() {
             for (int j = 0; j < 20; j++) {
-                if (stop_flag) return;
                 std::string tx_id = "tx_" + std::to_string(j);
                 std::string address = "192.168.1." + std::to_string(100 + i);
                 filter.AddTxIdForPeer(tx_id, address, 8333);
-                std::this_thread::sleep_for(std::chrono::microseconds(10));
+                std::this_thread::yield();
             }
         });
     }
 
-    // Let threads run
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    stop_flag = true;
-
+    // Wait for all threads to complete
     for (auto& t : threads) {
         t.join();
     }
 
-    // Verify data integrity (no crashes, counts make sense)
-    ASSERT_TRUE(filter.GetTxIdCount()==20 , "Should have tracked TX IDs");
+    // Verify data integrity (all TX IDs tracked)
+    ASSERT_TRUE(filter.GetTxIdCount() == 20, "Should have tracked TX IDs");
 }
 
 /**
@@ -287,7 +282,7 @@ TEST(PeerFilter_ThreadSafeGetPeersWithout) {
                 auto filtered = filter.GetPeersWithoutTxId("tx_shared", all_peers);
                 ASSERT_EQUAL(filtered.size(), (size_t)2, "Should consistently filter to 2 peers");
                 query_count++;
-                std::this_thread::sleep_for(std::chrono::microseconds(10));
+                std::this_thread::yield();
             }
         });
     }
