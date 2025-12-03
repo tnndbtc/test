@@ -3,6 +3,14 @@
 export ASAN_OPTIONS=log_path=/tmp/asan/asan.log:detect_leaks=1
 export ASAN_OPTIONS=log_path=/tmp/asan/asan.log:detect_leaks=1:abort_on_error=1
 export UBSAN_OPTIONS=halt_on_error=1
+
+# to suppress Boost.Asio alignment errors on mac
+export UBSAN_OPTIONS=halt_on_error=1:suppressions=/tmp/ubsan.supp
+in /tmp/ubsan.supp
+# to suppress Boost.Asio alignment errors on mac
+alignment:boost/asio/detail/impl/socket_ops.ipp
+
+then run ctest -V on unit test
 --------------------------
 install docker on CentOS AlmaLinux
 sudo dnf install -y yum-utils
