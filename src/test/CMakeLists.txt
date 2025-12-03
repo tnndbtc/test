@@ -18,7 +18,9 @@ endif()
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     message(STATUS "Build type: Debug")
     if(MSVC)
-        add_compile_options(/Od /Zi /RTC1)
+        add_compile_options($<$<CONFIG:Debug>:/Od>)       # Disable optimization
+        add_compile_options($<$<CONFIG:Debug>:/Zi>)       # Generate debug info
+        add_compile_options($<$<CONFIG:Debug>:/RTC1>)     # Runtime checks
     else()
         # Let CMake's default Debug flags handle optimization: -g -O0 -fno-omit-frame-pointer
         # Add additional flags for better debugging experience
@@ -27,7 +29,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
 elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
     message(STATUS "Build type: Release")
     if(MSVC)
-        add_compile_options(/O2)
+        add_compile_options($<$<CONFIG:Release>:/O2>)     # Optimize for speed
     else()
         add_compile_options(-O3)
     endif()
