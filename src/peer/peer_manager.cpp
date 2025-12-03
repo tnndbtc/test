@@ -454,12 +454,12 @@ void CPeerManager::HandleAccept(const boost::system::error_code& ec, boost::asio
     auto p_socket = std::make_shared<boost::asio::ip::tcp::socket>(std::move(socket));
 
     // Create peer node with socket for ban checking and duplicate detection
-    // This ensures the peer always has a socket, which is the requirement from todo4
+    // This ensures the peer always has a socket, which is the requirement
     auto p_peer = std::make_shared<CPeerNode>(str_ip, n_peer_port, p_socket);
 
     // Check if peer is banned
     if (IsPeerBanned(p_peer)) {
-        LOG_WARN("Rejecting connection from banned peer: " + str_ip);
+        LOG_WARN("Rejecting connection from banned peer: " + p_peer->GetIdentifier());
         p_socket->close();
 
         // Chain next accept
@@ -1130,9 +1130,10 @@ void CPeerManager::ProcessReceivedMessage(std::shared_ptr<CPeerNode> p_peer,
                 LOG_TRACE("Received unknown message type '" + msg_type + "' from peer " + p_peer->GetIdentifier());
             }
         } else {
-            // Corrupted message
-            LOG_WARN("Incorrect message in buffer, disconnect the peer: " + p_peer->GetIdentifier());
-            DisconnectPeer(p_peer);
+            // Corrupted message - increase misbehavior score instead of immediate disconnect
+            LOG_WARN("Incorrect message in buffer from peer: " + p_peer->GetIdentifier() +
+                     " - increasing misbehavior score");
+            IncreaseMisbehaviorScore(p_peer, 20);
             break;
         }
     }
@@ -1263,6 +1264,13 @@ void CPeerManager::HandleInventoryMessage(std::shared_ptr<CPeerNode> p_peer_shar
 }
 
 void CPeerManager::HandleVersionMessage(std::shared_ptr<CPeerNode> p_peer_shared, const CPeerMessage& received_msg) {
+    // Check if peer is banned before processing VERSION
+    if (IsPeerBanned(p_peer_shared)) {
+        LOG_WARN("Rejecting VERSION from banned peer: " + p_peer_shared->GetIdentifier());
+        DisconnectPeer(p_peer_shared);
+        return;
+    }
+
     // Cast to CVersionMessage for type-safe access
     const auto& version_msg = static_cast<const CVersionMessage&>(received_msg);
 
@@ -1283,7 +1291,7 @@ void CPeerManager::HandleVersionMessage(std::shared_ptr<CPeerNode> p_peer_shared
     // Add VERSION_RCVD flag to handshake state bitmap
     if (p_peer_shared->AddHandshakeFlag(HandshakeState::VERSION_RCVD) == false) {
         LOG_WARN("Duplicate VERSION message from peer " + p_peer_shared->GetIdentifier());
-        IncreaseMisbehaviorScore(p_peer_shared, 20);
+        IncreaseMisbehaviorScore(p_peer_shared, 100);
         DisconnectPeer(p_peer_shared);
         return;
     }
@@ -1337,7 +1345,7 @@ void CPeerManager::HandleVersionMessage(std::shared_ptr<CPeerNode> p_peer_shared
         SendMessageAsync(p_peer_shared, response_version);
         if (p_peer_shared->AddHandshakeFlag(HandshakeState::VERSION_SENT) == false) { // Add VERSION_SENT flag
             LOG_WARN("Duplicate VERSION_SENT flag for peer " + p_peer_shared->GetIdentifier());
-            IncreaseMisbehaviorScore(p_peer_shared, 20);
+            IncreaseMisbehaviorScore(p_peer_shared, 100);
             DisconnectPeer(p_peer_shared);
             return;
         }
@@ -1352,12 +1360,19 @@ void CPeerManager::HandleVersionMessage(std::shared_ptr<CPeerNode> p_peer_shared
 
 void CPeerManager::HandleVerackMessage(std::shared_ptr<CPeerNode> p_peer_shared,
                                        const CPeerMessage& /* received_msg */) {
+    // Check if peer is banned before processing VERACK
+    if (IsPeerBanned(p_peer_shared)) {
+        LOG_WARN("Rejecting VERACK from banned peer: " + p_peer_shared->GetIdentifier());
+        DisconnectPeer(p_peer_shared);
+        return;
+    }
+
     LOG_INFO("Received VERACK from peer " + p_peer_shared->GetIdentifier());
 
     // Add VERACK_RCVD flag to handshake state bitmap
     if (p_peer_shared->AddHandshakeFlag(HandshakeState::VERACK_RCVD) == false) {
         LOG_WARN("Duplicate VERACK message from peer " + p_peer_shared->GetIdentifier());
-        IncreaseMisbehaviorScore(p_peer_shared, 20);
+        IncreaseMisbehaviorScore(p_peer_shared, 100);
         DisconnectPeer(p_peer_shared);
         return;
     }

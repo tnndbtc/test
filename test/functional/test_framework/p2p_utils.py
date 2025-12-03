@@ -310,7 +310,7 @@ class P2PConnection:
     - Close connection
     """
 
-    def __init__(self, host, port, timeout=5):
+    def __init__(self, host, port, timeout=5, client_port=None):
         """
         Create a P2P connection.
 
@@ -318,11 +318,14 @@ class P2PConnection:
             host: Hostname or IP address
             port: P2P port number
             timeout: Socket timeout in seconds
+            client_port: Optional client-side port to bind to (for port reuse)
         """
         self.host = host
         self.port = port
         self.timeout = timeout
+        self.client_port = client_port
         self.socket = None
+        self.assigned_client_port = None
 
     def connect(self, do_handshake=True):
         """
@@ -332,32 +335,54 @@ class P2PConnection:
             do_handshake: Whether to perform VERSION/VERACK handshake (default: True)
                          Set to False if you want to manually control the handshake
 
-        Returns:
-            bool: True if connection (and handshake if requested) successful, False otherwise
+        Raises:
+            ConnectionError: If connection to server fails
+            RuntimeError: If VERSION/VERACK handshake fails
 
         Example without handshake:
             conn = P2PConnection("127.0.0.1", 48333)
-            if conn.connect(do_handshake=False):
-                # Manually perform handshake or send custom messages
-                if perform_version_verack_handshake(conn):
-                    # Now ready for communication
-                    pass
+            conn.connect(do_handshake=False)
+            # Manually perform handshake or send custom messages
+            if perform_version_verack_handshake(conn):
+                # Now ready for communication
+                pass
         """
         try:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.settimeout(self.timeout)
+
+            # Enable address reuse (important for port reuse after TIME_WAIT)
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+            # If client_port is specified, bind to it before connecting
+            if self.client_port is not None:
+                try:
+                    self.socket.bind(('', self.client_port))
+                except OSError as e:
+                    print(f"Warning: Failed to bind to client port {self.client_port}: {e}")
+                    # Continue without binding - let OS assign ephemeral port
+
             self.socket.connect((self.host, self.port))
+
+            # Retrieve the actual client port assigned by OS
+            client_addr = self.socket.getsockname()
+            self.assigned_client_port = client_addr[1]
 
             # Optionally perform VERSION/VERACK handshake
             if do_handshake:
                 if not perform_version_verack_handshake(self):
                     self.close()
-                    return False
+                    raise RuntimeError(f"VERSION/VERACK handshake failed with {self.host}:{self.port}")
 
-            return True
+        except ConnectionError:
+            # Re-raise ConnectionError as-is
+            raise
+        except RuntimeError:
+            # Re-raise RuntimeError (handshake failure) as-is
+            raise
         except Exception as e:
-            print(f"Failed to connect to {self.host}:{self.port}: {e}")
-            return False
+            # Wrap other exceptions as ConnectionError
+            raise ConnectionError(f"Failed to connect to {self.host}:{self.port}: {e}") from e
 
     def send_message(self, message):
         """
@@ -459,14 +484,24 @@ class P2PConnection:
             data += chunk
         return data
 
+    def get_client_port(self):
+        """
+        Get the client-side port assigned by the OS.
+
+        Returns:
+            int: Client port number, or None if not connected yet
+        """
+        return self.assigned_client_port
+
     def close(self):
-        """Close the connection."""
+        """Close the connection (preserves assigned_client_port for reuse)."""
         if self.socket:
             try:
                 self.socket.close()
             except:
                 pass
             self.socket = None
+            # NOTE: Keep self.assigned_client_port for port reuse
 
     def __enter__(self):
         """Context manager entry."""
