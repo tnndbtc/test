@@ -2273,7 +2273,7 @@ std::string CPeerManager::GetSubnet(const std::string& str_address) {
     }
     return str_address;  // Return full address if parsing fails
 }
-
+/* may not need this for now, RotateOutboundConnections has partially covered this
 void CPeerManager::EnforceSubnetDiversity() {
     std::vector<std::shared_ptr<CPeerNode>> peers_to_disconnect;
     {
@@ -2317,7 +2317,7 @@ void CPeerManager::EnforceSubnetDiversity() {
         LOG_INFO("Enforced subnet diversity: disconnected " + std::to_string(peers_to_disconnect.size()) + " peers");
     }
 }
-
+*/
 // ============= Malicious Peer Detection and Banning =============
 
 void CPeerManager::IncreaseMisbehaviorScore(std::shared_ptr<IPeerNode> p_peer_node, int n_score_increase) {

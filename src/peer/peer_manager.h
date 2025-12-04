@@ -412,7 +412,7 @@ private:
      * Limits connections per /24 subnet (IPv4) to increase global
      * network connectivity. Rotates out excess connections from same subnet.
      */
-    void EnforceSubnetDiversity();
+    // void EnforceSubnetDiversity(); // may not need this for now, RotateOutboundConnections has partially covered this
 
     /**
      * @brief Increase misbehavior score for peer
