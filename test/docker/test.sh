@@ -64,25 +64,45 @@ echo "docker build -f test/docker/dockerfile.dev -t $IMAGE_TAG ."
 docker build -f test/docker/dockerfile.dev -t "$IMAGE_TAG" .
 
 echo "docker network create --subnet=10.10.0.0/16 net10"
-docker network rm net10
+if docker network ls -q -f name=net10 | grep -q .; then
+    echo "Removing existing network net10"
+    docker network rm net10
+else
+    echo "Network net10 does not exist, skipping rm"
+fi
 docker network create --subnet=10.10.0.0/16 net10
 #echo "docker network connect net10 $CONTAINER_NAME"
 #docker network connect net10 "$CONTAINER_NAME"
 
 echo "docker network create --subnet=203.10.0.0/16 net203"
-docker network rm net203
+if docker network ls -q -f name=net203 | grep -q .; then
+    echo "Removing existing network net203"
+    docker network rm net203
+else
+    echo "Network net203 does not exist, skipping rm"
+fi
 docker network create --subnet=203.10.0.0/16 net203
 #echo "docker network connect net203 $CONTAINER_NAME"
 #docker network connect net203 "$CONTAINER_NAME"
 
 echo "docker network create --subnet=81.10.0.0/16 net81"
-docker network rm net81
+if docker network ls -q -f name=net81 | grep -q .; then
+    echo "Removing existing network net81"
+    docker network rm net81
+else
+    echo "Network net81 does not exist, skipping rm"
+fi
 docker network create --subnet=81.10.0.0/16 net81
 #echo "docker network connect net81 $CONTAINER_NAME"
 #docker network connect net81 "$CONTAINER_NAME"
 
 echo "docker network create --subnet=8.8.0.0/16 net8"
-docker network rm net8
+if docker network ls -q -f name=net8 | grep -q .; then
+    echo "Removing existing network net8"
+    docker network rm net8
+else
+    echo "Network net8 does not exist, skipping rm"
+fi
 docker network create --subnet=8.8.0.0/16 net8
 
 # if needs to do port forwarding -p <local_port>:<container_port>
@@ -126,7 +146,14 @@ if [ $n_test_status -eq 0 ]; then
         echo "docker rmi $IMAGE_NAME"
         docker rmi "$IMAGE_NAME"
         echo "Removing Docker networks..."
-        docker network rm net10 net8 net203 net81
+        for network in net10 net8 net203 net81; do
+            if docker network ls -q -f name=$network | grep -q .; then
+                echo "Removing network $network"
+                docker network rm $network
+            else
+                echo "Network $network does not exist, skipping rm"
+            fi
+        done
         echo "Cleanup complete!"
     fi
 else
