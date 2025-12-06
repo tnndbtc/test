@@ -107,8 +107,8 @@ docker network create --subnet=8.8.0.0/16 net8
 
 # if needs to do port forwarding -p <local_port>:<container_port>
 # docker run -dit --name "$CONTAINER_NAME" -p 28443:28443 "$IMAGE_NAME"
-echo "docker run -e PYTHONPATH=/app/test/functional -dit --name $CONTAINER_NAME --network net10 --ip 10.10.0.2 $IMAGE_NAME"
-docker run -e PYTHONPATH=/app/test/functional -dit --name "$CONTAINER_NAME" --network net10 --ip 10.10.0.2 "$IMAGE_NAME"
+echo "docker run --env-file $SCRIPT_DIR/env.list -dit --name $CONTAINER_NAME --network net10 --ip 10.10.0.2 $IMAGE_NAME"
+docker run --env-file $SCRIPT_DIR/env.list -dit --name "$CONTAINER_NAME" --network net10 --ip 10.10.0.2 "$IMAGE_NAME"
 echo "docker network connect --ip 81.10.0.2 net81 $CONTAINER_NAME"
 docker network connect --ip 81.10.0.2 net81 "$CONTAINER_NAME"
 

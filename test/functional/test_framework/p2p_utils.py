@@ -10,6 +10,11 @@ import socket
 import struct
 import time
 import random
+import logging
+
+# Create module-level logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 def create_version_payload(peer_port, our_address="127.0.0.1"):
@@ -117,25 +122,29 @@ def perform_version_verack_handshake(connection):
         version_payload = create_version_payload(connection.port)
         version_msg = P2PMessage(MessageType.VERSION, version_payload)
         if not connection.send_message(version_msg):
-            print("Handshake failed: Could not send VERSION")
+            client_port_info = f" (client port: {connection.assigned_client_port})" if hasattr(connection, 'assigned_client_port') and connection.assigned_client_port else ""
+            logger.error(f"Handshake failed: Could not send VERSION to {connection.host}:{connection.port} client_port:{client_port_info}")
             return False
 
         # Step 2: Receive VERSION from peer
         received_version = connection.receive_message(timeout=5)
         if not received_version or received_version.msg_type != MessageType.VERSION:
-            print(f"Handshake failed: Expected VERSION, got {received_version.msg_type if received_version else 'None'}")
+            client_port_info = f" (client port: {connection.assigned_client_port})" if hasattr(connection, 'assigned_client_port') and connection.assigned_client_port else ""
+            logger.error(f"Handshake failed: Expected VERSION, got {received_version.msg_type if received_version else 'None'} from {connection.host}:{connection.port} client_port:{client_port_info}")
             return False
 
         # Step 3: Send VERACK
         verack_msg = P2PMessage(MessageType.VERACK, b"")
         if not connection.send_message(verack_msg):
-            print("Handshake failed: Could not send VERACK")
+            client_port_info = f" (client port: {connection.assigned_client_port})" if hasattr(connection, 'assigned_client_port') and connection.assigned_client_port else ""
+            logger.error(f"Handshake failed: Could not send VERACK to {connection.host}:{connection.port} client_port:{client_port_info}")
             return False
 
         # Step 4: Receive VERACK from peer
         received_verack = connection.receive_message(timeout=5)
         if not received_verack or received_verack.msg_type != MessageType.VERACK:
-            print(f"Handshake failed: Expected VERACK, got {received_verack.msg_type if received_verack else 'None'}")
+            client_port_info = f" (client port: {connection.assigned_client_port})" if hasattr(connection, 'assigned_client_port') and connection.assigned_client_port else ""
+            logger.error(f"Handshake failed: Expected VERACK, got {received_verack.msg_type if received_verack else 'None'} from {connection.host}:{connection.port} client_port:{client_port_info}")
             return False
         # this sleep is critical on windows to ensure handshake finishes before sending other p2p messages
         time.sleep(1)
@@ -143,7 +152,8 @@ def perform_version_verack_handshake(connection):
         return True
 
     except Exception as e:
-        print(f"Handshake failed with exception: {e}")
+        client_port_info = f" (client port: {connection.assigned_client_port})" if hasattr(connection, 'assigned_client_port') and connection.assigned_client_port else ""
+        logger.error(f"Handshake failed with exception to {connection.host}:{connection.port} client_port:{client_port_info}: {e}")
         return False
 
 
@@ -359,7 +369,7 @@ class P2PConnection:
                 try:
                     self.socket.bind(('', self.client_port))
                 except OSError as e:
-                    print(f"Warning: Failed to bind to client port {self.client_port}: {e}")
+                    logger.warning(f"Failed to bind to client port {self.client_port}: {e}")
                     # Continue without binding - let OS assign ephemeral port
 
             self.socket.connect((self.host, self.port))
@@ -402,7 +412,8 @@ class P2PConnection:
             self.socket.sendall(serialized)
             return True
         except Exception as e:
-            print(f"Failed to send message: {e}")
+            client_port_info = f" (client port: {self.assigned_client_port})" if self.assigned_client_port else ""
+            logger.error(f"Failed to send message to {self.host}:{self.port} client_port:{client_port_info}: {e}")
             return False
 
     def receive_message(self, timeout=None):
@@ -463,7 +474,8 @@ class P2PConnection:
         except socket.timeout:
             return None
         except Exception as e:
-            print(f"Failed to receive message: {e}")
+            client_port_info = f" (client port: {self.assigned_client_port})" if self.assigned_client_port else ""
+            logger.error(f"Failed to receive message from {self.host}:{self.port} client_port:{client_port_info}: {e}")
             return None
 
     def _receive_exactly(self, n_bytes):

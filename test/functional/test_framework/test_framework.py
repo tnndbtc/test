@@ -250,25 +250,25 @@ class TestFramework(unittest.TestCase):
 
         log_file = self.tmpdir / "test_framework.log"
 
-        # Create logger for this test
-        self.logger = logging.getLogger(f"test_framework_{self.__class__.__name__}")
-        self.logger.setLevel(logging.DEBUG)
+        # Configure root logger to capture all module loggers (including p2p_utils, etc.)
+        root_logger = logging.getLogger()
+        root_logger.setLevel(logging.DEBUG)
 
-        # Remove any existing handlers to avoid duplicates
-        self.logger.handlers.clear()
+        # Remove any existing handlers from root logger
+        root_logger.handlers.clear()
 
-        # Add file handler for this test
-        file_handler = logging.FileHandler(log_file)
-        file_handler.setLevel(logging.DEBUG)
-        # Use custom format with UTC time in brackets and milliseconds
+        # Add file handler to root logger
+        root_file_handler = logging.FileHandler(log_file)
+        root_file_handler.setLevel(logging.DEBUG)
         formatter = logging.Formatter('[%(asctime)s.%(msecs)03d UTC] - %(name)s - %(levelname)s - %(message)s',
                                       datefmt='%Y-%m-%d %H:%M:%S')
         formatter.converter = time.gmtime  # Use UTC time instead of local time
-        file_handler.setFormatter(formatter)
-        self.logger.addHandler(file_handler)
+        root_file_handler.setFormatter(formatter)
+        root_logger.addHandler(root_file_handler)
 
-        # Prevent propagation to root logger to avoid duplicate logs
-        self.logger.propagate = False
+        # Create logger for this test (will propagate to root logger)
+        self.logger = logging.getLogger(f"test_framework_{self.__class__.__name__}")
+        self.logger.setLevel(logging.DEBUG)
 
         self.logger.info(f"Test framework initialized in {self.tmpdir}")
 

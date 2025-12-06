@@ -24,12 +24,13 @@ from pathlib import Path
 class TestRunner:
     """Runs functional tests using unittest framework."""
 
-    def __init__(self, tmpdir=None, nocleanup=False, verbosity=1):
+    def __init__(self, tmpdir=None, nocleanup=False, verbosity=1, output=None):
         """Initialize the test runner."""
         self.script_dir = Path(__file__).parent.resolve()
         self.tmpdir = tmpdir
         self.nocleanup = nocleanup
         self.verbosity = verbosity
+        self.output = output
 
     def setup_environment(self):
         """Setup environment variables for tests."""
@@ -52,6 +53,12 @@ class TestRunner:
 
         if self.nocleanup:
             os.environ["TEST_NOCLEANUP"] = "1"
+
+        # Set STRESS_TEST_RESULTS_DIR for stress tests to save JSON metrics
+        if self.output:
+            output_path = Path(self.output)
+            output_path.mkdir(parents=True, exist_ok=True)
+            os.environ["STRESS_TEST_RESULTS_DIR"] = str(output_path)
 
         return tmpdir_path
 
@@ -87,6 +94,8 @@ class TestRunner:
         print(f"{'='*70}")
         if self.tmpdir or tmpdir_path:
             print(f"Test tmpdir: {tmpdir_path}")
+        if self.output:
+            print(f"Results output directory: {self.output}")
         print()
 
         try:
@@ -225,6 +234,8 @@ class TestRunner:
         print(f"{'='*70}")
         if self.tmpdir or tmpdir_path:
             print(f"Test tmpdir: {tmpdir_path}")
+        if self.output:
+            print(f"Results output directory: {self.output}")
         print()
 
         try:
@@ -292,6 +303,8 @@ Examples:
   %(prog)s -v                               # Run with verbose output
   %(prog)s --tmpdir=/tmp/test_runs          # Use custom tmpdir
   %(prog)s --nocleanup                      # Keep test data after run
+  %(prog)s --output test_results/           # Save stress test metrics to directory
+  %(prog)s test_stress_transaction.py --tmpdir /tmp --nocleanup --output test_results/
         """
     )
 
@@ -319,16 +332,24 @@ Examples:
         help="Do not cleanup test data after test run"
     )
 
+    parser.add_argument(
+        "--output",
+        type=str,
+        help="Directory for stress test results/metrics (sets STRESS_TEST_RESULTS_DIR environment variable)"
+    )
+
     args = parser.parse_args()
 
     verbosity = 2 if args.verbose else 1
-    runner = TestRunner(tmpdir=args.tmpdir, nocleanup=args.nocleanup, verbosity=verbosity)
+    runner = TestRunner(tmpdir=args.tmpdir, nocleanup=args.nocleanup, verbosity=verbosity, output=args.output)
 
-    # Print tmpdir info
+    # Print configuration info
     if args.tmpdir:
         print(f"Using tmpdir: {args.tmpdir}")
     if args.nocleanup:
         print("Cleanup disabled - test data will be preserved")
+    if args.output:
+        print(f"Stress test results will be saved to: {args.output}")
 
     if args.test_name:
         # Check if it's a file path

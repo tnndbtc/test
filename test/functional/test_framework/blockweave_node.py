@@ -14,6 +14,11 @@ import tempfile
 import platform
 from pathlib import Path
 
+# Suppress urllib3 connection warnings and errors from being printed to console
+# These will still be logged via the logger
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("urllib3.connectionpool").propagate = True
+
 
 class BlockweaveNode:
     """
@@ -91,6 +96,7 @@ class BlockweaveNode:
         self.node_index = node_index
         self.datadir = datadir
         self.logger = logging.getLogger(f"node{node_index}")
+        self.logger.setLevel(logging.DEBUG)
         self.custom_config_file = None
 
     @property
@@ -588,7 +594,7 @@ class BlockweaveNode:
 
         return requests.post(url, data=data, json=json_data, auth=auth, timeout=timeout)
 
-    def create_transaction(self, transaction):
+    def create_transaction(self, transaction, timeout=30):
         """
         Create and submit a transaction to the node.
 
@@ -598,6 +604,7 @@ class BlockweaveNode:
                 - to (str): Recipient address
                 - data (str): Transaction data/payload
                 - fee (int, optional): Transaction fee (default: 0)
+            timeout: Request timeout in seconds (default: 30)
 
         Returns:
             tuple: (success: bool, response_data: dict or None)
@@ -609,7 +616,7 @@ class BlockweaveNode:
         """
         try:
             self.logger.info(f"Submitting transaction to /transaction...")
-            response = self.post("/transaction", json_data=transaction)
+            response = self.post("/transaction", json_data=transaction, timeout=timeout)
 
             if response.status_code == 200:
                 tx_response = response.json()
