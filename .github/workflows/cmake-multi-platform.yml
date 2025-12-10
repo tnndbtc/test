@@ -92,8 +92,6 @@ jobs:
       run: |
         echo Building with %BUILD_CORES% cores
         cmake --build build --config ${{ matrix.build_type }} -- /m:%BUILD_CORES%
-        echo build result
-        echo %errorlevel%
       shell: cmd
 
 #    - name: Test
@@ -111,10 +109,10 @@ jobs:
     - name: Unit Test (Windows)
       if: matrix.os == 'windows-latest'
       run: |
-        cd build\\src\\test\\${{ matrix.build_type }}
-        test_all.exe
-      shell: bash
-      
+        cd build\src\test\Debug
+        .\test_all.exe
+      shell: pwsh
+  
     - name: Functional Test (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: |
