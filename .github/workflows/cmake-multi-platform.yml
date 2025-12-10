@@ -57,8 +57,8 @@ jobs:
       shell: pwsh
       run: |
         C:\Windows\System32\curl.exe -L -o boost.zip https://sourceforge.net/projects/boost/files/boost/1.85.0/boost_1_85_0.tar.bz2/download
-        Expand-Archive boost.zip -DestinationPath boost
-        # tar -xf boost.zip
+        # Expand-Archive boost.zip -DestinationPath boost
+        tar -xf boost.zip
     
     - name: Configure CMake (Linux)
       if: matrix.os == 'ubuntu-latest'
@@ -76,7 +76,7 @@ jobs:
       run: |
         cmake -B build `
           -DBUILD_TESTS=ON `
-          -DBOOST_INCLUDEDIR=${{ github.workspace }}\boost\boost_1_85_0       
+          -DBOOST_INCLUDEDIR=${{ github.workspace }}\boost_1_85_0       
 
     - name: Build (Linux)
       if: matrix.os == 'ubuntu-latest'
