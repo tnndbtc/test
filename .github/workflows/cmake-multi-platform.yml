@@ -125,7 +125,7 @@ jobs:
       run: |
         cd build
         python3 test\\functional\\test_runner.py --tmpdir "C:\Temp" --nocleanup
-      shell: bash
+      shell: pwsh
 
     ############################################################
     # POST BUILD WITH DOCKER
