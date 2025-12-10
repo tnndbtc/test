@@ -54,23 +54,10 @@ jobs:
     # Windows Boost (header-only)
     - name: Install Boost header-only (Windows)
       if: matrix.os == 'windows-latest'
-      shell: pwsh
       run: |
-        Write-Host "Downloading Boost 1.84.0..."
-        Invoke-WebRequest -Uri "https://boostorg.jfrog.io/artifactory/main/release/1.84.0/source/boost_1_84_0.zip" -OutFile "boost.zip"
-
-        Write-Host "Extracting Boost with 7-Zip..."
-        7z x boost.zip -oC:\ -y
-
-        Write-Host "Verifying extraction..."
-        if (Test-Path "C:\boost_1_84_0\boost\version.hpp") {
-          Write-Host "✓ Boost found at C:\boost_1_84_0"
-          echo "BOOST_LOCATION=C:/boost_1_84_0" >> $env:GITHUB_ENV
-        } else {
-          Write-Host "ERROR: Boost extraction failed!"
-          Get-ChildItem C:\ -Filter "boost*" -Directory | Select-Object FullName
-          exit 1
-        }        
+        curl -L -o boost.zip https://boostorg.jfrog.io/artifactory/main/release/1.85.0/source/boost_1_85_0.zip
+        Expand-Archive boost.zip -DestinationPath boost
+    
     - name: Configure CMake (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: |
@@ -87,7 +74,7 @@ jobs:
       run: |
         cmake -B build `
           -DBUILD_TESTS=ON `
-          -DBoost_ROOT="$env:BOOST_LOCATION"          
+          -DBOOST_INCLUDEDIR=${{ github.workspace }}\boost\boost_1_85_0       
 
     - name: Build (Linux)
       if: matrix.os == 'ubuntu-latest'
