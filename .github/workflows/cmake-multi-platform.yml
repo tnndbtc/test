@@ -1,0 +1,81 @@
+# This starter workflow is for a CMake project running on multiple platforms. There is a different starter workflow if you just want a single platform.
+# See: https://github.com/actions/starter-workflows/blob/main/ci/cmake-single-platform.yml
+name: CMake on Ubuntu + Windows (Clang + MSVC)
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Ubuntu with Clang
+          - os: ubuntu-latest
+            c_compiler: clang
+            cpp_compiler: clang++
+            build_type: Debug
+
+          # Windows with MSVC
+          - os: windows-latest
+            c_compiler: cl
+            cpp_compiler: cl
+            build_type: Debug
+
+    steps:
+    - uses: actions/checkout@v4
+
+    # -------- Linux: Install Clang --------
+    - name: Install Clang (Linux only)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt update
+        sudo apt install -y openssh-server net-tools git cmake llvm clang lldb lld openssl libssl-dev libboost-dev libasan6 python3-pip python3-psutil
+
+    # -------- Windows: Setup MSVC env --------
+    - name: Setup MSVC (Windows only)
+      if: matrix.os == 'windows-latest'
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Configure CMake (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        cmake -B build \
+          -DBUILD_TESTS=ON \
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+          -DCMAKE_C_COMPILER=${{ matrix.c_compiler }} \
+          -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
+      shell: bash
+    - name: Configure CMake (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        cmake -B build \
+          -DBUILD_TESTS=ON
+#          -DCMAKE_C_COMPILER=${{ matrix.c_compiler }} \
+#          -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
+      shell: bash
+
+
+    - name: Build (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        cmake --build build
+      shell: bash
+
+    - name: Build (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        cmake --build build --config ${{ matrix.build_type }}
+      shell: bash
+
+#    - name: Test
+#      working-directory: build
+#      run: ctest --output-on-failure --build-config ${{ matrix.build_type }}
+#      shell: bash
+
