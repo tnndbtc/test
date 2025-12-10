@@ -56,7 +56,9 @@ jobs:
       if: matrix.os == 'windows-latest'
       shell: pwsh
       run: |
-        C:\Windows\System32\curl.exe -L -o boost.zip https://boostorg.jfrog.io/artifactory/main/release/1.85.0/source/boost_1_85_0.zip
+        Invoke-WebRequest `
+              -Uri "https://boostorg.jfrog.io/artifactory/main/release/1.85.0/source/boost_1_85_0.zip" `
+              -OutFile boost.zip
         Expand-Archive boost.zip -DestinationPath boost
     
     - name: Configure CMake (Linux)
