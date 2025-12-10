@@ -59,6 +59,8 @@ jobs:
         C:\Windows\System32\curl.exe -L -o boost.zip https://sourceforge.net/projects/boost/files/boost/1.85.0/boost_1_85_0.tar.bz2/download
         # Expand-Archive boost.zip -DestinationPath boost
         tar -xf boost.zip
+        echo "Detected $env:NUMBER_OF_PROCESSORS cores"
+        echo "BUILD_CORES=$env:NUMBER_OF_PROCESSORS" >> $env:GITHUB_ENV
     
     - name: Configure CMake (Linux)
       if: matrix.os == 'ubuntu-latest'
@@ -86,8 +88,9 @@ jobs:
 
     - name: Build (Windows)
       if: matrix.os == 'windows-latest'
-      run: |      
-        cmake --build build --config ${{ matrix.build_type }} -- /m:$env:NUMBER_OF_PROCESSORS
+      run: |
+        echo Building with %BUILD_CORES% threads
+        cmake --build build --config ${{ matrix.build_type }} -- /m:%BUILD_CORES%
       shell: bash
 
 #    - name: Test
