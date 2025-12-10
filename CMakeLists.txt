@@ -217,6 +217,13 @@ set(BUILD_SHARED_LIBS OFF)
 # Add secp256k1 as subdirectory
 add_subdirectory(src/utils/secp256k1)
 
+# Set position independent code for secp256k1 to allow linking into shared library
+set_target_properties(secp256k1 PROPERTIES POSITION_INDEPENDENT_CODE ON)
+# Also set for precomputed target if it exists
+if(TARGET secp256k1_precomputed)
+    set_target_properties(secp256k1_precomputed PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endif()
+
 # secp256k1 is now available as target: secp256k1
 message(STATUS "secp256k1 configured successfully")
 
