@@ -41,7 +41,7 @@ jobs:
             build_type: Debug
 
           # macOS x64 with Clang
-          - os: macos-13
+          - os: macos-15
             c_compiler: clang
             cpp_compiler: clang++
             build_type: Debug
@@ -82,7 +82,7 @@ jobs:
 
     # macOS ARM64: Install Clang + dependencies
     - name: Install Clang & dependencies (macOS arm64 only)
-      if: matrix.os == 'macos-latest' || matrix.os == 'macos-13'
+      if: matrix.os == 'macos-latest' || matrix.os == 'macos-15'
       run: |
         brew update
         brew install llvm cmake boost
@@ -118,7 +118,7 @@ jobs:
 
     # macOS ARM64
     - name: Configure CMake (macOS)
-      if: matrix.os == 'macos-latest' || matrix.os == 'macos-13'
+      if: matrix.os == 'macos-latest' || matrix.os == 'macos-15'
       run: |
         cmake -B build \
           -DBUILD_TESTS=ON \
@@ -145,7 +145,7 @@ jobs:
       shell: cmd
 
     - name: Build (macOS)
-      if: matrix.os == 'macos-latest' || matrix.os == 'macos-13'
+      if: matrix.os == 'macos-latest' || matrix.os == 'macos-15'
       run: |
         sysctl -n hw.ncpu
         cmake --build build -- -j$(sysctl -n hw.ncpu)
@@ -169,7 +169,7 @@ jobs:
       shell: pwsh
 
     - name: Unit Test (macOS)
-      if: matrix.os == 'macos-latest' || matrix.os == 'macos-13'
+      if: matrix.os == 'macos-latest' || matrix.os == 'macos-15'
       run: |
         cd build
         ctest -V
@@ -193,7 +193,7 @@ jobs:
       shell: pwsh
 
     - name: Functional Test (macOS)
-      if: matrix.os == 'macos-latest' || matrix.os == 'macos-13'
+      if: matrix.os == 'macos-latest' || matrix.os == 'macos-15'
       run: |
         cd build
         test/functional/test_runner.py --tmpdir /tmp --nocleanup
