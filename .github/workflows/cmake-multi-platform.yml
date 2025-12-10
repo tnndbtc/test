@@ -92,6 +92,8 @@ jobs:
       run: |
         echo Building with %BUILD_CORES% cores
         cmake --build build --config ${{ matrix.build_type }} -- /m:%BUILD_CORES%
+        echo build result
+        echo %errorlevel%
       shell: cmd
 
 #    - name: Test
