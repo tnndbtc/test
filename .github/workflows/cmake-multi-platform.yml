@@ -62,7 +62,7 @@ jobs:
         echo "Detected $env:NUMBER_OF_PROCESSORS cores"
         echo "BUILD_CORES=$env:NUMBER_OF_PROCESSORS" >> $env:GITHUB_ENV
         python -m pip install --upgrade pip
-        python -m pip install requests    
+        python -m pip install -r test\functional\requirements.txt
     
     - name: Configure CMake (Linux)
       if: matrix.os == 'ubuntu-latest'
@@ -120,8 +120,6 @@ jobs:
     - name: Functional Test (Windows)
       if: matrix.os == 'windows-latest'
       run: |
-        python -m pip install --upgrade pip
-        python -m pip install -r test\functional\requirements.txt
         cd build
         python3 test\\functional\\test_runner.py --tmpdir "C:\Temp" --nocleanup
       shell: pwsh
