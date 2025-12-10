@@ -276,7 +276,7 @@ if(WIN32)
 
     # Copy project DLLs to test directory
     set(PROJECT_DLLS
-        bwthreadname bwpathutil bwlogger bwutils
+        bwthreadname bwpathutil bwlogger bwutils bwcrypto
         bwpeer bwpeermsg bwblockcore bwrest
     )
 

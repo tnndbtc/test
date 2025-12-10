@@ -37,7 +37,7 @@ std::string ReadPassword(const std::string& str_prompt = "Enter password: ") {
 
 #ifdef _WIN32
     // Windows: Use _getch() to read characters without echo
-    char ch;
+    int ch;
     while ((ch = _getch()) != '\r') {  // '\r' is Enter key on Windows
         if (ch == '\b') {  // Backspace
             if (!str_password.empty()) {
@@ -45,7 +45,7 @@ std::string ReadPassword(const std::string& str_prompt = "Enter password: ") {
                 std::cout << "\b \b";  // Erase character from display
             }
         } else if (ch >= 32 && ch <= 126) {  // Printable characters
-            str_password.push_back(ch);
+            str_password.push_back(static_cast<char>(ch));
         }
     }
     std::cout << "\n";

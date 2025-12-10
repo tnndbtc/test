@@ -28,6 +28,7 @@ TEST_NAME=""
 
 # Test definitions
 declare -A TESTS
+TESTS["block"]="test_stress_block.py"
 TESTS["transaction"]="test_stress_transaction.py"
 TESTS["transaction_propagation"]="test_stress_transaction_propagation.py"
 TESTS["block_propagation"]="test_stress_block_propagation.py"

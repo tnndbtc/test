@@ -124,7 +124,8 @@ def aggregate_results(results_dir, test_filter=None):
         filter_full_name = f"test_stress_{test_filter}"
         filtered_results = {}
         for test_name, files in test_results.items():
-            if filter_full_name in test_name or test_filter in test_name:
+            # Exact match or starts with filter pattern
+            if test_name == filter_full_name or test_name.startswith(filter_full_name + "_"):
                 filtered_results[test_name] = files
         test_results = filtered_results
 
@@ -178,7 +179,10 @@ def aggregate_results(results_dir, test_filter=None):
 
                     # Add metadata fields first (if not already in stats)
                     metadata_fields = {}
-                    if 'num_threads' in metadata:
+                    # Support both num_threads (old) and num_processes (new)
+                    if 'num_processes' in metadata:
+                        metadata_fields['num_processes'] = metadata['num_processes']
+                    elif 'num_threads' in metadata:
                         metadata_fields['num_threads'] = metadata['num_threads']
                     if 'max_duration_sec' in metadata:
                         metadata_fields['max_duration_sec'] = metadata['max_duration_sec']
@@ -188,8 +192,8 @@ def aggregate_results(results_dir, test_filter=None):
                         if key not in stats:
                             output_parts.append(f"{key}:{value}")
 
-                    # Add all stats fields except per_thread_distribution and per_node_distribution
-                    excluded_fields = ['per_thread_distribution', 'per_node_distribution']
+                    # Add all stats fields except distribution arrays
+                    excluded_fields = ['per_thread_distribution', 'per_process_distribution', 'per_node_distribution']
                     for key, value in sorted(stats.items()):
                         if key not in excluded_fields:
                             # Format value appropriately

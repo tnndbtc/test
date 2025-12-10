@@ -289,6 +289,18 @@ class BlockweaveNode:
         except Exception as e:
             self.logger.error(f"Failed to read .cookie file: {e}")
 
+    def get_cookie_credentials(self):
+        """
+        Get RPC authentication credentials from .cookie file.
+
+        Returns:
+            tuple or None: (username, password) tuple if credentials are loaded,
+                          None if not available
+        """
+        if hasattr(self, 'cookie_credentials'):
+            return self.cookie_credentials
+        return None
+
     def start(self, timeout=10):
         """
         Start the blockweave node in foreground mode.
