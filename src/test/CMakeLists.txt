@@ -108,6 +108,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         "${BUILD_DIR}/libbwrest.${LIB_EXT}"
         "${BUILD_DIR}/libbwutils.${LIB_EXT}"
         "${BUILD_DIR}/libbwpathutil.${LIB_EXT}"
+        "${BUILD_DIR}/libbwcrypto.${LIB_EXT}"
     )
 
     set(LIBS_MISSING FALSE)
