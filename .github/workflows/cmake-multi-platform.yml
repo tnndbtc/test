@@ -81,13 +81,13 @@ jobs:
     - name: Build (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: |
-        cmake --build build
+        cmake --build build -- -j$(nproc)
       shell: bash
 
     - name: Build (Windows)
       if: matrix.os == 'windows-latest'
-      run: |
-        cmake --build build --config ${{ matrix.build_type }}
+      run: |      
+        cmake --build build --config ${{ matrix.build_type }} -- /m:$env:NUMBER_OF_PROCESSORS
       shell: bash
 
 #    - name: Test
@@ -105,7 +105,7 @@ jobs:
     - name: Unit Test (Windows)
       if: matrix.os == 'windows-latest'
       run: |
-        cd build\src\test\${{ matrix.build_type }}
+        cd build\\src\\test\\${{ matrix.build_type }}
         test_all.exe
       shell: bash
       
