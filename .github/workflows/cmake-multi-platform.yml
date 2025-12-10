@@ -51,10 +51,10 @@ jobs:
 
     - name: Install Boost (Windows)
       if: matrix.os == 'windows-latest'
-      run: |
-        vcpkg install boost:x64-windows
-      shell: bash
-
+      uses: lukka/run-vcpkg@v11
+      with:
+        vcpkgArguments: boost
+        
     - name: Configure CMake (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: |
@@ -105,4 +105,18 @@ jobs:
       run: |
         cd build\src\test\${{ matrix.build_type }}
         test_all.exe
+      shell: bash
+      
+    - name: Functional Test (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        cd build
+        test/functional/test_runner.py --tmpdir /tmp --nocleanup
+      shell: bash
+
+    - name: Functional Test (Windows)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        cd build
+        python3 test\functional\test_runner.py --tmpdir "C:\Temp" --nocleanup
       shell: bash
