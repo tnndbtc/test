@@ -58,8 +58,7 @@ jobs:
       continue-on-error: true
       run: |
         C:\Windows\System32\curl.exe -L -o boost.zip https://boostorg.jfrog.io/artifactory/main/release/1.85.0/source/boost_1_85_0.zip
-        echo $LASTEXITCODE
-        Expand-Archive boost.zip -DestinationPath boost
+        tar -xf boost.zip
     
     - name: Configure CMake (Linux)
       if: matrix.os == 'ubuntu-latest'
