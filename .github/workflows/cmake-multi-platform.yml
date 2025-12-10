@@ -54,10 +54,24 @@ jobs:
     # Windows Boost (header-only)
     - name: Install Boost header-only (Windows)
       if: matrix.os == 'windows-latest'
+      shell: pwsh
       run: |
-        curl -L -o boost.zip https://boostorg.jfrog.io/artifactory/main/release/1.84.0/source/boost_1_84_0.zip
-        powershell -command "Expand-Archive boost.zip -DestinationPath C:\\boost"
-        echo "BOOST_ROOT=C:\\boost\\boost_1_84_0" >> $env:GITHUB_ENV
+        Write-Host "Downloading Boost 1.84.0..."
+        Invoke-WebRequest -Uri "https://boostorg.jfrog.io/artifactory/main/release/1.84.0/source/boost_1_84_0.zip" -OutFile "boost.zip"
+
+        Write-Host "Extracting Boost..."
+        Expand-Archive -Path boost.zip -DestinationPath C:\
+
+        Write-Host "Checking extracted structure..."
+        if (Test-Path "C:\boost_1_84_0\boost\version.hpp") {
+          Write-Host "Boost found at C:\boost_1_84_0"
+          echo "BOOST_LOCATION=C:/boost_1_84_0" >> $env:GITHUB_ENV
+        } else {
+          Write-Host "ERROR: boost/version.hpp not found!"
+          Write-Host "Directory contents:"
+          Get-ChildItem C:\ -Filter "boost*" -Directory | Select-Object FullName
+          exit 1
+        }
         
     - name: Configure CMake (Linux)
       if: matrix.os == 'ubuntu-latest'
@@ -71,14 +85,11 @@ jobs:
       
     - name: Configure CMake (Windows)
       if: matrix.os == 'windows-latest'
+      shell: pwsh
       run: |
-        cmake -B build \
-          -DBUILD_TESTS=ON \
-          -DBoost_ROOT="C:\boost\boost_1_84_0"
-          
-#          -DCMAKE_C_COMPILER=${{ matrix.c_compiler }} \
-#          -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
-      shell: bash
+        cmake -B build `
+          -DBUILD_TESTS=ON `
+          -DBoost_ROOT="$env:BOOST_LOCATION"          
 
     - name: Build (Linux)
       if: matrix.os == 'ubuntu-latest'
