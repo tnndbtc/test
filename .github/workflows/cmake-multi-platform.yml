@@ -59,20 +59,18 @@ jobs:
         Write-Host "Downloading Boost 1.84.0..."
         Invoke-WebRequest -Uri "https://boostorg.jfrog.io/artifactory/main/release/1.84.0/source/boost_1_84_0.zip" -OutFile "boost.zip"
 
-        Write-Host "Extracting Boost..."
-        Expand-Archive -Path boost.zip -DestinationPath C:\
+        Write-Host "Extracting Boost with 7-Zip..."
+        7z x boost.zip -oC:\ -y
 
-        Write-Host "Checking extracted structure..."
+        Write-Host "Verifying extraction..."
         if (Test-Path "C:\boost_1_84_0\boost\version.hpp") {
-          Write-Host "Boost found at C:\boost_1_84_0"
+          Write-Host "✓ Boost found at C:\boost_1_84_0"
           echo "BOOST_LOCATION=C:/boost_1_84_0" >> $env:GITHUB_ENV
         } else {
-          Write-Host "ERROR: boost/version.hpp not found!"
-          Write-Host "Directory contents:"
+          Write-Host "ERROR: Boost extraction failed!"
           Get-ChildItem C:\ -Filter "boost*" -Directory | Select-Object FullName
           exit 1
-        }
-        
+        }        
     - name: Configure CMake (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: |
