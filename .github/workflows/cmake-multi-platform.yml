@@ -55,10 +55,10 @@ jobs:
     - name: Install Boost header-only (Windows)
       if: matrix.os == 'windows-latest'
       shell: pwsh
-      continue-on-error: true
       run: |
-        C:\Windows\System32\curl.exe -L -o boost.zip https://boostorg.jfrog.io/artifactory/main/release/1.85.0/source/boost_1_85_0.zip
-        tar -xf boost.zip
+        C:\Windows\System32\curl.exe -L -o boost.zip https://sourceforge.net/projects/boost/files/boost/1.85.0/boost_1_85_0.tar.bz2/download
+        Expand-Archive boost.zip -DestinationPath boost
+        # tar -xf boost.zip
     
     - name: Configure CMake (Linux)
       if: matrix.os == 'ubuntu-latest'
