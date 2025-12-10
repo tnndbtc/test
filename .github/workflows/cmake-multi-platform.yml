@@ -3,6 +3,12 @@
 name: CMake on Ubuntu + Windows (Clang + MSVC)
 
 on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: "Build type"
+        default: "Debug"
+        type: string
   push:
     branches: ["main"]
   pull_request:
