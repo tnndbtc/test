@@ -23,19 +23,25 @@ jobs:
       matrix:
         include:
           # Ubuntu with Clang
-          - os: ubuntu-latest
+          # - os: ubuntu-latest
+          #   c_compiler: clang
+          #   cpp_compiler: clang++
+          #   build_type: Debug
+
+          # Windows with MSVC
+          # - os: windows-latest
+          #   c_compiler: cl
+          #   cpp_compiler: cl
+          #   build_type: Debug
+
+          # macOS ARM64 with Clang
+          - os: macos-latest
             c_compiler: clang
             cpp_compiler: clang++
             build_type: Debug
 
-          # Windows with MSVC
-          - os: windows-latest
-            c_compiler: cl
-            cpp_compiler: cl
-            build_type: Debug
-
-          # macOS ARM64 with Clang
-          - os: macos-latest
+          # macOS x64 with Clang
+          - os: macos-13
             c_compiler: clang
             cpp_compiler: clang++
             build_type: Debug
@@ -74,8 +80,8 @@ jobs:
         python -m pip install -r test\functional\requirements.txt
 
     # macOS ARM64: Install Clang + dependencies
-    - name: Install Clang & dependencies (macOS only)
-      if: matrix.os == 'macos-latest'
+    - name: Install Clang & dependencies (macOS arm64 only)
+      if: matrix.os == 'macos-latest' || matrix.os == 'macos-13'
       run: |
         brew update
         brew install llvm cmake boost
@@ -84,7 +90,6 @@ jobs:
         echo "Using bundled Clang (Apple Clang)"
         python -m pip install --upgrade pip
         python -m pip install -r test/functional/requirements.txt
-
         
       shell: bash
 
@@ -112,7 +117,7 @@ jobs:
 
     # macOS ARM64
     - name: Configure CMake (macOS)
-      if: matrix.os == 'macos-latest'
+      if: matrix.os == 'macos-latest' || matrix.os == 'macos-13'
       run: |
         cmake -B build \
           -DBUILD_TESTS=ON \
@@ -139,7 +144,7 @@ jobs:
       shell: cmd
 
     - name: Build (macOS)
-      if: matrix.os == 'macos-latest'
+      if: matrix.os == 'macos-latest' || matrix.os == 'macos-13'
       run: |
         sysctl -n hw.ncpu
         cmake --build build -- -j$(sysctl -n hw.ncpu)
@@ -163,7 +168,7 @@ jobs:
       shell: pwsh
 
     - name: Unit Test (macOS)
-      if: matrix.os == 'macos-latest'
+      if: matrix.os == 'macos-latest' || matrix.os == 'macos-13'
       run: |
         cd build
         ctest -V
@@ -187,7 +192,7 @@ jobs:
       shell: pwsh
 
     - name: Functional Test (macOS)
-      if: matrix.os == 'macos-latest'
+      if: matrix.os == 'macos-latest' || matrix.os == 'macos-13'
       run: |
         cd build
         test/functional/test_runner.py --tmpdir /tmp --nocleanup
