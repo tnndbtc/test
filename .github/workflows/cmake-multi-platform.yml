@@ -49,11 +49,13 @@ jobs:
       if: matrix.os == 'windows-latest'
       uses: ilammy/msvc-dev-cmd@v1
 
-    - name: Install Boost (Windows)
+    # Windows Boost (header-only)
+    - name: Install Boost header-only (Windows)
       if: matrix.os == 'windows-latest'
-      uses: lukka/run-vcpkg@v11
-      with:
-        vcpkgArguments: boost
+      run: |
+        curl -L -o boost.zip https://boostorg.jfrog.io/artifactory/main/release/1.84.0/source/boost_1_84_0.zip
+        powershell -command "Expand-Archive boost.zip -DestinationPath C:\\boost"
+        echo "BOOST_ROOT=C:\\boost\\boost_1_84_0" >> $env:GITHUB_ENV
         
     - name: Configure CMake (Linux)
       if: matrix.os == 'ubuntu-latest'
@@ -118,5 +120,5 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: |
         cd build
-        python3 test\functional\test_runner.py --tmpdir "C:\Temp" --nocleanup
+        python3 test\\functional\\test_runner.py --tmpdir "C:\Temp" --nocleanup
       shell: bash
