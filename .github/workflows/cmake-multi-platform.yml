@@ -83,7 +83,7 @@ jobs:
         brew --prefix llvm
         echo "Using bundled Clang (Apple Clang)"
         python -m pip install --upgrade pip
-        python -m pip install -r test\functional\requirements.txt
+        python -m pip install -r test/functional/requirements.txt
 
         
       shell: bash
