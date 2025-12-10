@@ -122,3 +122,13 @@ jobs:
         cd build
         python3 test\\functional\\test_runner.py --tmpdir "C:\Temp" --nocleanup
       shell: bash
+
+    ############################################################
+    # POST BUILD WITH DOCKER
+    ############################################################
+    - name: Run docker image (Linux only)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        cd test/docker
+        ./test.sh
+      shell: bash
