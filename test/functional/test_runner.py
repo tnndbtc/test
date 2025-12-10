@@ -19,6 +19,7 @@ import tempfile
 import logging
 import shutil
 from pathlib import Path
+from test_framework.test_framework import TestFramework
 
 
 class TestRunner:
@@ -149,10 +150,7 @@ class TestRunner:
             else:
                 # Remove the parent tmpdir when not preserving test data
                 if tmpdir_path and tmpdir_path.exists():
-                    try:
-                        shutil.rmtree(tmpdir_path)
-                    except Exception as e:
-                        print(f"Warning: Failed to remove tmpdir {tmpdir_path}: {e}")
+                    TestFramework.force_remove_tree(tmpdir_path)
 
     def run_specific_test(self, test_name):
         """
@@ -215,10 +213,7 @@ class TestRunner:
             else:
                 # Remove the parent tmpdir when not preserving test data
                 if tmpdir_path and tmpdir_path.exists():
-                    try:
-                        shutil.rmtree(tmpdir_path)
-                    except Exception as e:
-                        print(f"Warning: Failed to remove tmpdir {tmpdir_path}: {e}")
+                    TestFramework.force_remove_tree(tmpdir_path)
 
     def run_all_tests(self):
         """
@@ -282,10 +277,7 @@ class TestRunner:
             else:
                 # Remove the parent tmpdir when not preserving test data
                 if tmpdir_path and tmpdir_path.exists():
-                    try:
-                        shutil.rmtree(tmpdir_path)
-                    except Exception as e:
-                        print(f"Warning: Failed to remove tmpdir {tmpdir_path}: {e}")
+                    TestFramework.force_remove_tree(tmpdir_path)
 
 
 def main():

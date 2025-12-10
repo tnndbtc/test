@@ -254,7 +254,12 @@ class TestFramework(unittest.TestCase):
         root_logger = logging.getLogger()
         root_logger.setLevel(logging.DEBUG)
 
-        # Remove any existing handlers from root logger
+        # Close and remove any existing handlers from root logger
+        for handler in root_logger.handlers[:]:
+            try:
+                handler.close()
+            except:
+                pass
         root_logger.handlers.clear()
 
         # Add file handler to root logger
@@ -435,6 +440,20 @@ class TestFramework(unittest.TestCase):
                     print(f"Warning: Failed to stop node{node.node_index}: {e}")
 
             # Close logger handlers to release file locks (Windows)
+            # First close root logger handlers (created in setup_logging)
+            try:
+                root_logger = logging.getLogger()
+                root_handlers = root_logger.handlers[:]
+                for handler in root_handlers:
+                    try:
+                        handler.close()
+                        root_logger.removeHandler(handler)
+                    except:
+                        pass
+            except:
+                pass
+
+            # Then close test logger handlers
             if hasattr(cls, 'logger') and cls.logger:
                 handlers = cls.logger.handlers[:]
                 for handler in handlers:
@@ -443,6 +462,15 @@ class TestFramework(unittest.TestCase):
                         cls.logger.removeHandler(handler)
                     except:
                         pass
+
+            # Force shutdown all logging handlers (Windows file lock workaround)
+            try:
+                logging.shutdown()
+                # Delay to allow Windows to release file locks
+                import time
+                time.sleep(0.5)
+            except:
+                pass
 
             # Cleanup tmpdir if not preserving
             if not cls.nocleanup and cls.tmpdir and cls.tmpdir.exists():
@@ -542,6 +570,20 @@ class TestFramework(unittest.TestCase):
                         print(f"Warning: Failed to stop node{node.node_index}: {e}")
 
                 # Close logger handlers to release file locks (Windows)
+                # First close root logger handlers (created in setup_logging)
+                try:
+                    root_logger = logging.getLogger()
+                    root_handlers = root_logger.handlers[:]
+                    for handler in root_handlers:
+                        try:
+                            handler.close()
+                            root_logger.removeHandler(handler)
+                        except:
+                            pass
+                except:
+                    pass
+
+                # Then close test logger handlers
                 if hasattr(self, 'logger') and self.logger:
                     handlers = self.logger.handlers[:]
                     for handler in handlers:
@@ -550,6 +592,15 @@ class TestFramework(unittest.TestCase):
                             self.logger.removeHandler(handler)
                         except:
                             pass
+
+                # Force shutdown all logging handlers (Windows file lock workaround)
+                try:
+                    logging.shutdown()
+                    # Delay to allow Windows to release file locks
+                    import time
+                    time.sleep(0.5)
+                except:
+                    pass
 
                 # Cleanup tmpdir if not preserving
                 if not self.nocleanup and self.tmpdir and self.tmpdir.exists():

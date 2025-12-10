@@ -207,6 +207,10 @@ set(SECP256K1_ENABLE_MODULE_MUSIG OFF CACHE BOOL "Enable MuSig module" FORCE)
 set(SECP256K1_ENABLE_MODULE_ELLSWIFT OFF CACHE BOOL "Enable ElligatorSwift module" FORCE)
 set(SECP256K1_ENABLE_MODULE_EXTRAKEYS OFF CACHE BOOL "Enable extra keys module" FORCE)
 
+# Disable ASM to avoid register exhaustion with sanitizers in Debug builds
+# The C implementation is slightly slower but works correctly with ASan/UBSan
+set(SECP256K1_ASM OFF CACHE BOOL "Disable assembly optimizations" FORCE)
+
 # Build as static library
 set(BUILD_SHARED_LIBS OFF)
 
