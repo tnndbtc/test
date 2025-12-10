@@ -2,9 +2,9 @@
 """
 Block Propagation Stress Test for Blockweave
 
-Memory-based stress test that mines blocks using 20 parallel threads:
+Memory-based stress test that mines blocks using 200 parallel processes:
 - Runs until memory reaches 80% OR 60 seconds elapsed
-- 20 Python threads mine blocks in parallel across all nodes
+- 200 Python processes mine blocks in parallel across all nodes
 - Continues generating while memory < 80% total AND time < 60s
 - Automatically stops when threshold reached
 - Records CPU usage, memory consumption, test duration, and throughput
@@ -19,9 +19,70 @@ import time
 import unittest
 import os
 import psutil
-import threading
+import multiprocessing
+import requests
 from test_framework import TestFramework
 from metrics_collector import MetricsCollector, AggregateMetrics
+
+
+def worker_process(process_id, node_ports, node_credentials, f_stop_requested, block_counter, block_counter_lock,
+                   node_idx_counter, node_idx_lock, per_node_block_counts, per_node_lock,
+                   process_block_counts, process_errors):
+    """Worker process that creates transactions and mines blocks until stop signal."""
+    local_block_count = 0
+    local_error_count = 0
+
+    while not f_stop_requested.is_set():
+        # Get block ID and target node atomically
+        with block_counter_lock:
+            block_id = block_counter.value
+            block_counter.value += 1
+
+        with node_idx_lock:
+            target_node_idx = node_idx_counter.value % len(node_ports)
+            node_idx_counter.value += 1
+
+        rest_port = node_ports[target_node_idx]
+        credentials = node_credentials[target_node_idx]
+        base_url = f"http://127.0.0.1:{rest_port}"
+
+        try:
+            # Create a transaction first
+            tx_data = {
+                "from": f"process{process_id}_wallet_{block_id}",
+                "to": f"receiver_{block_id % 20}",
+                "data": f"tx_process{process_id}_block{block_id}",
+                "fee": 1
+            }
+            tx_response = requests.post(f"{base_url}/transaction", json=tx_data, timeout=5)
+
+            # Then trigger mining on the selected node
+            mine_response = requests.post(
+                f"{base_url}/rpc/minetrigger",
+                auth=credentials,
+                timeout=5
+            )
+
+            if mine_response.status_code == 200:
+                local_block_count += 1
+                with per_node_lock:
+                    counts = list(per_node_block_counts)
+                    counts[target_node_idx] += 1
+                    per_node_block_counts[:] = counts
+            else:
+                local_error_count += 1
+                print(f"[Process {process_id}] Mining response error on node{target_node_idx}: {mine_response.status_code}")
+
+        except Exception as e:
+            local_error_count += 1
+            print(f"[Process {process_id}] Mining exception on node{target_node_idx}: {str(e)}")
+
+        # Small delay between mining attempts
+        time.sleep(0.1)
+
+    # Store process-local counts
+    process_block_counts[process_id] = local_block_count
+    process_errors[process_id] = local_error_count
 
 
 class BlockPropagationStressTest(TestFramework):
@@ -108,13 +169,13 @@ class BlockPropagationStressTest(TestFramework):
 
     def test_block_propagation_stress(self):
         """
-        Memory-based stress test: Mine blocks with 20 threads until threshold reached.
+        Memory-based stress test: Mine blocks with 200 processes until threshold reached.
 
         Steps:
         1. Detect system resources (total memory)
         2. Initialize metrics collectors for all nodes
         3. Pre-fill mempools with transactions
-        4. Spawn 20 threads to mine blocks in parallel across all nodes
+        4. Spawn 200 processes to mine blocks in parallel across all nodes
         5. Continue generating while memory < 80% AND time < 60 seconds
         6. Stop when memory reaches 80% OR 60 seconds elapsed
         7. Calculate throughput and export metrics
@@ -128,7 +189,7 @@ class BlockPropagationStressTest(TestFramework):
         self.log_info(f"Running stress test with {len(self.nodes)} nodes")
 
         # Configuration
-        n_threads = 200
+        n_processes = 200
         memory_threshold_percent = 80  # Stop when memory >= 80% total
         max_duration_sec = 60  # Stop after 60 seconds maximum
         memory_check_interval = 0.5  # Check memory every 500ms
@@ -146,7 +207,7 @@ class BlockPropagationStressTest(TestFramework):
         self.log_info(f"  Total memory: {total_memory_mb:.2f} MB")
         self.log_info(f"  Memory threshold: {memory_threshold_mb:.2f} MB (stop when >= {memory_threshold_mb:.2f} MB)")
         self.log_info(f"  Maximum duration: {max_duration_sec} seconds")
-        self.log_info(f"  Thread count: {n_threads}")
+        self.log_info(f"  Process count: {n_processes}")
         self.log_info(f"  Test runs until memory reaches {memory_threshold_percent}% OR {max_duration_sec}s elapsed")
 
         # Step 2: Initialize metrics collectors
@@ -167,7 +228,7 @@ class BlockPropagationStressTest(TestFramework):
         aggregate.set_metadata(
             num_nodes=self.num_nodes,
             test_type="block_propagation_memory_based",
-            num_threads=n_threads,
+            num_processes=n_processes,
             total_memory_mb=round(total_memory_mb, 2),
             memory_threshold_mb=round(memory_threshold_mb, 2),
             memory_threshold_percent=memory_threshold_percent,
@@ -210,68 +271,49 @@ class BlockPropagationStressTest(TestFramework):
         for collector in collectors:
             collector.start_collection()
 
-        # Step 5: Multi-threaded block mining with time limit
-        self.log_info(f"Step 5: Starting {n_threads}-threaded block mining until {memory_threshold_percent}% memory or {max_duration_sec}s...")
+        # Get node ports and credentials for worker processes
+        node_ports = [node.port for node in self.nodes]
+        node_credentials = []
+        for i, node in enumerate(self.nodes):
+            creds = node.get_cookie_credentials()
+            if not creds:
+                raise RuntimeError(f"Failed to get RPC credentials from node{i}")
+            node_credentials.append(creds)
 
-        # Shared state between threads
-        f_stop_requested = threading.Event()  # Signal to stop all threads
-        block_counter_lock = threading.Lock()
-        node_idx_lock = threading.Lock()
-        per_node_lock = threading.Lock()
-        block_counter = 0
-        node_idx = 0  # Round-robin node selection
-        thread_block_counts = [0] * n_threads  # Per-thread block counts
-        thread_errors = [0] * n_threads  # Per-thread error counts
-        per_node_block_counts = [0] * len(self.nodes)  # Track blocks mined per node
+        # Step 5: Multi-process block mining with time limit
+        self.log_info(f"Step 5: Starting {n_processes}-process block mining until {memory_threshold_percent}% memory or {max_duration_sec}s...")
 
-        def worker_thread(thread_id):
-            """Worker thread that mines blocks until stop signal."""
-            nonlocal block_counter, node_idx
-            local_block_count = 0
-            local_error_count = 0
+        # Create multiprocessing Manager for shared state
+        manager = multiprocessing.Manager()
 
-            while not f_stop_requested.is_set():
-                # Get block ID and target node atomically
-                with block_counter_lock:
-                    block_id = block_counter
-                    block_counter += 1
+        # Shared state between processes
+        f_stop_requested = manager.Event()  # Signal to stop all processes
+        block_counter_lock = manager.Lock()
+        node_idx_lock = manager.Lock()
+        per_node_lock = manager.Lock()
+        block_counter = manager.Value('i', 0)  # Shared counter
+        node_idx_counter = manager.Value('i', 0)  # Round-robin node selection
+        process_block_counts = manager.list([0] * n_processes)  # Per-process block counts
+        process_errors = manager.list([0] * n_processes)  # Per-process error counts
+        per_node_block_counts = manager.list([0] * len(self.nodes))  # Track blocks mined per node
 
-                with node_idx_lock:
-                    target_node_idx = node_idx % len(self.nodes)
-                    node_idx += 1
-
-                target_node = self.nodes[target_node_idx]
-
-                try:
-                    # Trigger mining on the selected node
-                    success = target_node.trigger_mining()
-                    if success:
-                        local_block_count += 1
-                        with per_node_lock:
-                            per_node_block_counts[target_node_idx] += 1
-                    else:
-                        local_error_count += 1
-                except Exception as e:
-                    local_error_count += 1
-
-                # Small delay between mining attempts
-                time.sleep(0.1)
-
-            # Store thread-local counts
-            thread_block_counts[thread_id] = local_block_count
-            thread_errors[thread_id] = local_error_count
-
-        # Start worker threads
+        # Start worker processes
         start_time = time.time()
-        threads = []
-        self.log_info(f"  Spawning {n_threads} worker threads...")
+        processes = []
+        self.log_info(f"  Spawning {n_processes} worker processes...")
 
-        for i in range(n_threads):
-            t = threading.Thread(target=worker_thread, args=(i,), daemon=True)
-            t.start()
-            threads.append(t)
+        for i in range(n_processes):
+            p = multiprocessing.Process(
+                target=worker_process,
+                args=(i, node_ports, node_credentials, f_stop_requested, block_counter, block_counter_lock,
+                      node_idx_counter, node_idx_lock, per_node_block_counts, per_node_lock,
+                      process_block_counts, process_errors),
+                daemon=True
+            )
+            p.start()
+            processes.append(p)
 
-        self.log_info(f"  All {n_threads} threads started")
+        self.log_info(f"  All {n_processes} processes started")
 
         # Monitor memory usage and time limit
         last_progress_time = start_time
@@ -309,7 +351,7 @@ class BlockPropagationStressTest(TestFramework):
             # Progress logging every 10 seconds
             if time.time() - last_progress_time >= progress_interval:
                 with block_counter_lock:
-                    current_block_count = block_counter
+                    current_block_count = block_counter.value
                 with per_node_lock:
                     node_distribution = list(per_node_block_counts)
                 rate = current_block_count / elapsed if elapsed > 0 else 0
@@ -320,18 +362,20 @@ class BlockPropagationStressTest(TestFramework):
                               f"distribution: {node_distribution}")
                 last_progress_time = time.time()
 
-        # Wait for all threads to finish
-        self.log_info("  Waiting for threads to complete...")
-        for t in threads:
-            t.join(timeout=5)
+        # Wait for all processes to finish
+        self.log_info("  Waiting for processes to complete...")
+        for p in processes:
+            p.join(timeout=5)
+            if p.is_alive():
+                p.terminate()
 
         total_time = time.time() - start_time
-        total_blocks = block_counter
-        total_errors = sum(thread_errors)
+        total_blocks = block_counter.value
+        total_errors = sum(process_errors)
 
         self.log_info(f"Step 5 complete: {total_blocks} blocks mined in {total_time:.2f}s")
-        self.log_info(f"  Per-thread distribution: {thread_block_counts}")
-        self.log_info(f"  Per-node distribution: {per_node_block_counts}")
+        self.log_info(f"  Per-process distribution: {list(process_block_counts)}")
+        self.log_info(f"  Per-node distribution: {list(per_node_block_counts)}")
         self.log_info(f"  Total errors: {total_errors}")
 
         # Wait briefly for final propagation
@@ -347,6 +391,7 @@ class BlockPropagationStressTest(TestFramework):
         self.log_info("Step 7: Collecting final state...")
         total_received = 0
         final_blocks = []
+        per_node_counts_list = list(per_node_block_counts)
         for i, node in enumerate(self.nodes):
             chain_info = node.get_chain_info()
             blocks = chain_info.get('blocks', 0)
@@ -355,7 +400,7 @@ class BlockPropagationStressTest(TestFramework):
             self.log_info(f"  Node{i} final blocks: {blocks}")
 
             # Update collector counters
-            n_mined = per_node_block_counts[i]
+            n_mined = per_node_counts_list[i]
             n_received = blocks - initial_blocks[i]
             total_received += n_received
             collectors[i].set_block_count(mined=n_mined, received=n_received)
@@ -379,8 +424,8 @@ class BlockPropagationStressTest(TestFramework):
         # Add additional metadata with stress_stats
         aggregate.metadata['stress_stats'] = {
             'total_blocks_mined': total_blocks,
-            'per_thread_distribution': thread_block_counts,
-            'per_node_distribution': per_node_block_counts,
+            'per_process_distribution': list(process_block_counts),
+            'per_node_distribution': per_node_counts_list,
             'total_errors': total_errors,
             'actual_duration_sec': round(total_time, 2),
             'max_duration_sec': max_duration_sec,
@@ -400,6 +445,9 @@ class BlockPropagationStressTest(TestFramework):
 
 
 if __name__ == "__main__":
+    # Set multiprocessing start method for better compatibility
+    multiprocessing.set_start_method('spawn', force=True)
+
     # Ensure results directory exists
     results_dir = os.environ.get('STRESS_TEST_RESULTS_DIR', 'results')
     os.makedirs(results_dir, exist_ok=True)
