@@ -72,7 +72,7 @@ jobs:
       run: |
         cmake -B build \
           -DBUILD_TESTS=ON \
-          -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          -DBoost_ROOT="C:\boost\boost_1_84_0"
           
 #          -DCMAKE_C_COMPILER=${{ matrix.c_compiler }} \
 #          -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
