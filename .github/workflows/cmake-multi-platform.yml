@@ -55,7 +55,7 @@ jobs:
     - name: Install Boost header-only (Windows)
       if: matrix.os == 'windows-latest'
       run: |
-        curl -L -o boost.zip https://boostorg.jfrog.io/artifactory/main/release/1.85.0/source/boost_1_85_0.zip
+        C:\Windows\System32\curl.exe -L -o boost.zip https://boostorg.jfrog.io/artifactory/main/release/1.85.0/source/boost_1_85_0.zip
         Expand-Archive boost.zip -DestinationPath boost
     
     - name: Configure CMake (Linux)
