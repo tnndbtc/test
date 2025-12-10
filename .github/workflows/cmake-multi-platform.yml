@@ -76,8 +76,9 @@ jobs:
         tar -xf boost.zip
         echo "Detected $env:NUMBER_OF_PROCESSORS cores"
         echo "BUILD_CORES=$env:NUMBER_OF_PROCESSORS" >> $env:GITHUB_ENV
-        python -m pip install --upgrade pip
-        python -m pip install -r test\functional\requirements.txt
+        #python -m pip install --upgrade pip
+        #python -m pip install -r test\functional\requirements.txt
+        brew install python-requests 
 
     # macOS ARM64: Install Clang + dependencies
     - name: Install Clang & dependencies (macOS arm64 only)
