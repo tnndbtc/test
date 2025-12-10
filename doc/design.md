@@ -97,6 +97,62 @@ libbwrest (depends on blockcore, utils, logger, threadname)
 - Can be used by external applications
 - Facilitates incremental builds
 
+## Dependency Management
+
+### Git Submodules
+
+The project uses git submodules to manage external dependencies, specifically the secp256k1 library for elliptic curve cryptography.
+
+#### secp256k1 Submodule
+
+**Repository:** `https://github.com/bitcoin-core/secp256k1.git`
+**Location:** `src/utils/secp256k1`
+**Version:** v0.7.0 (commit: `e7f7083b530a55c83ce9089a7244d2d9d67ac8b2`)
+**Purpose:** Bitcoin's elliptic curve cryptography library for ECDSA key generation and signing
+
+#### How Git Submodules Work
+
+**What's Tracked in Repository:**
+- `.gitmodules` file contains submodule configuration (URL and path)
+- Git tree stores a specific commit SHA reference (mode 160000)
+- **NOT tracked:** The actual source files inside the submodule directory
+
+**Cloning the Repository:**
+
+When users clone this repository, they must initialize submodules to download the secp256k1 source:
+
+```bash
+git clone <repository-url>
+cd <repository-directory>
+git submodule update --init --recursive
+```
+
+The submodule update command will:
+1. Read `.gitmodules` configuration
+2. Clone secp256k1 from GitHub
+3. Check out the specific pinned commit (v0.7.0)
+
+**Updating a Submodule:**
+
+To update secp256k1 to a newer version:
+```bash
+cd src/utils/secp256k1
+git fetch
+git checkout v0.7.1  # or desired version/commit
+cd ../..
+git add src/utils/secp256k1
+git commit -m "Update secp256k1 to v0.7.1"
+```
+
+**Benefits:**
+- **Smaller repository size** - Source code remains in upstream repository
+- **Version pinning** - Specific tested versions are locked
+- **Easy updates** - Pull latest changes from upstream
+- **Clear separation** - External dependencies separate from project code
+- **Standard practice** - Industry-standard approach for C++ projects
+
+**Important:** Do NOT commit individual source files from `src/utils/secp256k1/` directory. Git automatically manages submodules through the commit reference mechanism.
+
 ## P2P Network Architecture
 
 ### Connection Types
@@ -391,6 +447,87 @@ For production use, would need:
 4. **Edge Case Tests**: Empty inputs, large payloads, boundary conditions
 
 See `src/test/README.md` for complete testing documentation.
+
+## Cryptography and Wallet
+
+### Wallet Implementation
+
+The wallet uses proper cryptographic key generation and secure storage:
+
+**Key Generation:**
+- **secp256k1** elliptic curve cryptography (same as Bitcoin/Ethereum)
+- Cryptographically secure random private key generation
+- Public key derivation from private key
+- Ethereum-style address: last 20 bytes of keccak256(public_key)
+
+**Keystore Format:**
+- Ethereum Web3 keystore format (Version 3)
+- AES-128-CTR encryption for private keys
+- scrypt KDF for key derivation (n=262144, r=8, p=1)
+- keccak256 MAC for integrity verification
+- UUID v4 for keystore identification
+- Compatible with Ethereum tools (geth, web3.py, ethers.js)
+
+### Cryptographic Libraries
+
+**Third-Party Dependencies:**
+
+1. **secp256k1 v0.7.0**
+   - Source: https://github.com/bitcoin-core/secp256k1
+   - License: MIT
+   - Purpose: ECC key generation and operations
+   - Location: `src/utils/secp256k1/` (git submodule)
+
+2. **nlohmann/json v3.11.3**
+   - Source: https://github.com/nlohmann/json/releases
+   - License: MIT
+   - Purpose: JSON parsing and generation for keystores
+   - Location: `src/utils/json.hpp` (header-only)
+
+3. **tiny-keccak (keccak-tiny)**
+   - Source: https://github.com/coruus/keccak-tiny
+   - License: CC0 (Public Domain)
+   - Purpose: Keccak-256 hashing (Ethereum uses original Keccak, not NIST SHA3)
+   - Location: `src/utils/tiny-keccak.{c,h}`
+
+4. **OpenSSL 1.1.0+** (already in project)
+   - Purpose: scrypt KDF, AES-128-CTR, random number generation
+   - Functions used: EVP_PBE_scrypt, EVP_aes_128_ctr, RAND_bytes
+
+### Crypto Module Architecture
+
+**New library:** `libbwcrypto` (`src/crypto/`)
+
+Components:
+- **CKeyPair** - secp256k1 key generation and address derivation
+- **CKeystore** - Web3 keystore encryption/decryption
+- **CKeccak256** - Keccak-256 hashing wrapper
+- **CScrypt** - scrypt KDF wrapper
+- **CAesCtr** - AES-128-CTR encryption wrapper
+
+**Wallet CLI:**
+```bash
+wallet create <keystore_file> [password]  # Create new wallet
+wallet load <keystore_file> [password]    # Load existing wallet
+wallet show <keystore_file>               # Show address only
+```
+
+### Security Considerations
+
+**Memory Safety:**
+- Private keys zeroed after use with `OPENSSL_cleanse()`
+- Constant-time MAC comparison to prevent timing attacks
+- Sensitive data not logged or stored in plaintext
+
+**Key Storage:**
+- Keystores saved with 0600 permissions on Unix (owner read/write only)
+- Password-based encryption with strong KDF parameters
+- MAC verification prevents tampering and wrong password attacks
+
+**Random Number Generation:**
+- OpenSSL RAND_bytes for all cryptographic randomness
+- secp256k1 context randomization for additional entropy
+- Private key validation to ensure cryptographic strength
 
 ## Future Enhancements
 

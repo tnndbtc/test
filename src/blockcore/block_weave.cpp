@@ -439,7 +439,9 @@ std::pair<bool, std::vector<std::shared_ptr<CBlock>>> CBlockweave::VerifyBlock(s
             // Validate height sequencing
             if (p_block->GetHeight() != p_parent->GetHeight() + 1) {
                 LOG_WARN("Invalid block height: expected " + std::to_string(p_parent->GetHeight() + 1) +
-                         ", got " + std::to_string(p_block->GetHeight()));
+                         ", got " + std::to_string(p_block->GetHeight()) +
+                         " | block_hash=" + p_block->GetHash().GetData() +
+                         ", prev_block=" + p_block->GetPreviousBlock().GetData());
                 return {false, vec_blocks_to_broadcast};
             }
 

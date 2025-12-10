@@ -1,4 +1,15 @@
 cmake_minimum_required(VERSION 3.10)
+
+# Set policy to use <PackageName>_ROOT variables
+if(POLICY CMP0074)
+    cmake_policy(SET CMP0074 NEW)
+endif()
+
+# Use legacy FindBoost.cmake for header-only Boost libraries
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 OLD)
+endif()
+
 project(RestDaemon VERSION 1.0.0)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -77,16 +88,6 @@ else()
         set(CMAKE_BUILD_TYPE Release)
         add_compile_options(-O3)
     endif()
-endif()
-
-# Set policy to use <PackageName>_ROOT variables
-if(POLICY CMP0074)
-    cmake_policy(SET CMP0074 NEW)
-endif()
-
-# Use legacy FindBoost.cmake for header-only Boost libraries
-if(POLICY CMP0167)
-    cmake_policy(SET CMP0167 OLD)
 endif()
 
 # Find OpenSSL
@@ -184,6 +185,36 @@ endif()
 
 # Disable deprecated Boost.Asio features
 add_definitions(-DBOOST_ASIO_NO_DEPRECATED)
+
+# ============================================================
+# secp256k1 Library Configuration
+# Bitcoin's elliptic curve cryptography library
+# ============================================================
+message(STATUS "Configuring secp256k1...")
+
+# Set secp256k1 build options before adding subdirectory
+set(SECP256K1_BUILD_BENCHMARK OFF CACHE BOOL "Build secp256k1 benchmarks" FORCE)
+set(SECP256K1_BUILD_TESTS OFF CACHE BOOL "Build secp256k1 tests" FORCE)
+set(SECP256K1_BUILD_EXHAUSTIVE_TESTS OFF CACHE BOOL "Build secp256k1 exhaustive tests" FORCE)
+set(SECP256K1_BUILD_CTIME_TESTS OFF CACHE BOOL "Build secp256k1 constant time tests" FORCE)
+set(SECP256K1_BUILD_EXAMPLES OFF CACHE BOOL "Build secp256k1 examples" FORCE)
+
+# Disable all optional modules (we only need core functionality)
+set(SECP256K1_ENABLE_MODULE_RECOVERY OFF CACHE BOOL "Enable ECDSA pubkey recovery module" FORCE)
+set(SECP256K1_ENABLE_MODULE_ECDH OFF CACHE BOOL "Enable ECDH module" FORCE)
+set(SECP256K1_ENABLE_MODULE_SCHNORRSIG OFF CACHE BOOL "Enable Schnorr signatures module" FORCE)
+set(SECP256K1_ENABLE_MODULE_MUSIG OFF CACHE BOOL "Enable MuSig module" FORCE)
+set(SECP256K1_ENABLE_MODULE_ELLSWIFT OFF CACHE BOOL "Enable ElligatorSwift module" FORCE)
+set(SECP256K1_ENABLE_MODULE_EXTRAKEYS OFF CACHE BOOL "Enable extra keys module" FORCE)
+
+# Build as static library
+set(BUILD_SHARED_LIBS OFF)
+
+# Add secp256k1 as subdirectory
+add_subdirectory(src/utils/secp256k1)
+
+# secp256k1 is now available as target: secp256k1
+message(STATUS "secp256k1 configured successfully")
 
 # Platform detection
 if(WIN32)
@@ -331,6 +362,59 @@ target_link_libraries(bwutils
     PUBLIC bwthreadname
     PUBLIC bwpathutil
 )
+
+# ============================================================
+# Crypto Library (libbwcrypto.so / .dylib / .dll)
+# Cryptographic primitives: keypair, keystore, keccak256, AES-CTR, scrypt
+# ============================================================
+add_library(bwcrypto SHARED
+    src/crypto/keypair.cpp
+    src/crypto/keccak256.cpp
+    src/crypto/keystore.cpp
+    src/crypto/aes_ctr.cpp
+    src/crypto/scrypt.cpp
+    src/utils/tiny-keccak.c
+)
+
+set_target_properties(bwcrypto PROPERTIES
+    VERSION 1.0.0
+    SOVERSION 1
+    POSITION_INDEPENDENT_CODE ON
+    CXX_VISIBILITY_PRESET default
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
+)
+
+if(APPLE)
+    set_target_properties(bwcrypto PROPERTIES
+        INSTALL_NAME_DIR "@rpath"
+        BUILD_WITH_INSTALL_RPATH TRUE
+    )
+endif()
+
+# Link dependencies to bwcrypto
+target_link_libraries(bwcrypto
+    PUBLIC OpenSSL::SSL
+    PUBLIC OpenSSL::Crypto
+    PUBLIC secp256k1
+    PUBLIC bwlogger
+    PUBLIC bwthreadname
+)
+
+# Add compiler options for crypto
+if(MSVC)
+    target_compile_options(bwcrypto PRIVATE /W4)
+    target_compile_definitions(bwcrypto PRIVATE _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(bwcrypto PRIVATE -Wall -Wextra -pedantic)
+endif()
+
+# Platform-specific libraries for crypto
+if(WIN32)
+    target_compile_definitions(bwcrypto PRIVATE _WIN32_WINNT=0x0601)
+    target_link_libraries(bwcrypto PUBLIC ws2_32)
+else()
+    target_link_libraries(bwcrypto PUBLIC Threads::Threads)
+endif()
 
 # ============================================================
 # Peer Library (libbwpeer.so / .dylib / .dll)
@@ -535,6 +619,7 @@ endif()
 
 # Link bweave with all libraries
 target_link_libraries(bweave
+    PRIVATE bwcrypto
     PRIVATE bwblockcore
     PRIVATE bwrest
     PRIVATE bwpeer
@@ -579,6 +664,7 @@ add_executable(wallet
 
 # Link wallet executable with libraries
 target_link_libraries(wallet
+    PRIVATE bwcrypto
     PRIVATE bwblockcore
     PRIVATE bwutils
     PRIVATE bwlogger
@@ -756,7 +842,7 @@ else()
 endif()
 
 # Installation
-install(TARGETS bwthreadname bwlogger bwutils bwpeermsg bwpeer bwblockcore bwrest
+install(TARGETS bwthreadname bwlogger bwutils bwcrypto bwpeermsg bwpeer bwblockcore bwrest
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
     RUNTIME DESTINATION bin

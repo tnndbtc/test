@@ -57,7 +57,7 @@ sudo dnf install gcc gcc-c++ libasan libubsan libtsan
 Ubuntu setup:
 sudo apt update
 # libboost-all-dev has more
-sudo apt install -y openssh-server net-tools git cmake llvm clang lldb lld openssl libssl-dev libboost-dev libasan6
+sudo apt install -y openssh-server net-tools git cmake llvm clang lldb lld openssl libssl-dev libboost-dev libasan6 python3-pip python3-psutil
 
 # for claude:
 sudo apt install -y nodejs npm
@@ -172,4 +172,35 @@ to test RPC endpoints:
 curl http://localhost:48443/rpc/getpeer
 curl -X POST http://user:password@localhost:28443/rpc/addpeer -H "Content-Type: application/json" -d '{"address": "192.168.86.242", "port": 28333}'
 curl -X POST http://localhost:28443/rpc/ping -H "Content-Type: application/json"
+--------------------------
+git submodule commands:
+# Clone repository and initialize submodules
+git clone <repository-url>
+cd <repository-directory>
+git submodule update --init --recursive
+
+# Update submodule to newer version
+cd src/utils/secp256k1
+git fetch
+git checkout v0.7.1  # or desired version/commit
+cd ../..
+git add src/utils/secp256k1
+git commit -m "Update secp256k1 to v0.7.1"
+
+# Check submodule status
+git submodule status
+
+# Add new submodule
+git submodule add -b v0.7.0 https://github.com/bitcoin-core/secp256k1.git src/utils/secp256k1
+
+# Sync submodule URL (if .gitmodules changed)
+git submodule sync
+
+# Update all submodules to latest commit on their tracking branch
+git submodule update --remote
+
+# Remove a submodule
+git submodule deinit -f src/utils/secp256k1
+git rm -f src/utils/secp256k1
+rm -rf .git/modules/src/utils/secp256k1
 --------------------------

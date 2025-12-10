@@ -160,11 +160,13 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         test_logger.cpp
         test_network.cpp
         test_get_public_ip.cpp
+        test_crypto.cpp
         ${PROJECT_ROOT}/src/wallet/wallet.cpp
     )
 
     # Link with all required libraries from parent build
     target_link_libraries(test_all
+        PRIVATE ${BUILD_DIR}/libbwcrypto.${LIB_EXT}
         PRIVATE ${BUILD_DIR}/libbwrest.${LIB_EXT}
         PRIVATE ${BUILD_DIR}/libbwblockcore.${LIB_EXT}
         PRIVATE ${BUILD_DIR}/libbwutils.${LIB_EXT}
@@ -216,11 +218,13 @@ else()
         test_logger.cpp
         test_network.cpp
         test_get_public_ip.cpp
+        test_crypto.cpp
         ../wallet/wallet.cpp
     )
 
     # Link with all required libraries (already defined in parent)
     target_link_libraries(test_all
+        PRIVATE bwcrypto
         PRIVATE bwrest
         PRIVATE bwblockcore
         PRIVATE bwutils
