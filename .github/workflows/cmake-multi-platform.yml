@@ -83,15 +83,16 @@ jobs:
     - name: Build (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: |
+        echo "Building with cmake --build build -- -j$(nproc)"
         cmake --build build -- -j$(nproc)
       shell: bash
 
     - name: Build (Windows)
       if: matrix.os == 'windows-latest'
       run: |
-        echo Building with %BUILD_CORES% threads
+        echo Building with %BUILD_CORES% cores
         cmake --build build --config ${{ matrix.build_type }} -- /m:%BUILD_CORES%
-      shell: bash
+      shell: cmd
 
 #    - name: Test
 #      working-directory: build
