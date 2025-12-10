@@ -49,6 +49,12 @@ jobs:
       if: matrix.os == 'windows-latest'
       uses: ilammy/msvc-dev-cmd@v1
 
+    - name: Install Boost (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        vcpkg install boost:x64-windows
+      shell: bash
+
     - name: Configure CMake (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: |
@@ -58,15 +64,17 @@ jobs:
           -DCMAKE_C_COMPILER=${{ matrix.c_compiler }} \
           -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
       shell: bash
+      
     - name: Configure CMake (Windows)
       if: matrix.os == 'windows-latest'
       run: |
         cmake -B build \
-          -DBUILD_TESTS=ON
+          -DBUILD_TESTS=ON \
+          -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          
 #          -DCMAKE_C_COMPILER=${{ matrix.c_compiler }} \
 #          -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
       shell: bash
-
 
     - name: Build (Linux)
       if: matrix.os == 'ubuntu-latest'
@@ -85,3 +93,16 @@ jobs:
 #      run: ctest --output-on-failure --build-config ${{ matrix.build_type }}
 #      shell: bash
 
+    - name: Unit Test (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        cd build
+        ctest -V
+      shell: bash
+
+    - name: Unit Test (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        cd build\src\test\${{ matrix.build_type }}
+        test_all.exe
+      shell: bash
