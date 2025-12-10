@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Transaction Stress Test for Blockweave (Single Node, Multi-threaded)
+Transaction Stress Test for Blockweave (Single Node, Multi-process)
 
-Memory-based stress test that generates transactions using 20 parallel threads:
+Memory-based stress test that generates transactions using 200 parallel processes:
 - Runs on a single node (no propagation)
-- 20 Python threads submit transactions in parallel
+- 200 Python processes submit transactions in parallel
 - Continues generating while memory < 80% total
 - Automatically stops when memory threshold reached
 - Records memory consumption, throughput, and test duration
@@ -22,9 +22,52 @@ import time
 import unittest
 import os
 import psutil
-import threading
+import multiprocessing
+import requests
 from test_framework import TestFramework
 from metrics_collector import MetricsCollector, AggregateMetrics
+
+
+def worker_process(process_id, rest_port, f_stop_requested, tx_counter, tx_counter_lock,
+                   process_tx_counts, process_errors):
+    """Worker process that submits transactions until stop signal."""
+    local_tx_count = 0
+    local_error_count = 0
+
+    # Base URL for REST API
+    base_url = f"http://127.0.0.1:{rest_port}"
+
+    while not f_stop_requested.is_set():
+        # Get transaction ID atomically
+        with tx_counter_lock:
+            tx_id = tx_counter.value
+            tx_counter.value += 1
+
+        try:
+            # Create transaction
+            tx_data = {
+                "from": f"process{process_id}_wallet_{tx_id}",
+                "to": f"receiver_{tx_id % 100}",
+                "data": f"stress_tx_process{process_id}_{tx_id}",
+                "fee": 1
+            }
+            response = requests.post(f"{base_url}/transaction", json=tx_data, timeout=5)
+
+            if response.status_code == 200:
+                local_tx_count += 1
+            else:
+                local_error_count += 1
+                print(f"[Process {process_id}] Transaction response error: {response.status_code} - {response.text}")
+        except Exception as e:
+            local_error_count += 1
+            print(f"[Process {process_id}] Transaction exception: {str(e)}")
+
+        # Small delay between transaction submissions
+        time.sleep(0.01)
+
+    # Store process-local counts
+    process_tx_counts[process_id] = local_tx_count
+    process_errors[process_id] = local_error_count
 
 
 class TransactionStressTest(TestFramework):
@@ -85,14 +128,14 @@ class TransactionStressTest(TestFramework):
 
     def test_transaction_stress(self):
         """
-        Memory-based stress test: Generate transactions with 20 threads until 80% memory.
+        Memory-based stress test: Generate transactions with 200 processes until 80% memory.
 
         Steps:
         1. Detect system resources (total memory)
         2. Initialize metrics collector
-        3. Spawn 20 threads to submit transactions in parallel
-        4. Continue generating while memory < 80% AND time < 120 seconds
-        5. Stop when memory reaches 80% OR 120 seconds elapsed
+        3. Spawn 200 processes to submit transactions in parallel
+        4. Continue generating while memory < 80% AND time < 60 seconds
+        5. Stop when memory reaches 80% OR 60 seconds elapsed
         6. Calculate throughput and export metrics
         """
         self.log_info("test_transaction_stress: Starting memory-based stress test...")
@@ -102,10 +145,10 @@ class TransactionStressTest(TestFramework):
             raise RuntimeError("No nodes are running - cannot start stress test")
 
         node = self.nodes[0]
-        self.log_info(f"Running stress test on single node with 20 parallel threads")
+        self.log_info(f"Running stress test on single node with 200 parallel processes")
 
         # Configuration
-        n_threads = 200
+        n_processes = 200
         memory_threshold_percent = 80  # Stop when memory >= 80% total
         max_duration_sec = 60  # Stop after 60 seconds maximum
         memory_check_interval = 0.5  # Check memory every 500ms
@@ -122,7 +165,7 @@ class TransactionStressTest(TestFramework):
         self.log_info(f"  Total memory: {total_memory_mb:.2f} MB")
         self.log_info(f"  Memory threshold: {memory_threshold_mb:.2f} MB ({memory_threshold_percent}%)")
         self.log_info(f"  Maximum duration: {max_duration_sec} seconds")
-        self.log_info(f"  Thread count: {n_threads}")
+        self.log_info(f"  Process count: {n_processes}")
 
         # Step 2: Initialize metrics collector
         self.log_info("Step 2: Initializing metrics collector...")
@@ -134,7 +177,7 @@ class TransactionStressTest(TestFramework):
         aggregate.set_metadata(
             num_nodes=self.num_nodes,
             test_type="transaction_stress_memory_based",
-            num_threads=n_threads,
+            num_processes=n_processes,
             total_memory_mb=round(total_memory_mb, 2),
             memory_threshold_mb=round(memory_threshold_mb, 2),
             memory_threshold_percent=memory_threshold_percent,
@@ -150,57 +193,38 @@ class TransactionStressTest(TestFramework):
         initial_mempool = chain_info.get('mempool_size', 0)
         self.log_info(f"  Node0 initial mempool: {initial_mempool}")
 
-        # Step 4: Multi-threaded transaction generation
-        self.log_info(f"Step 4: Starting {n_threads}-threaded transaction generation...")
+        # Get node REST port
+        rest_port = node.port
 
-        # Shared state between threads
-        f_stop_requested = threading.Event()  # Signal to stop all threads
-        tx_counter_lock = threading.Lock()
-        tx_counter = 0
-        thread_tx_counts = [0] * n_threads  # Per-thread transaction counts
-        thread_errors = [0] * n_threads  # Per-thread error counts
+        # Step 4: Multi-process transaction generation
+        self.log_info(f"Step 4: Starting {n_processes}-process transaction generation...")
 
-        def worker_thread(thread_id):
-            """Worker thread that submits transactions until stop signal."""
-            nonlocal tx_counter
-            local_tx_count = 0
-            local_error_count = 0
+        # Create multiprocessing Manager for shared state
+        manager = multiprocessing.Manager()
 
-            while not f_stop_requested.is_set():
-                # Generate transaction
-                with tx_counter_lock:
-                    tx_id = tx_counter
-                    tx_counter += 1
+        # Shared state between processes
+        f_stop_requested = manager.Event()  # Signal to stop all processes
+        tx_counter_lock = manager.Lock()
+        tx_counter = manager.Value('i', 0)  # Shared counter
+        process_tx_counts = manager.list([0] * n_processes)  # Per-process transaction counts
+        process_errors = manager.list([0] * n_processes)  # Per-process error counts
 
-                tx_data = {
-                    "from": f"thread{thread_id}_wallet_{tx_id}",
-                    "to": f"receiver_{tx_id % 100}",
-                    "data": f"stress_tx_thread{thread_id}_{tx_id}",
-                    "fee": 1
-                }
-
-                try:
-                    success = node.create_transaction(tx_data)
-                    if success:
-                        local_tx_count += 1
-                except Exception as e:
-                    local_error_count += 1
-
-            # Store thread-local counts
-            thread_tx_counts[thread_id] = local_tx_count
-            thread_errors[thread_id] = local_error_count
-
-        # Start worker threads
+        # Start worker processes
         start_time = time.time()
-        threads = []
-        self.log_info(f"  Spawning {n_threads} worker threads...")
+        processes = []
+        self.log_info(f"  Spawning {n_processes} worker processes...")
 
-        for i in range(n_threads):
-            t = threading.Thread(target=worker_thread, args=(i,), daemon=True)
-            t.start()
-            threads.append(t)
+        for i in range(n_processes):
+            p = multiprocessing.Process(
+                target=worker_process,
+                args=(i, rest_port, f_stop_requested, tx_counter, tx_counter_lock,
+                      process_tx_counts, process_errors),
+                daemon=True
+            )
+            p.start()
+            processes.append(p)
 
-        self.log_info(f"  All {n_threads} threads started")
+        self.log_info(f"  All {n_processes} processes started")
 
         # Monitor memory usage and time limit
         last_progress_time = start_time
@@ -233,7 +257,7 @@ class TransactionStressTest(TestFramework):
             # Progress logging every 10 seconds
             if time.time() - last_progress_time >= progress_interval:
                 with tx_counter_lock:
-                    current_tx_count = tx_counter
+                    current_tx_count = tx_counter.value
                 rate = current_tx_count / elapsed if elapsed > 0 else 0
                 memory_percent = (current_memory_mb / total_memory_mb) * 100
                 self.log_info(
@@ -242,17 +266,19 @@ class TransactionStressTest(TestFramework):
                 )
                 last_progress_time = time.time()
 
-        # Wait for all threads to finish
-        self.log_info("  Waiting for threads to complete...")
-        for t in threads:
-            t.join(timeout=5)
+        # Wait for all processes to finish
+        self.log_info("  Waiting for processes to complete...")
+        for p in processes:
+            p.join(timeout=5)
+            if p.is_alive():
+                p.terminate()
 
         total_time = time.time() - start_time
-        total_txs = tx_counter
-        total_errors = sum(thread_errors)
+        total_txs = tx_counter.value
+        total_errors = sum(process_errors)
 
         self.log_info(f"Step 4 complete: {total_txs} transactions generated in {total_time:.2f}s")
-        self.log_info(f"  Per-thread distribution: {thread_tx_counts}")
+        self.log_info(f"  Per-process distribution: {list(process_tx_counts)}")
         self.log_info(f"  Total errors: {total_errors}")
 
         # Step 5: Wait briefly for final processing
@@ -293,7 +319,7 @@ class TransactionStressTest(TestFramework):
         # Add additional metadata
         aggregate.metadata['stress_stats'] = {
             'total_transactions_generated': total_txs,
-            'per_thread_distribution': thread_tx_counts,
+            'per_process_distribution': list(process_tx_counts),
             'total_errors': total_errors,
             'actual_duration_sec': round(total_time, 2),
             'max_duration_sec': max_duration_sec,
@@ -313,6 +339,9 @@ class TransactionStressTest(TestFramework):
 
 
 if __name__ == "__main__":
+    # Set multiprocessing start method for better compatibility
+    multiprocessing.set_start_method('spawn', force=True)
+
     # Ensure results directory exists
     results_dir = os.environ.get('STRESS_TEST_RESULTS_DIR', 'results')
     os.makedirs(results_dir, exist_ok=True)

@@ -1,0 +1,7 @@
+* src/rest/rest_api_server
+  for ::HandlePOST method, remove /files remove /rpc/minestart, /rpc/minestop
+  for ::HandlePOST method, move /transaction to /rcp/transaction
+  for test/function, test/stress, test/docker, any test regarding to /transaction, replace it with /rpc/transaction, and include .cookie credential
+  for ::HandleGET method
+    add /transaction, if transaction hash is provided
+    add /block, if block hash is provided

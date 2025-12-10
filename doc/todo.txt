@@ -1,0 +1,723 @@
+Need plan for a general blockchain based on current implementation. List tokens expected.
+
+* src/blockcore/block
+  block should be the definition of block
+  - based on Proof of Stake, so no difficulty is needed
+  - may need Merkleroot in future
+  - Pruning can happen in future
+
+* src/blockcore/transaction
+  transaction could be transfer to coins between addresses.  Could extend to a general service like, file storage, computing power, etc.
+
+* src/blockcore/mining
+  this is a mining manager running on a dedicated thread to control blockweave instance to do the actual mining
+
+* src/blockcore/blockweave
+  This is the backbone to do the actual mining, mempool, broadcasting etc.  May consider integrate mining and blockweave as one.
+
+* src/blockcore/blockfile
+  This one stored blockchain data as flat file.
+
+* src/blockcore/daemon
+  This one starts main process as daemon
+
+* src/peer
+  This folder is doing p2p communications among network nodes
+  - src/peer/peer_message
+    is to define messages exchanged among nodes
+    should add inventory message: show hash of transactions and blocks
+    should add version message: show which version of the node is so hand shake can happen when calling REST endpoing addpeer
+
+  - src/peer/peer_node
+    is to define peer node info.  This one should be extended for IPv6, Tor, I2P, CJDNS and maybe other future addresses
+
+  - src/peer/peer_manager
+    is to define inbound and outbound connections among peer nodes
+    need to broadcast transactions and blocks as inventory
+    need to add relay to peers for received inventory
+    outbound connections should be rotated periodically
+    inbound connections should rotate out peers from same subnets, increase global connectivity
+    ban malicious peers
+
+  - src/peer/peer_filter
+    is to memorize peer node info and see if a transaction or inventory is known to some peers, to stop relay bouncing
+    should remove old data after a while, like RollingBloomFilter does
+    probabilistic eviction on oldest entries
+    typical size: a few thousand elements for blocks and a few tens of thousands for transactions
+    no need to persist this info on node shutdown
+
+* DNS seeds
+  for initial seed node connection
+
+* create blockweave coins based on ERC-20, which is exchangable with ethereum
+
+* support scripts and smart contracts
+
+* design incentives
+
+* suggest consensus rules
+
+* support vote on-chain
+
+* create mainnet, testnet and localnet
+
+* Wallet in src/wallet
+  Wallet that contains address and all required info for blockweave coins.
+  Should potential extend to host bitcoin, ethereum and other coins
+  Should have a GUI interface running on Mac, Linux, Windows and Mobile.  This folder can be potentially be split out to a dedicated github repo
+
+================================================================================
+IMPLEMENTATION PLAN WITH TOKEN ESTIMATES
+================================================================================
+Generated: 2025-10-31
+Tokens used during planning: ~2,000 tokens
+
+This plan outlines the roadmap to evolve the current blockweave implementation
+into a general-purpose blockchain platform with Proof of Stake consensus,
+comprehensive P2P networking, ERC-20 token integration, and multi-currency
+wallet support.
+
+================================================================================
+PHASE 1: CORE BLOCKCHAIN ENHANCEMENTS
+Estimated tokens: 45,000-60,000
+================================================================================
+
+1.1 Block Implementation (src/blockcore/block) - 10,000-15,000 tokens
+    Current state: Basic block structure exists, already PoS-based
+    Enhancements:
+    - Add Merkle root support for transaction verification
+    - Implement block pruning capability for long-term scalability
+    - Add validation methods for Merkle tree integrity
+
+1.2 Transaction Extensions (src/blockcore/transaction) - 12,000-18,000 tokens
+    Current state: Basic coin transfer transactions
+    Enhancements:
+    - Add transaction type field (enum: TRANSFER, FILE_STORAGE, COMPUTE)
+    - Extend transaction structure for service-specific data
+    - File storage: metadata, file hash, storage duration
+    - Computing power: task description, resource requirements
+    - Implement polymorphic transaction handling
+
+1.3 Mining & Blockweave Integration - 8,000-12,000 tokens
+    Current state: Separate mining thread and blockweave modules
+    Consideration: Merge mining and blockweave into single module
+    Benefits: Simplified architecture, reduced thread coordination
+    Tasks:
+    - Evaluate current separation benefits
+    - Design unified mining/blockweave module if beneficial
+    - Implement refactored version
+    - Test mining performance
+
+================================================================================
+PHASE 2: P2P NETWORKING ENHANCEMENTS
+Estimated tokens: 35,000-50,000
+================================================================================
+2.2 Multi-Network Support (src/peer/peer_node) - 10,000-15,000 tokens
+    Extend address support:
+    - IPv6 addresses (128-bit)
+    - Tor onion addresses (.onion v3: 56 chars)
+    - I2P addresses (.i2p: base32 encoded)
+    - CJDNS addresses (fc00::/8 range)
+    - Design future-proof address type system
+    - Add address type enum and validation
+    - Update serialization for multi-network addresses
+
+2.3 Advanced Peer Management (src/peer/peer_manager) - 12,000-18,000 tokens
+    Enhancements:
+    - Inventory broadcasting system
+      * Track which peers need which inventory
+      * Batch inventory announcements
+      * Rate limiting for bandwidth management
+    - Relay logic for received inventory
+      * Check peer_filter to prevent loops
+      * Forward to peers who don't have it
+      * Implement relay throttling
+    - Periodic outbound connection rotation
+      * Rotate 1-2 connections every 30-60 minutes
+      * Enhances network diversity and resilience
+      * Prevents long-term eclipse attacks
+    - Subnet-based inbound rotation
+      * Limit connections per /24 (IPv4) or /48 (IPv6)
+      * Rotate out excess connections from same subnet
+      * Increase global network connectivity
+    - Malicious peer detection and banning
+      * Track misbehavior scores
+      * Ban criteria: invalid blocks, excessive requests, DoS attempts
+      * Implement ban duration (24h default, exponential backoff)
+      * Persist ban list to disk
+
+2.4 Peer Filter Optimization (src/peer/peer_filter) - 5,000-8,000 tokens
+    Current state: Basic tracking exists
+    Enhancements:
+    - Implement RollingBloomFilter-style probabilistic eviction
+      * Use multiple bloom filters with different ages
+      * Rotate filters periodically (e.g., every 10 minutes)
+      * Remove oldest filter when at capacity
+    - Auto-removal of old entries (time-based)
+    - Size targets:
+      * 1,000-5,000 elements for blocks
+      * 10,000-50,000 elements for transactions
+    - No persistence needed (memory-only)
+    - False positive rate: ~0.01%
+
+================================================================================
+PHASE 3: NETWORK INFRASTRUCTURE
+Estimated tokens: 8,000-12,000
+================================================================================
+
+3.1 DNS Seeds - 8,000-12,000 tokens
+    Purpose: Initial peer discovery for new nodes
+    Implementation:
+    - DNS seed server setup
+      * Maintain list of reliable nodes
+      * Return random subset via DNS A/AAAA records
+    - Client-side DNS seed querying
+      * Query multiple seed domains
+      * Parse DNS responses
+      * Connect to returned peers
+    - Fallback to hardcoded seed nodes
+      * Embed 5-10 reliable nodes in code
+      * Use if DNS seeds fail
+
+================================================================================
+PHASE 4: TOKEN & WALLET SYSTEM
+Estimated tokens: 40,000-60,000
+================================================================================
+
+4.1 ERC-20 Blockweave Coins - 18,000-25,000 tokens
+    Goal: Create ERC-20 compatible tokens bridgeable with Ethereum
+    Requirements:
+    - ERC-20 standard interface implementation
+      * totalSupply(), balanceOf(), transfer(), approve(), transferFrom()
+      * allowance(), events (Transfer, Approval)
+    - Ethereum bridge contract (Solidity)
+      * Lock/unlock mechanism
+      * Mint/burn on blockweave side
+      * Relay proofs between chains
+    - Cross-chain swap mechanism
+      * Merkle proof verification
+      * Event listening on both chains
+      * Transaction finality requirements
+    - Token minting/burning for bridge operations
+
+4.2 Multi-Currency Wallet (src/wallet) - 22,000-35,000 tokens
+    Current state: Basic address generation
+    Enhancements:
+    - Blockweave coin wallet (native)
+      * HD wallet support (BIP32/BIP44)
+      * Address derivation paths
+      * Transaction signing
+    - Bitcoin wallet integration
+      * BIP32/39/44 support
+      * SegWit addresses
+      * UTXO management
+    - Ethereum wallet integration
+      * BIP44 path m/44'/60'/0'/0
+      * ERC-20 token support
+      * Gas estimation
+    - Extensible architecture for other cryptocurrencies
+    - GUI development:
+      * Technology choice: Electron, Qt, or native
+      * macOS native app
+      * Linux (GTK/Qt)
+      * Windows native app
+      * Mobile (React Native or native: iOS/Android)
+    - Features:
+      * Send/receive transactions
+      * Transaction history
+      * Address book
+      * QR code scanning
+      * Hardware wallet support (Ledger, Trezor)
+    - Consideration: Split into separate GitHub repository
+
+================================================================================
+PHASE 5: SMART CONTRACTS & GOVERNANCE
+Estimated tokens: 45,000-70,000
+================================================================================
+
+5.1 Script System & Smart Contracts - 25,000-35,000 tokens
+    Design decisions:
+    - VM choice: Custom VM, EVM-compatible, or WASM-based
+    - Language: Solidity-like, custom DSL, or multiple languages
+    - Execution model: Account-based or UTXO-based
+    Implementation:
+    - VM implementation
+    - Compiler/interpreter
+    - Gas metering system
+    - Contract deployment mechanism
+    - Contract state storage
+    - Contract interaction via transactions
+
+5.2 Incentive Design - 8,000-12,000 tokens
+    Areas to design:
+    - Block rewards: Initial and decay schedule
+    - Transaction fees: Base fee + priority fee model
+    - Validator/staker rewards
+    - Service provider incentives (file storage, compute, etc.)
+    - Penalties for malicious behavior
+    - Economic sustainability analysis
+
+5.3 Consensus Rules - 7,000-10,000 tokens
+    Define formal rules:
+    - Block validation rules
+    - Transaction validation rules
+    - PoS validator selection algorithm
+    - Finality mechanism
+    - Fork choice rule
+    - Slashing conditions
+    - Network upgrade process
+
+5.4 On-Chain Governance & Voting - 5,000-13,000 tokens
+    Implementation:
+    - Proposal system
+      * Proposal types: parameter changes, upgrades, funding
+      * Proposal submission requirements
+    - Voting mechanism
+      * Token-weighted voting
+      * Quadratic voting option
+      * Delegation support
+    - Vote execution
+      * Automatic execution of passed proposals
+      * Time locks for safety
+    - Governance dashboard (UI)
+
+================================================================================
+PHASE 6: BUG FIXES & INCOMPLETE FEATURES
+Estimated tokens: 10,000-15,000
+================================================================================
+
+[x] 6.1 REST API Server Endpoints - 5,000-7,000 tokens
+
+6.2 Peer Manager Completions - 5,000-8,000 tokens
+    File: src/peer/peer_manager.cpp
+    - Line 545: Implement inbound connection handling
+      * Currently closes immediately after accept()
+      * Keep connection alive
+      * Perform handshake
+      * Add to inbound peers list
+    - Remove MessageType::GET_TX, GET_BLOCK
+    - Rename MessageType::BLOCK as MessageType::BLOCKS
+    - Rename MessageType::TX as MessageType::TXS
+    - Change MessageType::TX as MessageType::TXS
+    - Line 1146: Process transaction IDs
+      * Parse TX_IDS message payload
+      * Check which transactions are in mempool
+      * Request missing transactions via GETDATA
+      * Add to mempool when received
+
+================================================================================
+TOTAL ESTIMATED TOKENS: 198,000-289,000 tokens
+================================================================================
+
+================================================================================
+RECOMMENDED IMPLEMENTATION ORDER
+================================================================================
+[ ] Priority 2 - Core Features (Next):
+  4. Phase 1.2 (Transaction Extensions) - Enable service marketplace
+  5. Phase 2.4 (Peer Filter) - Scalability optimization
+  6. Phase 3 (DNS Seeds) - Network growth infrastructure
+  7. Phase 3.5 (Network Deployment) - Mainnet/testnet/localnet infrastructure
+
+Priority 3 - Advanced Features (Later):
+  8. Phase 4.1 (ERC-20 Tokens) - Token economy foundation
+  9. Phase 5.2-5.3 (Incentives & Consensus) - Economic design
+  10. Phase 1.1 (Merkle Root/Pruning) - Long-term scalability
+
+Priority 4 - Ecosystem (Future):
+  11. Phase 2.2 (Multi-Network) - Privacy and censorship resistance
+  12. Phase 5.1 (Smart Contracts) - Programmability
+  13. Phase 5.4 (Governance) - Decentralized decision making
+  14. Phase 4.2 (Multi-Currency Wallet + GUI) - User-facing app
+  15. Phase 1.3 (Mining/Blockweave Merge) - Architectural refinement
+
+================================================================================
+CURRENT STATUS (as of 2025-10-31)
+================================================================================
+
+✅ Completed:
+- Basic blockchain structure (Block, Transaction, Blockweave)
+- PoS-based mining (no difficulty)
+- Flat file block storage (Blockfile)
+- Daemon process support
+- REST API server with basic endpoints
+- P2P networking with hybrid async I/O architecture
+  * Inbound: Boost.Asio async I/O (120 max peers)
+  * Outbound: Boost.Asio async I/O (8 max peers)
+  * Thread-efficient: ~131 threads max
+- Basic peer filter for tracking known transactions/blocks
+- Basic wallet with address generation
+- All 137 unit tests + 6 functional tests passing
+- Boost.Asio migration complete for both inbound and outbound peers
+
+🚧 In Progress / Needs Completion:
+- Inbound connection handling (closes immediately)
+- Transaction ID processing from peers
+- Block/data retrieval REST endpoints
+
+📋 Next Steps:
+- Start with Phase 6 (bug fixes) to complete existing features
+- Then proceed with Priority 1 items (Phase 2.1, 2.3)
+
+================================================================================
+NOTES
+================================================================================
+
+* Token estimates include:
+  - Code implementation
+  - Testing (unit + functional)
+  - Documentation updates
+  - Code review iterations
+
+* Estimates are conservative and may vary based on:
+  - Complexity of implementation details
+  - Number of iterations needed
+  - Testing requirements
+  - Integration challenges
+
+* Current architecture is solid foundation for future enhancements
+* Boost.Asio async I/O provides excellent scalability for P2P networking
+* Consider splitting wallet GUI into separate repo when starting Phase 4.2
+
+================================================================================
+fix inventory
+================================================================================
+Still more issues about Inventory message processing:
+- inventory format should be [count][type][hash1][type][hash2]...[type][hashN]
+- for [type] in inventory format: it should NOT be the byte of char, but just ObjectType::Type, so we do NOT need ObjectTypeToChar in peer_message.h, remove it
+- For Transactions posted in inventory, if not in mempool, save to set<hash> for feeding the GETDATA call
+- For Blocks in the inventory, if they are not in current block_weave, save to set<hash> for feeding the GETDATA call,
+- After the for loop of processing inventory message, call GETDATA to retrieve them.  The GETDATA should be called once, with exact the same format as inventory, which is: [count][type][hash1][type][hash2]...[type][hashN].
+- BroadcastInventory should be called outside of for loop, because it should broadcast with full inventory message.  So, the full payload string (or a proper data structure) should be passed in.
+- within BroadcastInventory, it should check what peers have, and then shrink the full inventory message before sending.
+================================================================================
+further fix
+================================================================================
+* src/utils/hash.h
+  - hash value m_str_data should be saved as uint256, i.e., 32 bytes.  The GetData() can return a 64-character hex string.  
+  - Change all related code accordingly on hash transmission
+
+* src/blockcore/block_weave.h
+  - add Interface for CBlockweave
+  - include block_weave to src/peer/peer_manager.cpp
+
+* src/peer/peer_manager.cpp 
+  - if CPeerConnection::m_thread is not used, remove it
+  - Remove constructor of CPeerConnection::CPeerConnection(const std::string& str_addr, int n_port_num), because a good practice is to use CPeerConnection::CPeerConnection(const CPeerNode& node).  In practice, a peer connection could from other network which does NOT use string address and integer port
+  - Check whether constructor CPeerConnection::CPeerConnection(const CPeerNode& node) can take shared pointer for CPeerNode
+  - follow new coding style set in doc/naming_convention.txt, replace hard-coded byte count and define them in src/utils/settings.h.  Example, count size is 4bytes, type size is 2 bytes, hash size is 32 bytes, etc.
+  - add access to block_weave
+================================================================================
+plan
+================================================================================
+# Plan: Further Fix Implementation
+
+## Overview
+Implement 6 major improvements to hash storage, code architecture, and coding standards per doc/todo.txt lines 488-502.
+
+---
+
+## Phase 1: Hash Storage Refactoring (High Impact)
+
+### 1.1 Change CHash Internal Storage
+**File:** `src/utils/hash.h` + `src/utils/hash.cpp`
+
+**Current:** `m_str_data` stores 64-char hex string  
+**New:** `m_data` stores 32-byte array (uint256 equivalent)
+
+**Changes:**
+- Replace `std::string m_str_data` with `std::array<uint8_t, 32> m_data` or `unsigned char m_data[32]`
+- Update constructor to store raw bytes instead of hex conversion
+- Keep `GetData()` but change implementation to return hex string on-demand
+- Add new method: `const std::array<uint8_t, 32>& GetBytes() const` for binary access
+
+**Impact:** 24 call sites across 10 files (minimal - GetData() maintains compatibility)
+
+### 1.2 Update Network Hash Transmission
+**File:** `src/peer/peer_manager.cpp`
+
+**Current:** Transmits 64-byte hex strings  
+**New:** Transmit 32-byte binary hashes
+
+**Changes:**
+- Line 1281: Change from `substr(n_offset, 64)` to binary read (32 bytes)
+- Lines 1259: Update `n_item_size = 2 + 32` (was 2 + 64)
+- Lines 1987, 2027: Append binary hash instead of hex string
+- Parse inventory using `GetBytes()` instead of `GetData()`
+- Construct CHash from binary data received
+
+**Protocol Impact:** BREAKING CHANGE - old peers won't understand new format
+
+---
+
+## Phase 2: Define Protocol Constants
+
+### 2.1 Add Constants to settings.h
+**File:** `src/utils/settings.h`
+
+**Add new section:**
+```cpp
+// P2P Message Format Constants
+constexpr size_t MESSAGE_COUNT_SIZE = 4;      // Count field: uint32_t
+constexpr size_t MESSAGE_TYPE_SIZE = 2;       // ObjectType::Type: uint16
+constexpr size_t MESSAGE_HASH_SIZE = 32;      // Binary hash: SHA-256
+constexpr size_t MESSAGE_HASH_HEX_SIZE = 64;  // Hex string representation
+```
+
+### 2.2 Replace All Hard-coded Values
+**File:** `src/peer/peer_manager.cpp`
+
+**Replace:**
+- `4` → `MESSAGE_COUNT_SIZE` (lines 1977, 2017)
+- `2` → `MESSAGE_TYPE_SIZE` (lines 1981, 1984, 2021, 2024)
+- `64` → `MESSAGE_HASH_SIZE` (was 64 for hex, now 32 for binary)
+- Line 1259: `const size_t n_item_size = MESSAGE_TYPE_SIZE + MESSAGE_HASH_SIZE;`
+
+**Count:** 8-10 replacements total
+
+---
+
+## Phase 3: Create IBlockweave Interface
+
+### 3.1 Define Interface
+**New File:** `src/blockcore/i_blockweave.h`
+
+**Content:**
+```cpp
+class IBlockweave {
+public:
+    virtual ~IBlockweave() = default;
+    
+    virtual void AddTransaction(std::shared_ptr<CTransaction> tx) = 0;
+    virtual void MineBlock(const std::string& str_miner_address) = 0;
+    virtual std::shared_ptr<CBlock> GetBlock(const CHash& hash) = 0;
+    virtual std::vector<uint8_t> GetData(const CHash& tx_id) = 0;
+    
+    virtual void StartMining() = 0;
+    virtual void StopMining() = 0;
+    virtual bool IsMiningEnabled() const = 0;
+    virtual size_t GetMempoolSize() const = 0;
+    virtual bool HasTransactionInMempool(const std::string& str_tx_hash) const = 0;
+    
+    virtual void SetPeerManager(IPeerManager* p_mgr) = 0;
+};
+```
+
+### 3.2 Update CBlockweave to Implement Interface
+**File:** `src/blockcore/block_weave.h`
+
+**Changes:**
+- Add `#include "blockcore/i_blockweave.h"`
+- Change: `class CBlockweave` → `class CBlockweave : public IBlockweave`
+- Add `override` keyword to all interface methods
+
+---
+
+## Phase 4: Add Blockweave Access to PeerManager
+
+### 4.1 Add Member and Include
+**File:** `src/peer/peer_manager.h`
+
+**Add:**
+- `#include "blockcore/i_blockweave.h"` (after other includes)
+- Private member: `IBlockweave* p_blockweave;  ///< Pointer to blockweave for transaction/block queries`
+- Public method: `void SetBlockweave(IBlockweave* p_bw);`
+
+### 4.2 Initialize and Use
+**File:** `src/peer/peer_manager.cpp`
+
+**Add:**
+- Constructor initialization: `p_blockweave(nullptr)` in initializer list
+- Implement SetBlockweave():
+  ```cpp
+  void CPeerManager::SetBlockweave(IBlockweave* p_bw) {
+      p_blockweave = p_bw;
+      if (p_blockweave != nullptr) {
+          LOG_INFO("Blockweave connected to peer manager");
+      }
+  }
+  ```
+
+### 4.3 Use Blockweave for Smart GETDATA
+**File:** `src/peer/peer_manager.cpp` (lines 1290-1293)
+
+**Replace TODO with actual logic:**
+```cpp
+// Check if we need this item
+bool f_need_item = false;
+if (obj_type == ObjectType::TRANSACTION) {
+    f_need_item = p_blockweave && !p_blockweave->HasTransactionInMempool(str_hash);
+} else if (obj_type == ObjectType::BLOCK) {
+    f_need_item = p_blockweave && (p_blockweave->GetBlock(CHash(str_hash)) == nullptr);
+}
+
+if (f_need_item) {
+    vec_missing_items.push_back({obj_type, str_hash});
+}
+```
+
+---
+
+## Phase 5: Clean Up CPeerConnection
+
+### 5.1 Remove m_thread Member
+**File:** `src/peer/peer_manager.h`
+
+**Remove:**
+- Line 61: `std::thread m_thread;  ///< Thread handling this connection`
+- Lines 72-73 in destructor: m_thread.join() logic
+- Line 94 in move constructor: m_thread initialization
+- Lines 122, 130 in move assignment: m_thread handling
+
+**Reason:** With Boost.Asio async I/O, individual connection threads are not used.
+
+**Verification needed:** Confirm outbound connections don't spawn threads anywhere
+
+### 5.2 Remove String Address Constructor
+**File:** `src/peer/peer_manager.h` + `.cpp`
+
+**Remove:**
+- Declaration (lines 71-75 of .h)
+- Implementation (lines 48-50 of .cpp)
+
+**Reason:** Per todo.txt line 498 - better practice to use CPeerNode constructor for network portability
+
+### 5.3 Update Call Sites
+**File:** `src/peer/peer_manager.cpp`
+
+**Line 655 (ListenerThread):**
+```cpp
+// OLD:
+auto p_peer = std::make_unique<CPeerConnection>(std::string(str_ip), n_peer_port);
+
+// NEW:
+CPeerNode node(std::string(str_ip), n_peer_port);
+auto p_peer = std::make_unique<CPeerConnection>(node);
+```
+
+**Line 1428 (ConnectToPeer):**
+```cpp
+// OLD:
+auto p_peer = std::make_unique<CPeerConnection>(str_address, n_port);
+
+// NEW:
+CPeerNode node(str_address, n_port);
+auto p_peer = std::make_unique<CPeerConnection>(node);
+```
+
+### 5.4 Consider Shared Pointer Constructor (Optional Enhancement)
+**File:** `src/peer/peer_manager.h` + `.cpp`
+
+**Add overload:**
+```cpp
+CPeerConnection(std::shared_ptr<CPeerNode> p_node);
+```
+
+**Implementation:**
+```cpp
+CPeerConnection::CPeerConnection(std::shared_ptr<CPeerNode> p_node)
+    : n_socket(-1), peer_node(p_node), f_connected(false), f_active(false), n_last_ping_nonce(0) {}
+```
+
+**Benefit:** Avoids copying CPeerNode when shared_ptr already exists
+
+---
+
+## Phase 6: Update Main to Wire Everything Together
+
+### 6.1 Connect Blockweave to PeerManager
+**File:** `src/main.cpp` (or wherever initialization happens)
+
+**Add after peer_manager and blockweave creation:**
+```cpp
+peer_manager.SetBlockweave(&blockweave);
+blockweave.SetPeerManager(&peer_manager);
+```
+
+This creates bidirectional communication between the two subsystems.
+
+---
+
+## Implementation Order & Dependencies
+
+### Stage 1 (Independent):
+1. ✅ Phase 2: Add constants to settings.h
+2. ✅ Phase 3: Create IBlockweave interface
+3. ✅ Phase 5.2-5.3: Remove string constructor + update call sites
+
+### Stage 2 (Depends on Stage 1):
+4. ✅ Phase 3.2: CBlockweave implements IBlockweave
+5. ✅ Phase 4.1-4.2: Add blockweave to peer_manager
+6. ✅ Phase 5.1: Remove m_thread (verify first!)
+
+### Stage 3 (Major Breaking Change):
+7. ✅ Phase 1.1: Change CHash storage to binary
+8. ✅ Phase 1.2: Update network transmission to binary
+9. ✅ Phase 2.2: Replace hard-coded sizes with constants
+10. ✅ Phase 4.3: Implement smart GETDATA filtering
+11. ✅ Phase 6: Wire everything together in main.cpp
+
+---
+
+## Testing Strategy
+
+### Unit Tests to Update:
+- `test_hash.cpp` - Hash storage change
+- `test_peer_manager.cpp` - Constructor changes
+- `test_block_weave.cpp` - Interface implementation
+
+### Integration Tests:
+- Inventory message parsing with 32-byte binary hashes
+- GETDATA message generation with new format
+- Blockweave queries from peer_manager
+- Verify smart filtering (only request missing items)
+
+### Protocol Compatibility:
+- **Breaking change:** Old peers won't understand new hash format
+- Consider adding protocol version negotiation
+- Or: Deploy as hard upgrade (all nodes must update)
+
+---
+
+## Estimated Impact
+
+| Change | Files Modified | Lines Changed | Risk Level |
+|--------|----------------|---------------|------------|
+| Hash storage (binary) | 10 files | ~50 lines | HIGH (protocol breaking) |
+| Protocol constants | 2 files | ~20 lines | LOW |
+| IBlockweave interface | 3 files | ~30 lines | LOW |
+| Blockweave in peer_manager | 3 files | ~25 lines | MEDIUM |
+| Remove m_thread | 2 files | ~15 lines | MEDIUM (verify first) |
+| Remove string constructor | 2 files | ~10 lines | LOW |
+| **TOTAL** | **~15 files** | **~150 lines** | **HIGH overall** |
+
+---
+
+## Critical Decisions Needed
+
+1. **Protocol Version:** Add version negotiation before breaking hash format?
+2. **m_thread Verification:** Need confirmation that outbound connections don't use m_thread
+3. **Shared Pointer Constructor:** Include optional enhancement or skip?
+4. **Deployment Strategy:** Hard upgrade or backward compatibility layer?
+
+---
+
+## Files to Modify Summary
+
+1. `src/utils/hash.h` - Binary storage
+2. `src/utils/hash.cpp` - Binary implementation
+3. `src/utils/settings.h` - Protocol constants
+4. `src/blockcore/i_blockweave.h` - **NEW FILE** - Interface
+5. `src/blockcore/block_weave.h` - Implement interface
+6. `src/blockcore/block_weave.cpp` - Override methods
+7. `src/peer/peer_manager.h` - Add blockweave, remove thread, remove constructor
+8. `src/peer/peer_manager.cpp` - SetBlockweave, smart GETDATA, update call sites, use constants
+9. `src/main.cpp` - Wire blockweave ↔ peer_manager
+10. `test_hash.cpp` - Update for binary storage
+11. `test_peer_manager.cpp` - Update for constructor changes
+12. `test_block_weave.cpp` - Update for interface
+================================================================================
+TODOs:
+================================================================================
+Add functional test for Orphan2 -> Orphan1, and when parent of Orphan1 arrives, both Orphan1 and Orphan2 is added to blockchain and saved to disk
+
+Test mine stop, but transactions propagation

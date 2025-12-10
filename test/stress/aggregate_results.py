@@ -124,8 +124,8 @@ def aggregate_results(results_dir, test_filter=None):
         filter_full_name = f"test_stress_{test_filter}"
         filtered_results = {}
         for test_name, files in test_results.items():
-            # Exact match or starts with filter pattern
-            if test_name == filter_full_name or test_name.startswith(filter_full_name + "_"):
+            # Exact match only
+            if test_name == filter_full_name:
                 filtered_results[test_name] = files
         test_results = filtered_results
 
