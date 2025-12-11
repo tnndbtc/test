@@ -146,7 +146,7 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: |
         echo "Building with cmake --build build -- -j$(nproc)"
-        cmake --build build -- -j$(nproc)
+        cmake --build build -- -j$(nproc) VERBOSE=1
       shell: bash
 
     - name: Build (Windows)
