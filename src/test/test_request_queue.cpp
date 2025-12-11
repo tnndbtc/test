@@ -86,13 +86,14 @@ TEST(RequestQueue_DequeueTimeout) {
     auto end = std::chrono::steady_clock::now();
 
     auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-    if (duration_ms >= 200) {
-        std::cout<<"Dequeu empty queue took: "<<duration_ms<<" ms"<<std::endl;
+    if (duration_ms >= 250) {
+        // on github action, sometimes dequeue can take  up to 206 ms, maybe due to machine resource problem, increase to 250ms as threshold
+        std::cout<<"Dequeue empty queue took: "<<duration_ms<<" ms"<<std::endl;
     }
 
     ASSERT_FALSE(success, "Dequeue should fail on empty queue");
     ASSERT_TRUE(duration_ms >= 90, "Dequeue should wait at least ~100ms");
-    ASSERT_TRUE(duration_ms < 200, "Dequeue should not wait much longer than timeout");
+    ASSERT_TRUE(duration_ms < 250, "Dequeue should not wait much longer than timeout");
 }
 
 /**
