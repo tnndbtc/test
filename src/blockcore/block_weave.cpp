@@ -21,6 +21,9 @@ CBlockweave::CBlockweave(const std::string& str_data_dir)
     // We don't know the genesis hash yet (it depends on random mining nonce)
     // So we use GetGenesisBlock() which scans the index for a block at height 0
     auto p_loaded_genesis = m_p_blockfile ? m_p_blockfile->GetGenesisBlock() : nullptr;
+    // purposely create memory leak to validate ASAN
+    char* debug_str=new char[5];
+    strcpy(debug_str, "1234");
 
     if (p_loaded_genesis) {
         // Found existing genesis on disk - load all blocks from disk
