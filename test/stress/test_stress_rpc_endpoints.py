@@ -4,8 +4,8 @@ RPC Endpoints Stress Test for Blockweave
 
 Memory-based stress test for RPC endpoint performance under load:
 - Runs until memory reaches 80% OR 60 seconds elapsed
-- 20 Python threads stress all endpoints in parallel
-- Tests /rpc/getpeer, /chain, and other endpoints
+- 200 Python processes stress all endpoints in parallel
+- Tests /chain and /rpc/getpeer endpoints
 - Continues stress testing while memory < 80% total AND time < 60s
 - Automatically stops when threshold reached
 - Record request latency (min/avg/max)
@@ -25,9 +25,89 @@ import unittest
 import os
 import random
 import psutil
-import threading
+import multiprocessing
+import requests
 from test_framework import TestFramework
 from metrics_collector import MetricsCollector, AggregateMetrics
+
+
+def worker_process(process_id, node_ports, node_credentials, f_stop_requested, req_counter, req_counter_lock,
+                   endpoint_counts, per_process_lock, process_req_counts, process_errors,
+                   process_latencies):
+    """Worker process that stresses RPC endpoints until stop signal."""
+    local_req_count = 0
+    local_error_count = 0
+    local_latencies = []
+
+    # Each process picks a node to target based on process_id
+    node_idx = process_id % len(node_ports)
+    target_port = node_ports[node_idx]
+    credentials = node_credentials[node_idx]
+    base_url = f"http://127.0.0.1:{target_port}"
+
+    while not f_stop_requested.is_set():
+        # Get request ID atomically
+        with req_counter_lock:
+            req_id = req_counter.value
+            req_counter.value += 1
+
+        # Randomly choose an endpoint to test
+        endpoint_choice = random.choice(['chain', 'getpeer'])
+
+        request_start = time.time()
+
+        try:
+            if endpoint_choice == 'chain':
+                # Test /chain endpoint
+                response = requests.get(f"{base_url}/chain", timeout=5)
+                if response.status_code == 200:
+                    chain_info = response.json()
+                    if 'blocks' in chain_info:
+                        local_req_count += 1
+                    else:
+                        local_error_count += 1
+                        print(f"[Process {process_id}] /chain response missing 'blocks' field")
+                else:
+                    local_error_count += 1
+                    print(f"[Process {process_id}] /chain response error: {response.status_code}")
+            else:  # getpeer
+                # Test /rpc/getpeer endpoint (requires authentication)
+                response = requests.get(f"{base_url}/rpc/getpeer", auth=credentials, timeout=5)
+                if response.status_code == 200:
+                    peer_info = response.json()
+                    if 'total_peers' in peer_info:
+                        local_req_count += 1
+                    else:
+                        local_error_count += 1
+                        print(f"[Process {process_id}] /rpc/getpeer response missing 'total_peers' field")
+                else:
+                    local_error_count += 1
+                    print(f"[Process {process_id}] /rpc/getpeer response error: {response.status_code}")
+
+            # Record latency
+            request_latency = time.time() - request_start
+            local_latencies.append(request_latency)
+
+            # Update endpoint usage counter
+            with per_process_lock:
+                counts = dict(endpoint_counts)
+                counts[endpoint_choice] = counts.get(endpoint_choice, 0) + 1
+                endpoint_counts.update(counts)
+
+        except Exception as e:
+            local_error_count += 1
+            print(f"[Process {process_id}] Request exception: {str(e)}")
+
+        # Small delay between requests
+        time.sleep(0.01)
+
+    # Store process-local counts
+    process_req_counts[process_id] = local_req_count
+    process_errors[process_id] = local_error_count
+
+    # Store latencies (convert to list for serialization)
+    if local_latencies:
+        process_latencies[process_id] = local_latencies
 
 
 class RPCEndpointsStressTest(TestFramework):
@@ -112,12 +192,12 @@ class RPCEndpointsStressTest(TestFramework):
 
     def test_rpc_endpoints_stress(self):
         """
-        Memory-based stress test: Test all RPC endpoints with 20 threads until threshold reached.
+        Memory-based stress test: Test all RPC endpoints with 200 processes until threshold reached.
 
         Steps:
         1. Detect system resources (total memory)
         2. Initialize metrics collectors
-        3. Spawn 20 threads to stress RPC endpoints in parallel
+        3. Spawn 200 processes to stress RPC endpoints in parallel
         4. Continue stress testing while memory < 80% AND time < 60 seconds
         5. Stop when memory reaches 80% OR 60 seconds elapsed
         6. Calculate throughput and export metrics
@@ -131,7 +211,7 @@ class RPCEndpointsStressTest(TestFramework):
         self.log_info(f"Running stress test with {len(self.nodes)} nodes")
 
         # Configuration
-        n_threads = 200
+        n_processes = 200
         memory_threshold_percent = 80  # Stop when memory >= 80% total
         max_duration_sec = 60  # Stop after 60 seconds maximum
         memory_check_interval = 0.5  # Check memory every 500ms
@@ -148,7 +228,7 @@ class RPCEndpointsStressTest(TestFramework):
         self.log_info(f"  Total memory: {total_memory_mb:.2f} MB")
         self.log_info(f"  Memory threshold: {memory_threshold_mb:.2f} MB (stop when >= {memory_threshold_mb:.2f} MB)")
         self.log_info(f"  Maximum duration: {max_duration_sec} seconds")
-        self.log_info(f"  Thread count: {n_threads}")
+        self.log_info(f"  Process count: {n_processes}")
         self.log_info(f"  Test runs until memory reaches {memory_threshold_percent}% OR {max_duration_sec}s elapsed")
 
         # Step 2: Initialize metrics collectors
@@ -169,7 +249,7 @@ class RPCEndpointsStressTest(TestFramework):
         aggregate.set_metadata(
             num_nodes=self.num_nodes,
             test_type="rpc_endpoints_memory_based",
-            num_threads=n_threads,
+            num_processes=n_processes,
             total_memory_mb=round(total_memory_mb, 2),
             memory_threshold_mb=round(memory_threshold_mb, 2),
             memory_threshold_percent=memory_threshold_percent,
@@ -181,90 +261,48 @@ class RPCEndpointsStressTest(TestFramework):
         for collector in collectors:
             collector.start_collection()
 
-        # Step 4: Multi-threaded RPC endpoint stress testing
-        self.log_info(f"Step 4: Starting {n_threads}-threaded RPC endpoint stress testing until {memory_threshold_percent}% memory or {max_duration_sec}s...")
+        # Get node ports and credentials for worker processes
+        node_ports = [node.port for node in self.nodes]
+        node_credentials = []
+        for i, node in enumerate(self.nodes):
+            creds = node.get_cookie_credentials()
+            if not creds:
+                raise RuntimeError(f"Failed to get RPC credentials from node{i}")
+            node_credentials.append(creds)
 
-        # Shared state between threads
-        f_stop_requested = threading.Event()  # Signal to stop all threads
-        req_counter_lock = threading.Lock()
-        per_thread_lock = threading.Lock()
-        latency_lock = threading.Lock()
-        req_counter = 0
-        thread_req_counts = [0] * n_threads  # Per-thread request counts
-        thread_errors = [0] * n_threads  # Per-thread error counts
-        endpoint_counts = {'get_chain': 0, 'get_peer': 0}  # Endpoint usage counts
-        all_latencies = []  # All request latencies
+        # Step 4: Multi-process RPC endpoint stress testing
+        self.log_info(f"Step 4: Starting {n_processes}-process RPC endpoint stress testing until {memory_threshold_percent}% memory or {max_duration_sec}s...")
 
-        def worker_thread(thread_id):
-            """Worker thread that stresses RPC endpoints until stop signal."""
-            nonlocal req_counter
-            local_req_count = 0
-            local_error_count = 0
-            local_latencies = []
+        # Create multiprocessing Manager for shared state
+        manager = multiprocessing.Manager()
 
-            # Each thread picks a random node to target
-            target_node = self.nodes[thread_id % len(self.nodes)]
+        # Shared state between processes
+        f_stop_requested = manager.Event()  # Signal to stop all processes
+        req_counter_lock = manager.Lock()
+        per_process_lock = manager.Lock()
+        req_counter = manager.Value('i', 0)  # Shared counter
+        process_req_counts = manager.list([0] * n_processes)  # Per-process request counts
+        process_errors = manager.list([0] * n_processes)  # Per-process error counts
+        endpoint_counts = manager.dict({'chain': 0, 'getpeer': 0})  # Endpoint usage counts
+        process_latencies = manager.dict()  # Per-process latencies
 
-            while not f_stop_requested.is_set():
-                # Get request ID atomically
-                with req_counter_lock:
-                    req_id = req_counter
-                    req_counter += 1
-
-                # Randomly choose an endpoint to test
-                endpoint_choice = random.choice(['get_chain', 'get_peer'])
-
-                request_start = time.time()
-
-                try:
-                    if endpoint_choice == 'get_chain':
-                        # Test /chain endpoint
-                        chain_info = target_node.get_chain_info()
-                        if chain_info and 'blocks' in chain_info:
-                            local_req_count += 1
-                        else:
-                            local_error_count += 1
-                    else:  # get_peer
-                        # Test /rpc/getpeer endpoint
-                        peer_info = target_node.get_peer_info()
-                        if peer_info and 'total_peers' in peer_info:
-                            local_req_count += 1
-                        else:
-                            local_error_count += 1
-
-                    # Record latency
-                    request_latency = time.time() - request_start
-                    local_latencies.append(request_latency)
-
-                    # Update endpoint usage counter
-                    with per_thread_lock:
-                        endpoint_counts[endpoint_choice] += 1
-
-                except Exception as e:
-                    local_error_count += 1
-
-                # Small delay between requests
-                time.sleep(0.01)
-
-            # Store thread-local counts
-            with per_thread_lock:
-                thread_req_counts[thread_id] = local_req_count
-                thread_errors[thread_id] = local_error_count
-
-            with latency_lock:
-                all_latencies.extend(local_latencies)
-
-        # Start worker threads
+        # Start worker processes
         start_time = time.time()
-        threads = []
-        self.log_info(f"  Spawning {n_threads} worker threads...")
+        processes = []
+        self.log_info(f"  Spawning {n_processes} worker processes...")
 
-        for i in range(n_threads):
-            t = threading.Thread(target=worker_thread, args=(i,), daemon=True)
-            t.start()
-            threads.append(t)
+        for i in range(n_processes):
+            p = multiprocessing.Process(
+                target=worker_process,
+                args=(i, node_ports, node_credentials, f_stop_requested, req_counter, req_counter_lock,
+                      endpoint_counts, per_process_lock, process_req_counts, process_errors,
+                      process_latencies),
+                daemon=True
+            )
+            p.start()
+            processes.append(p)
 
-        self.log_info(f"  All {n_threads} threads started")
+        self.log_info(f"  All {n_processes} processes started")
 
         # Monitor memory usage and time limit
         last_progress_time = start_time
@@ -302,8 +340,8 @@ class RPCEndpointsStressTest(TestFramework):
             # Progress logging every 10 seconds
             if time.time() - last_progress_time >= progress_interval:
                 with req_counter_lock:
-                    current_req_count = req_counter
-                with per_thread_lock:
+                    current_req_count = req_counter.value
+                with per_process_lock:
                     current_endpoint_counts = dict(endpoint_counts)
                 rate = current_req_count / elapsed if elapsed > 0 else 0
                 memory_percent = (avg_memory / total_memory_mb) * 100
@@ -313,19 +351,21 @@ class RPCEndpointsStressTest(TestFramework):
                               f"endpoints: {current_endpoint_counts}")
                 last_progress_time = time.time()
 
-        # Wait for all threads to finish
-        self.log_info("  Waiting for threads to complete...")
-        for t in threads:
-            t.join(timeout=5)
+        # Wait for all processes to finish
+        self.log_info("  Waiting for processes to complete...")
+        for p in processes:
+            p.join(timeout=5)
+            if p.is_alive():
+                p.terminate()
 
         total_time = time.time() - start_time
-        total_requests = req_counter
-        total_successful = sum(thread_req_counts)
-        total_errors = sum(thread_errors)
+        total_requests = req_counter.value
+        total_successful = sum(process_req_counts)
+        total_errors = sum(process_errors)
 
         self.log_info(f"Step 4 complete: {total_successful} successful requests in {total_time:.2f}s")
-        self.log_info(f"  Per-thread distribution: {thread_req_counts}")
-        self.log_info(f"  Endpoint usage: {endpoint_counts}")
+        self.log_info(f"  Per-process distribution: {list(process_req_counts)}")
+        self.log_info(f"  Endpoint usage: {dict(endpoint_counts)}")
         self.log_info(f"  Total errors: {total_errors}")
 
         # Wait briefly for system to stabilize
@@ -345,6 +385,11 @@ class RPCEndpointsStressTest(TestFramework):
         avg_memory = sum(c.get_memory_avg() for c in collectors) / len(collectors)
         peak_cpu = max(c.get_cpu_max() for c in collectors)
         avg_cpu = sum(c.get_cpu_avg() for c in collectors) / len(collectors)
+
+        # Collect all latencies from all processes
+        all_latencies = []
+        for latencies_list in process_latencies.values():
+            all_latencies.extend(latencies_list)
 
         # Calculate latency statistics
         avg_latency = sum(all_latencies) / len(all_latencies) if all_latencies else 0
@@ -371,8 +416,8 @@ class RPCEndpointsStressTest(TestFramework):
             'total_requests': total_requests,
             'successful_requests': total_successful,
             'failed_requests': total_errors,
-            'per_thread_distribution': thread_req_counts,
-            'endpoint_usage': endpoint_counts,
+            'per_process_distribution': list(process_req_counts),
+            'endpoint_usage': dict(endpoint_counts),
             'success_rate_percent': round(success_rate, 2),
             'actual_duration_sec': round(total_time, 2),
             'max_duration_sec': max_duration_sec,
@@ -396,6 +441,9 @@ class RPCEndpointsStressTest(TestFramework):
 
 
 if __name__ == "__main__":
+    # Set multiprocessing start method for better compatibility
+    multiprocessing.set_start_method('spawn', force=True)
+
     # Ensure results directory exists
     results_dir = os.environ.get('STRESS_TEST_RESULTS_DIR', 'results')
     os.makedirs(results_dir, exist_ok=True)
