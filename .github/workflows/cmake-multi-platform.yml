@@ -80,18 +80,22 @@ jobs:
         #python -m pip install -r test\functional\requirements.txt
         brew install python-requests 
 
-    # macOS ARM64: Install Clang + dependencies
-    - name: Install Clang & dependencies (macOS arm64 only)
+    # macOS x64/ARM64: Install Clang + dependencies
+    - name: Install Clang & dependencies (macOS x64/arm64)
       if: matrix.os == 'macos-latest' || matrix.os == 'macos-15'
       run: |
         brew update
-        brew install llvm cmake boost
+        brew install llvm boost
         echo "LLVM path:"
         brew --prefix llvm
         echo "Using bundled Clang (Apple Clang)"
         python -m pip install --upgrade pip
         python -m pip install -r test/functional/requirements.txt
-        
+        python -m pip3 install -r test/functional/requirements.txt
+        python3 -m pip install -r test/functional/requirements.txt
+        python3 -m pip3 install -r test/functional/requirements.txt
+        pip freeze
+        pip3 freeze
       shell: bash
 
     #######################################################
