@@ -86,6 +86,9 @@ TEST(RequestQueue_DequeueTimeout) {
     auto end = std::chrono::steady_clock::now();
 
     auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    if (duration_ms >= 200) {
+        std::cout<<"Dequeu empty queue took: "<<duration_ms<<" ms"<<std::endl;
+    }
 
     ASSERT_FALSE(success, "Dequeue should fail on empty queue");
     ASSERT_TRUE(duration_ms >= 90, "Dequeue should wait at least ~100ms");
