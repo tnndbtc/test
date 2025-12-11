@@ -365,6 +365,12 @@ TEST(PeerManager_ThreadSafe_BothPeerCounts) {
     }
 
     // Verify we made many queries without crashing
+    if (inbound_queries <= 100) {
+        std::cout<<"number of inbound queries made: "<<inbound_queries<<std::endl;
+    }
+    if (outbound_queries <= 100) {
+        std::cout<<"number of outbound queries made: "<<outbound_queries<<std::endl;
+    }
     ASSERT_TRUE(inbound_queries > 100, "Should have made multiple inbound queries");
     ASSERT_TRUE(outbound_queries > 100, "Should have made multiple outbound queries");
 }
