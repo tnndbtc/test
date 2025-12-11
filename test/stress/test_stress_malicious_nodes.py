@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Malicious Nodes Stress Test for Blockweave
+Malicious Nodes Stress Test for Blockweave (Multi-process)
 
 Memory-based stress test for resilience against invalid message flooding:
 - Runs until memory reaches 80% OR 60 seconds elapsed
-- 20 Python threads flood with invalid messages in parallel
+- 200 Python processes flood with invalid messages in parallel
 - 3 legitimate nodes operating normally
 - Continues flooding while memory < 80% total AND time < 60s
 - Automatically stops when threshold reached
@@ -26,10 +26,101 @@ import unittest
 import os
 import struct
 import psutil
-import threading
+import multiprocessing
 from test_framework import TestFramework
 from test_framework.p2p_utils import MessageType, P2PMessage, P2PConnection
 from metrics_collector import MetricsCollector, AggregateMetrics
+
+
+def create_invalid_inventory():
+    """
+    Create invalid INVENTORY message (malformed hash data).
+
+    Valid format: [count:4][type:2][hash:32]...
+    Invalid format: [count:1][type:2][hash:1]  <- Only 1 byte hash instead of 32
+
+    Returns:
+        P2PMessage: Invalid INVENTORY message
+    """
+    payload = b""
+    payload += struct.pack('!I', 1)  # Count: 1 item
+    payload += struct.pack('!H', 2)  # Type: TRANSACTION
+    payload += b'X'  # Hash: Only 1 byte (INVALID)
+
+    return P2PMessage(MessageType.INVENTORY, payload)
+
+
+def create_invalid_transaction(tx_id):
+    """
+    Create invalid transaction message (malformed JSON or missing fields).
+
+    Args:
+        tx_id: Transaction identifier for uniqueness
+
+    Returns:
+        P2PMessage: Invalid transaction message
+    """
+    # Create malformed transaction payload (invalid JSON)
+    payload = f"{{invalid_json_tx_{tx_id}".encode('utf-8')
+    return P2PMessage(MessageType.TX, payload)
+
+
+def worker_process(process_id, target_host, target_p2p_port, f_stop_requested,
+                   msg_counter, msg_counter_lock, process_msg_counts, process_errors,
+                   process_connections_closed):
+    """Worker process that sends invalid messages until stop signal."""
+    local_msg_count = 0
+    local_error_count = 0
+    local_connection_closed = False
+
+    while not f_stop_requested.is_set():
+        # Get message ID atomically
+        with msg_counter_lock:
+            msg_id = msg_counter.value
+            msg_counter.value += 1
+
+        try:
+            # Create a new P2P connection for each batch of messages
+            # (connections may get closed by misbehavior detection)
+            with P2PConnection(target_host, target_p2p_port, timeout=5) as conn:
+                # Send a batch of invalid messages
+                batch_size = 10
+                for i in range(batch_size):
+                    if f_stop_requested.is_set():
+                        break
+
+                    # Alternate between invalid INVENTORY and TX messages
+                    if (msg_id + i) % 2 == 0:
+                        msg = create_invalid_inventory()
+                    else:
+                        msg = create_invalid_transaction(msg_id + i)
+
+                    sent = conn.send_message(msg)
+                    if sent:
+                        local_msg_count += 1
+                    else:
+                        local_error_count += 1
+                        local_connection_closed = True
+                        # do not print error message because this is expected
+                        # print(f"[Process {process_id}] Failed to send message {msg_id + i}")
+                        break
+
+                    # Small delay between messages
+                    time.sleep(0.01)
+
+        except Exception as e:
+            local_error_count += 1
+            local_connection_closed = True
+            # do not print exception message because this is expected, handshake should be rejected
+            # print(f"[Process {process_id}] Connection exception: {str(e)}")
+
+        # Small delay between batches
+        time.sleep(0.1)
+
+    # Store process-local counts
+    process_msg_counts[process_id] = local_msg_count
+    process_errors[process_id] = local_error_count
+    process_connections_closed[process_id] = 1 if local_connection_closed else 0
 
 
 class MaliciousNodesStressTest(TestFramework):
@@ -110,46 +201,15 @@ class MaliciousNodesStressTest(TestFramework):
 
         self.log_info("setup: Legitimate network established")
 
-    def create_invalid_inventory(self):
-        """
-        Create invalid INVENTORY message (malformed hash data).
-
-        Valid format: [count:4][type:2][hash:32]...
-        Invalid format: [count:1][type:2][hash:1]  <- Only 1 byte hash instead of 32
-
-        Returns:
-            P2PMessage: Invalid INVENTORY message
-        """
-        payload = b""
-        payload += struct.pack('!I', 1)  # Count: 1 item
-        payload += struct.pack('!H', 2)  # Type: TRANSACTION
-        payload += b'X'  # Hash: Only 1 byte (INVALID)
-
-        return P2PMessage(MessageType.INVENTORY, payload)
-
-    def create_invalid_transaction(self, tx_id):
-        """
-        Create invalid transaction message (malformed JSON or missing fields).
-
-        Args:
-            tx_id: Transaction identifier for uniqueness
-
-        Returns:
-            P2PMessage: Invalid transaction message
-        """
-        # Create malformed transaction payload (invalid JSON)
-        payload = f"{{invalid_json_tx_{tx_id}".encode('utf-8')
-        return P2PMessage(MessageType.TX, payload)
-
     def test_malicious_node_stress(self):
         """
-        Memory-based stress test: Flood node0 with invalid messages using 20 threads until threshold reached.
+        Memory-based stress test: Flood node0 with invalid messages using 200 processes until threshold reached.
 
         Steps:
         1. Detect system resources (total memory)
         2. Initialize metrics collectors
         3. Submit legitimate transactions to verify normal operation
-        4. Spawn 20 threads to flood with invalid messages in parallel
+        4. Spawn 200 processes to flood with invalid messages in parallel
         5. Continue flooding while memory < 80% AND time < 60 seconds
         6. Stop when memory reaches 80% OR 60 seconds elapsed
         7. Verify legitimate nodes continue operating
@@ -164,7 +224,7 @@ class MaliciousNodesStressTest(TestFramework):
         self.log_info(f"Running stress test with {len(self.nodes)} nodes")
 
         # Configuration
-        n_threads = 200
+        n_processes = 200
         memory_threshold_percent = 80  # Stop when memory >= 80% total
         max_duration_sec = 60  # Stop after 60 seconds maximum
         memory_check_interval = 0.5  # Check memory every 500ms
@@ -182,7 +242,7 @@ class MaliciousNodesStressTest(TestFramework):
         self.log_info(f"  Total memory: {total_memory_mb:.2f} MB")
         self.log_info(f"  Memory threshold: {memory_threshold_mb:.2f} MB (stop when >= {memory_threshold_mb:.2f} MB)")
         self.log_info(f"  Maximum duration: {max_duration_sec} seconds")
-        self.log_info(f"  Thread count: {n_threads}")
+        self.log_info(f"  Process count: {n_processes}")
         self.log_info(f"  Test runs until memory reaches {memory_threshold_percent}% OR {max_duration_sec}s elapsed")
 
         # Step 2: Initialize metrics collectors
@@ -203,7 +263,7 @@ class MaliciousNodesStressTest(TestFramework):
         aggregate.set_metadata(
             num_nodes=self.num_nodes,
             test_type="malicious_nodes_memory_based",
-            num_threads=n_threads,
+            num_processes=n_processes,
             total_memory_mb=round(total_memory_mb, 2),
             memory_threshold_mb=round(memory_threshold_mb, 2),
             memory_threshold_percent=memory_threshold_percent,
@@ -241,82 +301,40 @@ class MaliciousNodesStressTest(TestFramework):
         for collector in collectors:
             collector.start_collection()
 
-        # Step 5: Multi-threaded malicious message flooding
-        self.log_info(f"Step 5: Starting {n_threads}-threaded malicious message flooding until {memory_threshold_percent}% memory or {max_duration_sec}s...")
+        # Step 5: Multi-process malicious message flooding
+        self.log_info(f"Step 5: Starting {n_processes}-process malicious message flooding until {memory_threshold_percent}% memory or {max_duration_sec}s...")
 
-        # Shared state between threads
-        f_stop_requested = threading.Event()  # Signal to stop all threads
-        msg_counter_lock = threading.Lock()
-        per_thread_lock = threading.Lock()
-        msg_counter = 0
-        thread_msg_counts = [0] * n_threads  # Per-thread message counts
-        thread_errors = [0] * n_threads  # Per-thread error counts
-        connections_closed = [0] * n_threads  # Per-thread connection closures
+        # Create multiprocessing Manager for shared state
+        manager = multiprocessing.Manager()
 
-        def worker_thread(thread_id):
-            """Worker thread that sends invalid messages until stop signal."""
-            nonlocal msg_counter
-            local_msg_count = 0
-            local_error_count = 0
-            local_connection_closed = False
+        # Shared state between processes
+        f_stop_requested = manager.Event()  # Signal to stop all processes
+        msg_counter_lock = manager.Lock()
+        msg_counter = manager.Value('i', 0)  # Shared counter
+        process_msg_counts = manager.list([0] * n_processes)  # Per-process message counts
+        process_errors = manager.list([0] * n_processes)  # Per-process error counts
+        process_connections_closed = manager.list([0] * n_processes)  # Per-process connection closures
 
-            while not f_stop_requested.is_set():
-                # Get message ID atomically
-                with msg_counter_lock:
-                    msg_id = msg_counter
-                    msg_counter += 1
+        # Get target node info for workers
+        target_host = "127.0.0.1"
+        target_p2p_port = node0.p2p_port
 
-                try:
-                    # Create a new P2P connection for each batch of messages
-                    # (connections may get closed by misbehavior detection)
-                    with P2PConnection("127.0.0.1", node0.p2p_port, timeout=5) as conn:
-                        # Send a batch of invalid messages
-                        batch_size = 10
-                        for i in range(batch_size):
-                            if f_stop_requested.is_set():
-                                break
-
-                            # Alternate between invalid INVENTORY and TX messages
-                            if (msg_id + i) % 2 == 0:
-                                msg = self.create_invalid_inventory()
-                            else:
-                                msg = self.create_invalid_transaction(msg_id + i)
-
-                            sent = conn.send_message(msg)
-                            if sent:
-                                local_msg_count += 1
-                            else:
-                                local_error_count += 1
-                                local_connection_closed = True
-                                break
-
-                            # Small delay between messages
-                            time.sleep(0.01)
-
-                except Exception as e:
-                    local_error_count += 1
-                    local_connection_closed = True
-
-                # Small delay between batches
-                time.sleep(0.1)
-
-            # Store thread-local counts
-            with per_thread_lock:
-                thread_msg_counts[thread_id] = local_msg_count
-                thread_errors[thread_id] = local_error_count
-                connections_closed[thread_id] = 1 if local_connection_closed else 0
-
-        # Start worker threads
+        # Start worker processes
         start_time = time.time()
-        threads = []
-        self.log_info(f"  Spawning {n_threads} worker threads...")
+        processes = []
+        self.log_info(f"  Spawning {n_processes} worker processes...")
 
-        for i in range(n_threads):
-            t = threading.Thread(target=worker_thread, args=(i,), daemon=True)
-            t.start()
-            threads.append(t)
+        for i in range(n_processes):
+            p = multiprocessing.Process(
+                target=worker_process,
+                args=(i, target_host, target_p2p_port, f_stop_requested, msg_counter, msg_counter_lock,
+                      process_msg_counts, process_errors, process_connections_closed),
+                daemon=True
+            )
+            p.start()
+            processes.append(p)
 
-        self.log_info(f"  All {n_threads} threads started")
+        self.log_info(f"  All {n_processes} processes started")
 
         # Monitor memory usage and time limit
         last_progress_time = start_time
@@ -354,7 +372,7 @@ class MaliciousNodesStressTest(TestFramework):
             # Progress logging every 10 seconds
             if time.time() - last_progress_time >= progress_interval:
                 with msg_counter_lock:
-                    current_msg_count = msg_counter
+                    current_msg_count = msg_counter.value
                 rate = current_msg_count / elapsed if elapsed > 0 else 0
                 memory_percent = (avg_memory / total_memory_mb) * 100
                 self.log_info(f"  Progress: {elapsed:.0f}s, "
@@ -362,21 +380,29 @@ class MaliciousNodesStressTest(TestFramework):
                               f"memory: {avg_memory:.1f}MB ({memory_percent:.1f}%)")
                 last_progress_time = time.time()
 
-        # Wait for all threads to finish
-        self.log_info("  Waiting for threads to complete...")
-        for t in threads:
-            t.join(timeout=5)
+        # Wait for all processes to finish (with total timeout, not per-process)
+        self.log_info("  Waiting for processes to complete...")
+        deadline = time.time() + 5  # 5 second total timeout
+        for p in processes:
+            remaining = max(0, deadline - time.time())
+            p.join(timeout=remaining)
+
+        # Terminate any processes still alive
+        for p in processes:
+            if p.is_alive():
+                p.terminate()
+                p.join(timeout=1)
 
         total_time = time.time() - start_time
-        total_messages_attempted = msg_counter
-        total_messages_sent = sum(thread_msg_counts)
-        total_errors = sum(thread_errors)
-        total_connection_closures = sum(connections_closed)
+        total_messages_attempted = msg_counter.value
+        total_messages_sent = sum(process_msg_counts)
+        total_errors = sum(process_errors)
+        total_connection_closures = sum(process_connections_closed)
 
         self.log_info(f"Step 5 complete: {total_messages_sent} malicious messages sent in {total_time:.2f}s")
-        self.log_info(f"  Per-thread distribution: {thread_msg_counts}")
+        self.log_info(f"  Per-process distribution: {list(process_msg_counts)}")
         self.log_info(f"  Total errors: {total_errors}")
-        self.log_info(f"  Connections closed: {total_connection_closures}/{n_threads}")
+        self.log_info(f"  Connections closed: {total_connection_closures}/{n_processes}")
 
         # Wait for system to stabilize
         self.log_info("  Waiting for system to stabilize...")
@@ -439,7 +465,7 @@ class MaliciousNodesStressTest(TestFramework):
             'total_messages_attempted': total_messages_attempted,
             'total_messages_sent': total_messages_sent,
             'total_errors': total_errors,
-            'per_thread_distribution': thread_msg_counts,
+            'per_process_distribution': list(process_msg_counts),
             'rejection_rate_percent': round(rejection_rate, 2),
             'actual_duration_sec': round(total_time, 2),
             'max_duration_sec': max_duration_sec,
@@ -461,6 +487,9 @@ class MaliciousNodesStressTest(TestFramework):
 
 
 if __name__ == "__main__":
+    # Set multiprocessing start method for better compatibility
+    multiprocessing.set_start_method('spawn', force=True)
+
     # Ensure results directory exists
     results_dir = os.environ.get('STRESS_TEST_RESULTS_DIR', 'results')
     os.makedirs(results_dir, exist_ok=True)
