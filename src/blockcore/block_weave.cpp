@@ -92,6 +92,7 @@ CBlockweave::CBlockweave(const std::string& str_data_dir)
 
 void CBlockweave::AddTransaction(std::shared_ptr<CTransaction> tx) {
     std::string str_tx_id;
+    LOG_TRACE("Enter ::AddTransaction: transaction id: " + tx->m_id.GetData() + " from: " + tx->m_str_owner + " to: " + tx->m_str_target);
 
     {
         std::unique_lock<std::shared_mutex> lock(cs_rw_m_mempool);
@@ -111,30 +112,9 @@ void CBlockweave::AddTransaction(std::shared_ptr<CTransaction> tx) {
 
     // Broadcast transaction ID via INVENTORY message to peers (outside lock to avoid deadlock)
     if (p_peer_manager != nullptr && !str_tx_id.empty()) {
-        /*
-        // Build INVENTORY message manually: [count][type][hash]
-        std::string str_payload;
-
-        // Write count (4 bytes, network byte order) - we have 1 transaction
-        uint32_t n_count = htonl(1);
-        str_payload.append(reinterpret_cast<const char*>(&n_count), 4);
-
-        // Write type (2 bytes)
-        uint16_t n_type = htons(ObjectType::TRANSACTION);
-        str_payload.append(reinterpret_cast<const char*>(&n_type), 2);
-
-        // Write hash (32 bytes binary)
-        const auto& hash_bytes = tx->m_id.GetBytes();
-        str_payload.append(reinterpret_cast<const char*>(hash_bytes.data()), hash_bytes.size());
-
-        // Broadcast INVENTORY message to all peers
-        CPeerMessage inv_msg(MessageType::INVENTORY, str_payload);
-        p_peer_manager->BroadcastMessage(inv_msg);
-        */
         std::vector<std::pair<ObjectType::Type, std::string>> vec_inventory;
         vec_inventory.push_back({ObjectType::TRANSACTION,
             std::string(reinterpret_cast<const char*>(tx->m_id.GetBytes().data()), 32)});
-            // std::string(reinterpret_cast<const char*>(p_tx->m_id.GetBytes().data()), 32)});
         p_peer_manager->BroadcastInventoryByPeerKnowledge(vec_inventory);
     }
 }

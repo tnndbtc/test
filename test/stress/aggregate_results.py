@@ -77,7 +77,7 @@ def extract_test_name(filename):
         return 'test_stress_block'
     elif base.startswith('transaction_stress'):
         return 'test_stress_transaction'
-    elif base.startswith('memory_transaction_propagation'):
+    elif base.startswith('transaction_propagation'):
         return 'test_stress_transaction_propagation'
     elif 'block_propagation' in base:
         return 'test_stress_block_propagation'

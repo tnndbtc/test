@@ -1455,12 +1455,11 @@ void CPeerManager::HandleTxMessage(std::shared_ptr<CPeerNode> p_peer_shared, con
     }
 
     LOG_INFO("Received TX from peer " + p_peer_shared->GetIdentifier() +
-             " (transaction ID: " + p_tx->m_id.GetData() + "...)");
+             " (transaction ID: " + p_tx->m_id.GetData() + "from: " +  p_tx->m_str_owner + " to: " + p_tx->m_str_target + "...)");
 
     // Add transaction to blockweave mempool
     if (p_blockweave) {
         p_blockweave->AddTransaction(p_tx);
-        LOG_TRACE("Added transaction " + p_tx->m_id.GetData() + "(from: " +  p_tx->m_str_owner + " to: " + p_tx->m_str_target + ") ... to mempool");
 
         // Broadcast INVENTORY for the new transaction (scheduled asynchronously)
         std::vector<std::pair<ObjectType::Type, std::string>> vec_inventory;
@@ -2115,7 +2114,17 @@ void CPeerManager::BroadcastInventoryByPeerKnowledge(const std::vector<std::pair
             inv_message.AddItem(item.first, item.second);
 
             CHash hash_trace(reinterpret_cast<const unsigned char*>(item.second.data()), item.second.size());
-            LOG_TRACE("BroadcastInventoryByPeerKnowledge: broadcasting object type: " + std::to_string(item.first) + " hash: " + hash_trace.GetData() + " to peer: " + p_peer->GetIdentifier());
+            std::string str_log = "BroadcastInventoryByPeerKnowledge: broadcasting object type: " + std::to_string(item.first) + " hash: " + hash_trace.GetData() + " to peer: " + p_peer->GetIdentifier();
+
+            // Add transaction details if available
+            if (item.first == ObjectType::TRANSACTION && p_blockweave) {
+                std::shared_ptr<CTransaction> p_tx = p_blockweave->GetTransactionFromMempool(hash_trace);
+                if (p_tx) {
+                    str_log += " from: " + p_tx->m_str_owner + " to: " + p_tx->m_str_target;
+                }
+            }
+
+            LOG_TRACE(str_log);
             MarkInventoryKnown(p_peer, item.first, item.second);
         }
 
