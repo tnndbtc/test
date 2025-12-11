@@ -49,8 +49,11 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        submodules: recursive    
-
+        submodules: recursive
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.13"
+          
     #######################################################
     # Install dependencies
     #######################################################
@@ -76,9 +79,8 @@ jobs:
         tar -xf boost.zip
         echo "Detected $env:NUMBER_OF_PROCESSORS cores"
         echo "BUILD_CORES=$env:NUMBER_OF_PROCESSORS" >> $env:GITHUB_ENV
-        #python -m pip install --upgrade pip
-        #python -m pip install -r test\functional\requirements.txt
-        brew install python-requests 
+        python -m pip install --upgrade pip
+        python -m pip install -r test\functional\requirements.txt
 
     # macOS x64/ARM64: Install Clang + dependencies
     - name: Install Clang & dependencies (macOS x64/arm64)
@@ -90,12 +92,8 @@ jobs:
         brew --prefix llvm
         echo "Using bundled Clang (Apple Clang)"
         python -m pip install --upgrade pip
-        python -m pip install -r test/functional/requirements.txt
-        python -m pip3 install -r test/functional/requirements.txt
-        python3 -m pip install -r test/functional/requirements.txt
-        python3 -m pip3 install -r test/functional/requirements.txt
-        pip freeze
-        pip3 freeze
+        pip install -r test/functional/requirements.txt
+        
       shell: bash
 
     #######################################################
