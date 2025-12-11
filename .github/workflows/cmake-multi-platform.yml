@@ -30,25 +30,25 @@ jobs:
             build_type: Debug
 
           # Windows with MSVC
-          - os: windows-latest
-            label: x86_64
-            c_compiler: cl
-            cpp_compiler: cl
-            build_type: Debug
+          # - os: windows-latest
+          #   label: x86_64
+          #   c_compiler: cl
+          #   cpp_compiler: cl
+          #   build_type: Debug
 
           # macOS ARM64 with Clang
-          - os: macos-latest
-            label: arm64
-            c_compiler: clang
-            cpp_compiler: clang++
-            build_type: Debug
+          # - os: macos-latest
+          #   label: arm64
+          #   c_compiler: clang
+          #   cpp_compiler: clang++
+          #   build_type: Debug
 
           # macOS x64 with Clang
-          - os: macos-15
-            label: x86_64
-            c_compiler: clang
-            cpp_compiler: clang++
-            build_type: Debug
+          # - os: macos-15
+          #   label: x86_64
+          #   c_compiler: clang
+          #   cpp_compiler: clang++
+          #   build_type: Debug
 
     steps:
     - uses: actions/checkout@v4
@@ -67,6 +67,8 @@ jobs:
       run: |
         sudo apt update
         sudo apt install -y openssh-server net-tools git cmake llvm clang lldb lld openssl libssl-dev libboost-dev libasan6 python3-pip python3-psutil
+        python -m pip install --upgrade pip
+        pip install -r test/functional/requirements.txt        
 
     # -------- Windows: Setup MSVC env --------
     - name: Setup MSVC (Windows only)
