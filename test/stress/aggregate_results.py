@@ -73,15 +73,17 @@ def extract_test_name(filename):
     base = filename.split('_202')[0]  # Split before timestamp
 
     # Map common patterns
-    if base.startswith('transaction_stress'):
+    if base == 'block':
+        return 'test_stress_block'
+    elif base.startswith('transaction_stress'):
         return 'test_stress_transaction'
     elif base.startswith('memory_transaction_propagation'):
         return 'test_stress_transaction_propagation'
     elif 'block_propagation' in base:
         return 'test_stress_block_propagation'
-    elif 'orphan' in base:
+    elif 'orphan' in base or base == 'orphan_blocks':
         return 'test_stress_orphan_blocks'
-    elif 'rpc' in base or 'chain_endpoint' in base or 'getpeer' in base or 'addpeer' in base:
+    elif 'rpc' in base or 'chain_endpoint' in base or 'getpeer' in base or 'addpeer' in base or base == 'rpc_endpoints':
         return 'test_stress_rpc_endpoints'
     elif 'malicious' in base:
         return 'test_stress_malicious_nodes'

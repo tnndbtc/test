@@ -362,12 +362,18 @@ class BlockPropagationStressTest(TestFramework):
                               f"distribution: {node_distribution}")
                 last_progress_time = time.time()
 
-        # Wait for all processes to finish
+        # Wait for all processes to finish (with total timeout, not per-process)
         self.log_info("  Waiting for processes to complete...")
+        deadline = time.time() + 5  # 5 second total timeout
         for p in processes:
-            p.join(timeout=5)
+            remaining = max(0, deadline - time.time())
+            p.join(timeout=remaining)
+
+        # Terminate any processes still alive
+        for p in processes:
             if p.is_alive():
                 p.terminate()
+                p.join(timeout=1)
 
         total_time = time.time() - start_time
         total_blocks = block_counter.value
