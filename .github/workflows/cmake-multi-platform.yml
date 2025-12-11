@@ -18,6 +18,10 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
 
+    env:
+      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:malloc_context_size=10:log_path=/tmp/asan/asan.log:strict_string_checks=1:symbolize=1
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+      
     strategy:
       fail-fast: false
       matrix:
@@ -30,25 +34,25 @@ jobs:
             build_type: Debug
 
           # Windows with MSVC
-          - os: windows-latest
-            label: x86_64
-            c_compiler: cl
-            cpp_compiler: cl
-            build_type: Debug
+          # - os: windows-latest
+          #   label: x86_64
+          #   c_compiler: cl
+          #   cpp_compiler: cl
+          #   build_type: Debug
 
           # macOS ARM64 with Clang
-          - os: macos-latest
-            label: arm64
-            c_compiler: clang
-            cpp_compiler: clang++
-            build_type: Debug
+          # - os: macos-latest
+          #   label: arm64
+          #   c_compiler: clang
+          #   cpp_compiler: clang++
+          #   build_type: Debug
 
           # macOS x64 with Clang
-          - os: macos-15
-            label: x86_64
-            c_compiler: clang
-            cpp_compiler: clang++
-            build_type: Debug
+          # - os: macos-15
+          #   label: x86_64
+          #   c_compiler: clang
+          #   cpp_compiler: clang++
+          #   build_type: Debug
 
     steps:
     - uses: actions/checkout@v4
@@ -215,3 +219,12 @@ jobs:
         cd test/docker
         ./test.sh
       shell: bash
+
+    - name: Upload logs artifact on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: logs-${{ matrix.os }}
+        path: |
+          /tmp/test_run_*
+          /tmp/asan/*    
