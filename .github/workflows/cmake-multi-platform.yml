@@ -22,6 +22,7 @@ jobs:
       ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:malloc_context_size=10:log_path=/tmp/asan/asan.log:strict_string_checks=1
       UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
       LSAN_OPTIONS: verbosity=2
+      CTEST_OUTPUT_ON_FAILURE: 1
       # This will be set at runtime (see step below), but default it here
       # ASAN_SYMBOLIZER_PATH: /usr/bin/llvm-symbolizer      
     strategy:
@@ -207,17 +208,21 @@ jobs:
       continue-on-error: true
 
     - name: Print ASAN logs (Linux)
-      if: matrix.os == 'ubuntu-latest' && failure()
+      if: matrix.os == 'ubuntu-latest'
       run: |
-        if [ -d /tmp/asan ]; then
-          echo "---- ASAN LOGS ----"
+        echo "Checking for ASAN logs in /tmp/asan..."
+        if ls /tmp/asan/*.log 1> /dev/null 2>&1; then
+          echo "---- ASAN LOGS FOUND ----"
           ls -l /tmp/asan
+          echo "---- PRINTING ASAN LOGS ----"
           cat /tmp/asan/*.log || true
-          echo "--------------------"
+          echo "---------------------------"
+        else
+          echo "No ASAN logs found."
         fi
     
     - name: Upload ASAN logs (Linux)
-      if: matrix.os == 'ubuntu-latest' && failure()
+      if: matrix.os == 'ubuntu-latest'
       uses: actions/upload-artifact@v4
       with:
         name: asan-logs-${{ matrix.os }}
