@@ -19,11 +19,11 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     env:
-      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:malloc_context_size=10:log_path=/tmp/asan/asan.log:strict_string_checks=1:symbolize=1
+      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:malloc_context_size=10:log_path=/tmp/asan/asan.log:strict_string_checks=1
       UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
       LSAN_OPTIONS: verbosity=2
       # This will be set at runtime (see step below), but default it here
-      ASAN_SYMBOLIZER_PATH: /usr/bin/llvm-symbolizer      
+      # ASAN_SYMBOLIZER_PATH: /usr/bin/llvm-symbolizer      
     strategy:
       fail-fast: false
       matrix:
@@ -72,7 +72,7 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt update
-        sudo apt install -y openssh-server net-tools git cmake llvm clang lldb lld llvm-symbolizer \
+        sudo apt install -y openssh-server net-tools git cmake llvm clang lldb lld \
                             openssl libssl-dev libboost-dev libasan6 python3-pip python3-psutil
         # ensure asan log dir
         sudo mkdir -p /tmp/asan
@@ -114,20 +114,7 @@ jobs:
 
     #######################################################
     # Configure
-    #######################################################
-    - name: Locate llvm-symbolizer (Linux)
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        which llvm-symbolizer || true
-        SYMBOLIZER=$(which llvm-symbolizer || true)
-        if [ -z "$SYMBOLIZER" ]; then
-          echo "llvm-symbolizer not found in PATH"
-          exit 1
-        fi
-        echo "ASAN_SYMBOLIZER_PATH=$SYMBOLIZER" >> $GITHUB_ENV
-        echo "ASAN_SYMBOLIZER_PATH is $SYMBOLIZER"
-      shell: bash
-      
+    #######################################################      
     - name: Configure CMake (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: |
