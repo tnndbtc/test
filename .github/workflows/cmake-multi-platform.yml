@@ -211,11 +211,11 @@ jobs:
       if: always() && matrix.os == 'ubuntu-latest'
       run: |
         echo "Checking for ASAN logs in /tmp/asan..."
-        if ls /tmp/asan/*.log 1> /dev/null 2>&1; then
+        if ls /tmp/asan/*log* 1> /dev/null 2>&1; then
           echo "---- ASAN LOGS FOUND ----"
           ls -l /tmp/asan
           echo "---- PRINTING ASAN LOGS ----"
-          cat /tmp/asan/*.log || true
+          cat /tmp/asan/*log* || true
           echo "---------------------------"
         else
           echo "No ASAN logs found."
@@ -226,7 +226,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: asan-logs-${{ matrix.os }}
-        path: /tmp/asan/*.log
+        path: /tmp/asan/*
         if-no-files-found: ignore
 
     - name: Functional Test (Windows)
