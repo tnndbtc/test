@@ -178,7 +178,7 @@ jobs:
         cd build
         CTEST_OUTPUT_ON_FAILURE=1 ctest -V
       shell: bash
-      continue-on-error: true
+      # continue-on-error: true
       
     - name: Unit Test (Windows)
       if: matrix.os == 'windows-latest'
@@ -205,10 +205,10 @@ jobs:
         cd build
         test/functional/test_runner.py --tmpdir /tmp --nocleanup
       shell: bash
-      continue-on-error: true
+      # continue-on-error: true
 
     - name: Print ASAN logs (Linux)
-      if: matrix.os == 'ubuntu-latest'
+      if: always() && matrix.os == 'ubuntu-latest'
       run: |
         echo "Checking for ASAN logs in /tmp/asan..."
         if ls /tmp/asan/*.log 1> /dev/null 2>&1; then
@@ -222,7 +222,7 @@ jobs:
         fi
     
     - name: Upload ASAN logs (Linux)
-      if: matrix.os == 'ubuntu-latest'
+      if: always() && matrix.os == 'ubuntu-latest'
       uses: actions/upload-artifact@v4
       with:
         name: asan-logs-${{ matrix.os }}
