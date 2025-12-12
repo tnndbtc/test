@@ -178,7 +178,7 @@ jobs:
         cd build
         CTEST_OUTPUT_ON_FAILURE=1 ctest -V
       shell: bash
-      continue-on-error: true
+      # continue-on-error: true
       
     - name: Unit Test (Windows)
       if: matrix.os == 'windows-latest'
@@ -186,14 +186,14 @@ jobs:
         cd build\src\test\Debug
         .\test_all.exe
       shell: pwsh
-      continue-on-error: true
+      # continue-on-error: true
 
     - name: Unit Test (macOS)
       if: matrix.os == 'macos-latest' || matrix.os == 'macos-15'
       run: |
         cd build
         ctest -V
-      continue-on-error: true
+      # continue-on-error: true
 
     #######################################################
     # Functional Test
@@ -205,7 +205,7 @@ jobs:
         cd build
         test/functional/test_runner.py --tmpdir /tmp --nocleanup
       shell: bash
-      continue-on-error: true
+      # continue-on-error: true
 
     - name: Print ASAN logs (Linux)
       if: always() && matrix.os == 'ubuntu-latest'
@@ -221,13 +221,13 @@ jobs:
           echo "No ASAN logs found."
         fi
     
-    - name: Upload ASAN logs (Linux)
-      if: always() && matrix.os == 'ubuntu-latest'
-      uses: actions/upload-artifact@v4
-      with:
-        name: asan-logs-${{ matrix.os }}
-        path: /tmp/asan/*
-        if-no-files-found: ignore
+    # - name: Upload ASAN logs (Linux)
+    #   if: always() && matrix.os == 'ubuntu-latest'
+    #   uses: actions/upload-artifact@v4
+    #   with:
+    #     name: asan-logs-${{ matrix.os }}
+    #     path: /tmp/asan/*
+    #     if-no-files-found: ignore
 
     - name: Functional Test (Windows)
       if: matrix.os == 'windows-latest'
@@ -235,14 +235,14 @@ jobs:
         cd build
         python3 test\\functional\\test_runner.py --tmpdir "C:\Temp" --nocleanup
       shell: pwsh
-      continue-on-error: true
+      # continue-on-error: true
 
     - name: Functional Test (macOS)
       if: matrix.os == 'macos-latest' || matrix.os == 'macos-15'
       run: |
         cd build
         test/functional/test_runner.py --tmpdir /tmp --nocleanup
-      continue-on-error: true
+      # continue-on-error: true
 
     ############################################################
     # POST BUILD WITH DOCKER
@@ -253,7 +253,7 @@ jobs:
         cd test/docker
         ./test.sh
       shell: bash
-      continue-on-error: true
+      # continue-on-error: true
 
     - name: Upload logs artifact on failure
       if: failure()
