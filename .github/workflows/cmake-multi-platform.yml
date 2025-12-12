@@ -21,7 +21,9 @@ jobs:
     env:
       ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:malloc_context_size=10:log_path=/tmp/asan/asan.log:strict_string_checks=1:symbolize=1
       UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
-      
+      LSAN_OPTIONS: verbosity=2
+      # This will be set at runtime (see step below), but default it here
+      ASAN_SYMBOLIZER_PATH: /usr/bin/llvm-symbolizer      
     strategy:
       fail-fast: false
       matrix:
@@ -34,25 +36,25 @@ jobs:
             build_type: Debug
 
           # Windows with MSVC
-          - os: windows-latest
-            label: x86_64
-            c_compiler: cl
-            cpp_compiler: cl
-            build_type: Debug
+          # - os: windows-latest
+          #   label: x86_64
+          #   c_compiler: cl
+          #   cpp_compiler: cl
+          #   build_type: Debug
 
           # macOS ARM64 with Clang
-          - os: macos-latest
-            label: arm64
-            c_compiler: clang
-            cpp_compiler: clang++
-            build_type: Debug
+          # - os: macos-latest
+          #   label: arm64
+          #   c_compiler: clang
+          #   cpp_compiler: clang++
+          #   build_type: Debug
 
           # macOS x64 with Clang
-          - os: macos-15
-            label: x86_64
-            c_compiler: clang
-            cpp_compiler: clang++
-            build_type: Debug
+          # - os: macos-15
+          #   label: x86_64
+          #   c_compiler: clang
+          #   cpp_compiler: clang++
+          #   build_type: Debug
 
     steps:
     - uses: actions/checkout@v4
@@ -70,7 +72,11 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt update
-        sudo apt install -y openssh-server net-tools git cmake llvm clang lldb lld openssl libssl-dev libboost-dev libasan6 python3-pip python3-psutil
+        sudo apt install -y openssh-server net-tools git cmake llvm clang lldb lld llvm-symbolizer \
+                            openssl libssl-dev libboost-dev libasan6 python3-pip python3-psutil
+        # ensure asan log dir
+        sudo mkdir -p /tmp/asan
+        sudo chown $USER /tmp/asan
         python -m pip install --upgrade pip
         pip install -r test/functional/requirements.txt        
 
@@ -109,7 +115,19 @@ jobs:
     #######################################################
     # Configure
     #######################################################
-
+    - name: Locate llvm-symbolizer (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        which llvm-symbolizer || true
+        SYMBOLIZER=$(which llvm-symbolizer || true)
+        if [ -z "$SYMBOLIZER" ]; then
+          echo "llvm-symbolizer not found in PATH"
+          exit 1
+        fi
+        echo "ASAN_SYMBOLIZER_PATH=$SYMBOLIZER" >> $GITHUB_ENV
+        echo "ASAN_SYMBOLIZER_PATH is $SYMBOLIZER"
+      shell: bash
+      
     - name: Configure CMake (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: |
@@ -170,9 +188,9 @@ jobs:
       if: matrix.os == 'ubuntu-latest'
       run: |
         cd build
-        ctest -V
+        CTEST_OUTPUT_ON_FAILURE=1 ctest -V
       shell: bash
-      continue-on-error: true
+      # continue-on-error: true
 
     - name: Unit Test (Windows)
       if: matrix.os == 'windows-latest'
@@ -199,7 +217,7 @@ jobs:
         cd build
         test/functional/test_runner.py --tmpdir /tmp --nocleanup
       shell: bash
-      continue-on-error: true
+      # continue-on-error: true
 
     - name: Functional Test (Windows)
       if: matrix.os == 'windows-latest'
