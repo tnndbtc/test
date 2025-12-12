@@ -57,7 +57,7 @@ class BlockcoreTest(TestFramework):
         # Submit transaction
         tx_id = None
         try:
-            success = self.node.create_transaction(transaction_data)
+            success, _ = self.node.create_transaction(transaction_data)
             self.assert_true(success, "Transaction submission should succeed")
 
             # Extract transaction ID

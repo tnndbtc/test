@@ -123,6 +123,49 @@ std::string CBlock::ToString() const {
     return ss.str();
 }
 
+/**
+ * @brief Convert block to JSON string format
+ * @return JSON string containing block information
+ *
+ * Returns JSON object with all block fields including
+ * a full array of transactions.
+ */
+std::string CBlock::ToJson() const {
+    std::lock_guard<std::mutex> lock(cs_block);
+
+    std::ostringstream oss;
+    oss << "{\n";
+    oss << "  \"block_hash\": \"" << m_hash.GetData() << "\",\n";
+    oss << "  \"height\": " << m_n_height << ",\n";
+    oss << "  \"timestamp\": " << m_n_timestamp << ",\n";
+    oss << "  \"nonce\": " << m_n_nonce << ",\n";
+    oss << "  \"miner\": \"" << m_str_miner << "\",\n";
+    oss << "  \"difficulty\": " << m_n_difficulty << ",\n";
+    oss << "  \"cumulative_data_size\": " << m_n_cumulative_data_size << ",\n";
+    oss << "  \"previous_block\": \"" << m_previous_block.GetData() << "\",\n";
+
+    // Add transactions array
+    oss << "  \"transactions\": [\n";
+    for (size_t i = 0; i < m_transactions.size(); ++i) {
+        if (m_transactions[i]) {
+            std::string tx_json = m_transactions[i]->ToJson();
+            // Remove outer braces from transaction JSON
+            std::string tx_content = tx_json.substr(2, tx_json.size() - 4);
+            oss << "    {\n";
+            oss << "      " << tx_content << "\n";
+            oss << "    }";
+            if (i < m_transactions.size() - 1) {
+                oss << ",";
+            }
+            oss << "\n";
+        }
+    }
+    oss << "  ]\n";
+    oss << "}";
+
+    return oss.str();
+}
+
 std::string CBlock::Serialize() const {
     std::string str_result;
 

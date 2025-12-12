@@ -105,7 +105,7 @@ class P2PRelayTest(TestFramework):
         }
 
         try:
-            success = node0.create_transaction(tx_data)
+            success, _ = node0.create_transaction(tx_data)
             self.assert_equal(success, True, "Transaction submission should succeed")
             self.log_info(f"Transaction submitted successfully")
         except Exception as e:
@@ -185,7 +185,7 @@ class P2PRelayTest(TestFramework):
         }
 
         try:
-            success = node0.create_transaction(tx1_data)
+            success, _ = node0.create_transaction(tx1_data)
             self.assert_equal(success, True, "First transaction submission should succeed")
             # self.log_info(f"First transaction submitted: {tx1_result}")
         except Exception as e:
@@ -205,7 +205,7 @@ class P2PRelayTest(TestFramework):
             "data": "test_block_tx_data_2"
         }
 
-        success = node0.create_transaction(tx2_data)
+        success, _ = node0.create_transaction(tx2_data)
         self.assert_true(success, "Second transaction submission should succeed")
         self.log_info("Second transaction submitted successfully")
 

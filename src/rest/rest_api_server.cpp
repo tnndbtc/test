@@ -907,30 +907,26 @@ std::tuple<int, std::string> CRestApiServer::HandleGetTransaction(const std::str
         try {
             CHash tx_hash(str_tx_hash);
 
-            // Try to get transaction data (scans all blocks)
-            std::vector<uint8_t> tx_data = p_blockweave->GetData(tx_hash);
+            // Try to get full transaction (searches mempool and blocks)
+            std::shared_ptr<CTransaction> p_tx = p_blockweave->GetTransaction(tx_hash);
 
-            if (tx_data.empty()) {
+            if (!p_tx) {
                 LOG_WARN("GET /transaction: Transaction not found: " + str_tx_hash);
                 return {HTTP_NOT_FOUND,
                         "{\"error\": \"Not Found\", \"message\": \"Transaction not found\"}"};
             }
 
-            // Convert binary data to hex string
-            std::ostringstream hex_stream;
-            for (uint8_t byte : tx_data) {
-                hex_stream << std::hex << std::setw(2) << std::setfill('0')
-                           << static_cast<int>(byte);
-            }
-            std::string str_data_hex = hex_stream.str();
+            // Build JSON response using CTransaction::ToJson()
+            std::string tx_json = p_tx->ToJson();
 
-            // Build JSON response
+            // Add status field by wrapping the transaction JSON
             std::ostringstream oss;
             oss << "{\n";
             oss << "  \"status\": \"success\",\n";
-            oss << "  \"transaction_hash\": \"" << str_tx_hash << "\",\n";
-            oss << "  \"data_hex\": \"" << str_data_hex << "\",\n";
-            oss << "  \"data_size\": " << tx_data.size() << "\n";
+
+            // Extract transaction fields (skip opening "{\n" and closing "\n}")
+            std::string tx_content = tx_json.substr(2, tx_json.size() - 4);
+            oss << tx_content << "\n";
             oss << "}";
 
             LOG_INFO("Transaction retrieved: " + str_tx_hash);
@@ -991,19 +987,17 @@ std::tuple<int, std::string> CRestApiServer::HandleGetBlock(const std::string& s
                         "{\"error\": \"Not Found\", \"message\": \"Block not found\"}"};
             }
 
-            // Build JSON response with block information
+            // Build JSON response using CBlock::ToJson()
+            std::string block_json = p_block->ToJson();
+
+            // Add status field by wrapping the block JSON
             std::ostringstream oss;
             oss << "{\n";
             oss << "  \"status\": \"success\",\n";
-            oss << "  \"block_hash\": \"" << str_block_hash << "\",\n";
-            oss << "  \"height\": " << p_block->GetHeight() << ",\n";
-            oss << "  \"timestamp\": " << p_block->GetTimestamp() << ",\n";
-            oss << "  \"nonce\": " << p_block->GetNonce() << ",\n";
-            oss << "  \"transaction_count\": " << p_block->GetTransactions().size() << ",\n";
-            oss << "  \"miner\": \"" << p_block->GetMiner() << "\",\n";
-            oss << "  \"difficulty\": " << p_block->GetDifficulty() << ",\n";
-            oss << "  \"cumulative_data_size\": " << p_block->GetCumulativeDataSize() << ",\n";
-            oss << "  \"previous_block\": \"" << p_block->GetPreviousBlock().GetData() << "\"\n";
+
+            // Extract block fields (skip opening "{\n" and closing "\n}")
+            std::string block_content = block_json.substr(2, block_json.size() - 4);
+            oss << block_content << "\n";
             oss << "}";
 
             LOG_INFO("Block retrieved: " + str_block_hash +
@@ -1062,7 +1056,7 @@ std::tuple<int, std::string> CRestApiServer::HandlePostTransaction(const std::st
         std::ostringstream oss;
         oss << "{\n";
         oss << "  \"status\": \"success\",\n";
-        oss << "  \"transaction_id\": \"" << tx->m_id.GetData() << "...\",\n";
+        oss << "  \"transaction_id\": \"" << tx->m_id.GetData() << "\",\n";
         oss << "  \"from\": \"" << str_from << "\",\n";
         oss << "  \"to\": \"" << str_to << "\",\n";
         oss << "  \"data_size\": " << data.size() << ",\n";

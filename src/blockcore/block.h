@@ -60,6 +60,16 @@ public:
     std::string ToString() const;
 
     /**
+     * @brief Convert block to JSON string format
+     * @return JSON string containing block information
+     *
+     * Returns JSON object with all block fields including
+     * a full array of transactions. Each transaction uses
+     * its own ToJson() method. Used by REST API handlers.
+     */
+    std::string ToJson() const;
+
+    /**
      * @brief Serialize block to binary format for network transmission
      * @return Binary string containing serialized block data
      */

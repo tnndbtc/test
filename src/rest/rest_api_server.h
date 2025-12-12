@@ -42,13 +42,21 @@ class CPeerManager;
  * - All threads run until Stop() is called
  *
  * Supported endpoints:
+ *
+ * Public GET endpoints (no authentication required):
  * - GET /chain - Get blockchain state (mempool size, mining status)
- * - GET /block/:hash - Get block by hash
- * - GET /data/:txid - Get transaction data by ID
- * - POST /transaction - Submit new transaction
- * - POST /files - Upload file as transaction
+ * - GET /transaction?hash=<hash> - Get transaction by hash
+ * - GET /block?hash=<hash> - Get block by hash
+ *
+ * Authenticated RPC endpoints (require cookie-based HTTP Basic Auth):
+ * - POST /rpc/transaction - Submit new transaction
  * - POST /rpc/addpeer - Add outbound peer connection
- * - GET /rpc/getpeer - Get list of connected peers
+ * - POST /rpc/getpeer - Get list of connected peers
+ * - POST /rpc/ping - Send PING to all connected peers immediately
+ * - POST /rpc/minetrigger - Mine one block immediately (localnet only)
+ * - POST /rpc/setmocktime - Set mock time for testing (localnet only)
+ * - POST /rpc/triggerrotation - Trigger peer rotation check (localnet only)
+ * - POST /rpc/disconnectpeer - Disconnect a specific peer (localnet only)
  *
  * Thread safety:
  * - Uses atomic flags for state (f_running, f_stop_requested)

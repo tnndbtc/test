@@ -120,7 +120,7 @@ class BlockfileTest(TestFramework):
 
         self.log_info("Submitting transaction...")
         try:
-            success = self.node.create_transaction(transaction_data)
+            success, _ = self.node.create_transaction(transaction_data)
             self.assert_equal(success, True, "Transaction submission successful")
         except Exception as e:
             self.assert_true(False, f"Transaction submission failed: {e}")
@@ -185,7 +185,7 @@ class BlockfileTest(TestFramework):
             }
             self.log_info(f"Submitting transaction {i+1}/{num_transactions}...")
             try:
-                success = self.node.create_transaction(transaction_data)
+                success, _ = self.node.create_transaction(transaction_data)
                 self.assert_equal(success, True, f"Transaction {i+1} submission successful")
             except Exception as e:
                 self.assert_true(False, f"Transaction {i+1} submission failed: {e}")
@@ -227,7 +227,7 @@ class BlockfileTest(TestFramework):
         }
 
         try:
-            success = self.node.create_transaction(transaction_data)
+            success, _ = self.node.create_transaction(transaction_data)
             self.assert_equal(success, True, "Transaction submission successful")
         except Exception as e:
             self.assert_true(False, f"Transaction submission failed: {e}")

@@ -306,6 +306,38 @@ std::shared_ptr<CTransaction> CBlockweave::GetTransactionFromMempool(const CHash
     return nullptr;  // Not found
 }
 
+/**
+ * @brief Get transaction by hash from mempool or blocks
+ * @param tx_hash Transaction hash to search for
+ * @return Shared pointer to transaction if found, nullptr otherwise
+ *
+ * Searches mempool first for efficiency, then scans all blocks.
+ */
+std::shared_ptr<CTransaction> CBlockweave::GetTransaction(const CHash& tx_hash) const {
+    // First, check mempool
+    std::shared_ptr<CTransaction> p_tx = GetTransactionFromMempool(tx_hash);
+    if (p_tx) {
+        return p_tx;
+    }
+
+    // Not in mempool, search blocks
+    std::shared_lock<std::shared_mutex> lock_hashes(cs_rw_m_block_hashes);
+    std::shared_lock<std::shared_mutex> lock_blocks(cs_rw_map_blocks);
+
+    for (const auto& block_hash : m_block_hashes) {
+        auto it = map_blocks.find(block_hash.GetData());
+        if (it != map_blocks.end()) {
+            for (const auto& p_tx_in_block : it->second->GetTransactions()) {
+                if (p_tx_in_block && p_tx_in_block->m_id == tx_hash) {
+                    return p_tx_in_block;
+                }
+            }
+        }
+    }
+
+    return nullptr;  // Not found
+}
+
 void CBlockweave::SetPeerManager(IPeerManager* p_mgr) {
     p_peer_manager = p_mgr;
     if (p_peer_manager != nullptr) {

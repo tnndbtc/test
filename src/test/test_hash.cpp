@@ -175,3 +175,86 @@ TEST(Hash_GetData_BinaryToHex) {
         ASSERT_TRUE(hex[i] == '0', "Remaining hex digits should be 0");
     }
 }
+
+// ============= BytesToHex / HexToBytes Utility Tests =============
+
+/**
+ * @brief Test BytesToHex and HexToBytes roundtrip conversion
+ */
+TEST(Hash_BytesToHex_HexToBytes_Roundtrip) {
+    // Create a hash with known data
+    CHash hash = CHash::ComputeSHA256("test_data");
+
+    // Get hex string representation
+    std::string hex_string = hash.GetData();
+    ASSERT_EQUAL(hex_string.length(), 64, "Hash hex string should be 64 characters");
+
+    // Convert hex to bytes using HexToBytes
+    std::vector<uint8_t> bytes = HexToBytes(hex_string);
+    ASSERT_EQUAL(bytes.size(), 32, "HexToBytes should return 32 bytes");
+
+    // Compare with original bytes
+    const auto& original_bytes = hash.GetBytes();
+    for (size_t i = 0; i < 32; i++) {
+        ASSERT_EQUAL(bytes[i], original_bytes[i], "HexToBytes should match original bytes");
+    }
+
+    // Convert back to hex using BytesToHex
+    std::string hex_roundtrip = BytesToHex(bytes);
+    ASSERT_EQUAL(hex_roundtrip, hex_string, "BytesToHex roundtrip should match original hex");
+}
+
+/**
+ * @brief Test BytesToHex with known data pattern
+ */
+TEST(Hash_BytesToHex_KnownPattern) {
+    // Create a specific byte pattern
+    std::vector<uint8_t> bytes = {0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef};
+
+    std::string hex = BytesToHex(bytes);
+
+    ASSERT_EQUAL(hex, "0123456789abcdef", "BytesToHex should produce correct hex string");
+}
+
+/**
+ * @brief Test HexToBytes with known hex string
+ */
+TEST(Hash_HexToBytes_KnownPattern) {
+    std::string hex = "0123456789abcdef";
+
+    std::vector<uint8_t> bytes = HexToBytes(hex);
+
+    ASSERT_EQUAL(bytes.size(), 8, "HexToBytes should return 8 bytes");
+    ASSERT_EQUAL(bytes[0], 0x01, "Byte 0 should be 0x01");
+    ASSERT_EQUAL(bytes[1], 0x23, "Byte 1 should be 0x23");
+    ASSERT_EQUAL(bytes[2], 0x45, "Byte 2 should be 0x45");
+    ASSERT_EQUAL(bytes[3], 0x67, "Byte 3 should be 0x67");
+    ASSERT_EQUAL(bytes[4], 0x89, "Byte 4 should be 0x89");
+    ASSERT_EQUAL(bytes[5], 0xab, "Byte 5 should be 0xab");
+    ASSERT_EQUAL(bytes[6], 0xcd, "Byte 6 should be 0xcd");
+    ASSERT_EQUAL(bytes[7], 0xef, "Byte 7 should be 0xef");
+}
+
+/**
+ * @brief Test HexToBytes error handling - odd length
+ */
+TEST(Hash_HexToBytes_OddLength) {
+    try {
+        HexToBytes("abc");  // Odd length should throw
+        ASSERT_TRUE(false, "HexToBytes should throw for odd length");
+    } catch (const std::invalid_argument& e) {
+        ASSERT_TRUE(true, "HexToBytes correctly throws for odd length");
+    }
+}
+
+/**
+ * @brief Test HexToBytes error handling - invalid character
+ */
+TEST(Hash_HexToBytes_InvalidChar) {
+    try {
+        HexToBytes("01zz");  // 'z' is not valid hex
+        ASSERT_TRUE(false, "HexToBytes should throw for invalid hex character");
+    } catch (const std::invalid_argument& e) {
+        ASSERT_TRUE(true, "HexToBytes correctly throws for invalid character");
+    }
+}

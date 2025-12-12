@@ -111,7 +111,7 @@ TEST(Transaction_Serialize) {
 TEST(Transaction_Deserialize) {
     // Create original transaction
     std::vector<uint8_t> data = {'w', 'o', 'r', 'l', 'd'};
-    CTransaction tx_orig("sender", "receiver", data, 250, TransactionType::STORAGE, "{\"file\":\"test.txt\"}");
+    CTransaction tx_orig("sender", "receiver", data, 250, TransactionType::TRANSFER, "{\"memo\":\"test note\"}");
 
     // Serialize
     std::string serialized = tx_orig.Serialize();
@@ -158,7 +158,7 @@ TEST(Transaction_Deserialize_Invalid) {
 TEST(Transaction_Serialize_Roundtrip_LargeData) {
     // Create transaction with large data
     std::vector<uint8_t> large_data(5000, 'Z');
-    CTransaction tx_orig("from_address", "to_address", large_data, 1000, TransactionType::COMPUTE, "{\"cpu\":4}");
+    CTransaction tx_orig("from_address", "to_address", large_data, 1000, TransactionType::TRANSFER, "{\"note\":\"large transfer\"}");
 
     // Serialize and deserialize
     std::string serialized = tx_orig.Serialize();

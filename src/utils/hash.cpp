@@ -42,7 +42,7 @@ CHash CHash::ComputeSHA256(const std::string& input) {
  * @throws std::invalid_argument if hex string is invalid (wrong length or invalid characters)
  *
  * Parses a 64-character hex string into binary hash data.
- * Each pair of hex characters is converted to one byte.
+ * Uses HexToBytes() utility function for conversion.
  */
 CHash::CHash(const std::string& str_hex) {
     // Validate length (SHA-256 is 32 bytes = 64 hex characters)
@@ -51,21 +51,11 @@ CHash::CHash(const std::string& str_hex) {
                                     std::to_string(str_hex.size()) + ")");
     }
 
-    // Convert hex string to binary
-    for (size_t i = 0; i < 32; i++) {
-        std::string str_byte = str_hex.substr(i * 2, 2);
+    // Convert hex string to binary using HexToBytes utility
+    std::vector<uint8_t> bytes = HexToBytes(str_hex);
 
-        // Validate hex characters and convert
-        char* end_ptr;
-        long value = std::strtol(str_byte.c_str(), &end_ptr, 16);
-
-        if (end_ptr != str_byte.c_str() + 2) {
-            throw std::invalid_argument("Invalid hex character at position " +
-                                        std::to_string(i * 2));
-        }
-
-        m_data[i] = static_cast<unsigned char>(value);
-    }
+    // Copy to fixed-size array
+    std::copy(bytes.begin(), bytes.end(), m_data.begin());
 }
 
 /**
@@ -124,4 +114,59 @@ bool CHash::operator==(const CHash& other) const {
  */
 bool CHash::operator<(const CHash& other) const {
     return m_data < other.m_data;
+}
+
+/**
+ * @brief Convert bytes to hex string
+ * @param data Binary data to convert
+ * @return Hex string representation
+ *
+ * Converts a vector of bytes to a hexadecimal string.
+ * Each byte is represented as two hex digits (00-ff).
+ */
+std::string BytesToHex(const std::vector<uint8_t>& data) {
+    std::ostringstream oss;
+    for (uint8_t byte : data) {
+        oss << std::hex << std::setw(2) << std::setfill('0')
+            << static_cast<int>(byte);
+    }
+    return oss.str();
+}
+
+/**
+ * @brief Convert hex string to bytes
+ * @param str_hex Hexadecimal string
+ * @return Vector of bytes
+ * @throws std::invalid_argument if hex string has invalid format
+ *
+ * Converts a hexadecimal string to bytes.
+ * Each pair of hex digits is converted to one byte.
+ */
+std::vector<uint8_t> HexToBytes(const std::string& str_hex) {
+    // Validate length (must be even)
+    if (str_hex.size() % 2 != 0) {
+        throw std::invalid_argument("Hex string must have even length (got " +
+                                    std::to_string(str_hex.size()) + ")");
+    }
+
+    std::vector<uint8_t> bytes;
+    bytes.reserve(str_hex.size() / 2);
+
+    // Convert hex string to binary
+    for (size_t i = 0; i < str_hex.size(); i += 2) {
+        std::string str_byte = str_hex.substr(i, 2);
+
+        // Validate hex characters and convert
+        char* end_ptr;
+        long value = std::strtol(str_byte.c_str(), &end_ptr, 16);
+
+        if (end_ptr != str_byte.c_str() + 2) {
+            throw std::invalid_argument("Invalid hex character at position " +
+                                        std::to_string(i));
+        }
+
+        bytes.push_back(static_cast<uint8_t>(value));
+    }
+
+    return bytes;
 }

@@ -13,9 +13,7 @@
  * @brief Types of transactions supported by the blockweave
  */
 enum class TransactionType : uint8_t {
-    TRANSFER = 0,      ///< Basic coin/token transfer
-    STORAGE = 1,       ///< File storage transaction
-    COMPUTE = 2        ///< Computing power transaction
+    TRANSFER = 0       ///< Basic coin/token transfer
 };
 
 /**
@@ -51,8 +49,6 @@ struct CTransaction {
 
     // Service-specific metadata (stored as JSON string for flexibility)
     std::string m_str_metadata;    ///< Service-specific data in JSON format
-                                   ///< For FILE_STORAGE: {"file_hash": "...", "storage_duration": 365, "filename": "..."}
-                                   ///< For COMPUTE: {"task_desc": "...", "cpu_cores": 4, "memory_gb": 8, "duration_hours": 2}
 
     /**
      * @brief Construct a new transaction
@@ -71,12 +67,12 @@ struct CTransaction {
                  const std::vector<uint8_t>& data, uint64_t n_reward);
 
     /**
-     * @brief Construct a new transaction with type and metadata
+     * @brief Construct a new transaction with metadata
      * @param str_owner Owner/sender address
      * @param str_target Target/recipient address
      * @param data Binary data payload
      * @param n_reward Mining reward/fee
-     * @param type Transaction type
+     * @param type Transaction type (currently only TRANSFER is supported)
      * @param str_meta Service-specific metadata (JSON string)
      */
     CTransaction(const std::string& str_owner, const std::string& str_target,
@@ -98,6 +94,16 @@ struct CTransaction {
      * @return Shared pointer to deserialized transaction, or nullptr on error
      */
     static std::shared_ptr<CTransaction> Deserialize(const std::string& str_data);
+
+    /**
+     * @brief Convert transaction to JSON string format
+     * @return JSON string containing transaction information
+     *
+     * Returns JSON object with all transaction fields.
+     * Binary data is returned as hex string.
+     * Used by REST API handlers and logging.
+     */
+    std::string ToJson() const;
 };
 
 #endif

@@ -621,10 +621,8 @@ class BlockweaveNode:
         Returns:
             tuple: (success: bool, response_data: dict or None)
                 - success: True if transaction was submitted successfully
-                - response_data: JSON response from server (contains transaction_id on success)
-
-        Raises:
-            Exception: If transaction submission fails with detailed error information
+                - response_data: JSON response from server (contains transaction_id on success),
+                                or None on failure
         """
         try:
             self.logger.info(f"Submitting transaction to /rpc/transaction...")
@@ -634,8 +632,7 @@ class BlockweaveNode:
                 tx_response = response.json()
                 tx_id = tx_response.get("transaction_id", "unknown")
                 self.logger.info(f"Transaction submitted successfully (ID: {tx_id})")
-                # return True, tx_response
-                return True
+                return True, tx_response
             else:
                 # Log detailed error information
                 error_msg = (
@@ -645,13 +642,47 @@ class BlockweaveNode:
                     f"Body: {response.text}"
                 )
                 self.logger.error(error_msg)
-                return False
-                # raise Exception(error_msg)
+                return False, None
 
         except Exception as e:
             self.logger.error(f"Exception submitting transaction: {e}")
-            return False
-            # raise
+            return False, None
+
+    def get_transaction(self, tx_hash, timeout=5):
+        """
+        Retrieve a transaction by its hash.
+
+        Args:
+            tx_hash: Transaction hash (hex string)
+            timeout: Request timeout in seconds (default: 5)
+
+        Returns:
+            tuple: (success: bool, response_data: dict or None)
+                - success: True if transaction was retrieved successfully
+                - response_data: JSON response from server (contains transaction details),
+                                or None on failure
+        """
+        try:
+            self.logger.info(f"Retrieving transaction {tx_hash}...")
+            response = self.get(f"/transaction?hash={tx_hash}", timeout=timeout)
+
+            if response.status_code == 200:
+                tx_data = response.json()
+                self.logger.info(f"Transaction retrieved successfully")
+                return True, tx_data
+            elif response.status_code == 404:
+                self.logger.warning(f"Transaction not found: {tx_hash}")
+                return False, None
+            else:
+                self.logger.error(
+                    f"Failed to retrieve transaction: HTTP {response.status_code}, "
+                    f"Body: {response.text}"
+                )
+                return False, None
+
+        except Exception as e:
+            self.logger.error(f"Exception retrieving transaction: {e}")
+            return False, None
 
     def trigger_mining(self):
         """

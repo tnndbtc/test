@@ -4,6 +4,7 @@
 
 #include <string>
 #include <array>
+#include <vector>
 #include <cstdint>
 
 /**
@@ -109,5 +110,28 @@ public:
      */
     const std::array<uint8_t, 32>& GetBytes() const { return m_data; }
 };
+
+/**
+ * @brief Convert bytes to hex string
+ * @param data Binary data to convert
+ * @return Hex string representation
+ *
+ * Converts a vector of bytes to a hexadecimal string.
+ * Each byte is represented as two hex digits (00-ff).
+ * Used for converting binary data to JSON-safe strings.
+ */
+std::string BytesToHex(const std::vector<uint8_t>& data);
+
+/**
+ * @brief Convert hex string to bytes
+ * @param str_hex Hexadecimal string (must have even length)
+ * @return Vector of bytes
+ * @throws std::invalid_argument if hex string has invalid characters or odd length
+ *
+ * Converts a hexadecimal string to a vector of bytes.
+ * Each pair of hex digits is converted to one byte.
+ * Used for parsing hex strings from JSON, configuration, etc.
+ */
+std::vector<uint8_t> HexToBytes(const std::string& str_hex);
 
 #endif

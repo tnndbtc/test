@@ -9,8 +9,10 @@
 
 #include "transaction.h"
 #include "utils/settings.h"
+#include "utils/hash.h"
 #include <chrono>
 #include <cstring>
+#include <sstream>
 
 // Platform-specific byte order conversion
 #ifdef __APPLE__
@@ -26,6 +28,43 @@
     #define htobe64(x) htonll(x)
     #define be64toh(x) ntohll(x)
 #endif
+
+namespace {
+    /**
+     * @brief Escape special characters for JSON string values
+     * @param str String to escape
+     * @return Escaped string safe for JSON
+     *
+     * Escapes quotes, backslashes, and control characters to ensure
+     * valid JSON output.
+     */
+    std::string EscapeJsonString(const std::string& str) {
+        std::ostringstream oss;
+        for (char c : str) {
+            switch (c) {
+                case '\"': oss << "\\\""; break;
+                case '\\': oss << "\\\\"; break;
+                case '\n': oss << "\\n"; break;
+                case '\r': oss << "\\r"; break;
+                case '\t': oss << "\\t"; break;
+                default: oss << c; break;
+            }
+        }
+        return oss.str();
+    }
+
+    /**
+     * @brief Convert TransactionType enum to string
+     * @param type Transaction type enum value
+     * @return String representation of transaction type
+     */
+    std::string TransactionTypeToString(TransactionType type) {
+        switch (type) {
+            case TransactionType::TRANSFER: return "TRANSFER";
+            default: return "UNKNOWN";
+        }
+    }
+}
 
 /**
  * @brief Construct transaction with automatic ID and timestamp generation
@@ -76,13 +115,10 @@ CTransaction::CTransaction(const std::string& str_owner, const std::string& str_
  * @param str_target Address of transaction recipient
  * @param data Binary data payload to store
  * @param n_reward Mining reward/fee for including this transaction
- * @param type Transaction type (TRANSFER, STORAGE, COMPUTE)
+ * @param type Transaction type (currently only TRANSFER is supported)
  * @param str_meta Service-specific metadata in JSON format
  *
- * Initializes transaction with specified type and metadata:
- * - For STORAGE: metadata should contain file_hash, storage_duration, filename
- * - For COMPUTE: metadata should contain task_desc, cpu_cores, memory_gb, duration_hours
- * - For TRANSFER: metadata is typically empty
+ * Initializes transaction with specified type and metadata.
  */
 CTransaction::CTransaction(const std::string& str_owner, const std::string& str_target,
                            const std::vector<uint8_t>& data, uint64_t n_reward,
@@ -261,4 +297,28 @@ std::shared_ptr<CTransaction> CTransaction::Deserialize(const std::string& str_d
     } catch (...) {
         return nullptr;  // Deserialization error
     }
+}
+
+/**
+ * @brief Convert transaction to JSON string format
+ * @return JSON string containing transaction information
+ *
+ * Returns JSON object with all transaction fields.
+ * Binary data is returned as hex string for JSON compatibility.
+ */
+std::string CTransaction::ToJson() const {
+    std::ostringstream oss;
+    oss << "{\n";
+    oss << "  \"transaction_id\": \"" << m_id.GetData() << "\",\n";
+    oss << "  \"owner\": \"" << EscapeJsonString(m_str_owner) << "\",\n";
+    oss << "  \"target\": \"" << EscapeJsonString(m_str_target) << "\",\n";
+    oss << "  \"data_hex\": \"" << BytesToHex(m_data) << "\",\n";
+    oss << "  \"data_size\": " << m_n_data_size << ",\n";
+    oss << "  \"reward\": " << m_n_reward << ",\n";
+    oss << "  \"timestamp\": " << m_n_timestamp << ",\n";
+    oss << "  \"type\": \"" << TransactionTypeToString(m_type) << "\",\n";
+    oss << "  \"metadata\": \"" << EscapeJsonString(m_str_metadata) << "\"\n";
+    oss << "}";
+
+    return oss.str();
 }

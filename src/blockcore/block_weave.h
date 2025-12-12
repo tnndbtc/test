@@ -61,6 +61,16 @@ public:
     bool ShouldStopMining() const;
     virtual std::shared_ptr<CTransaction> GetTransactionFromMempool(const CHash& tx_hash) const override;
     virtual std::pair<bool, std::vector<std::shared_ptr<CBlock>>> VerifyBlock(std::shared_ptr<CBlock> p_block) override;
+
+    /**
+     * @brief Get transaction by hash from mempool or blocks
+     * @param tx_hash Transaction hash to search for
+     * @return Shared pointer to transaction if found, nullptr otherwise
+     *
+     * Searches mempool first, then scans all blocks if not found in mempool.
+     * Returns the full CTransaction object for use in API responses.
+     */
+    std::shared_ptr<CTransaction> GetTransaction(const CHash& tx_hash) const;
 };
 
 #endif

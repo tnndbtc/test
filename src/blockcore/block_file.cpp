@@ -124,13 +124,9 @@ bool CBlockFile::SaveIndex() {
     for (const auto& pair : map_block_index) {
         const CBlockIndex& index = pair.second;
 
-        // Write block hash (convert hex string to 32 bytes)
-        unsigned char hash_bytes[32];
-        for (size_t n_i = 0; n_i < 32; n_i++) {
-            std::string str_byte = index.str_block_hash.substr(n_i * 2, 2);
-            hash_bytes[n_i] = static_cast<unsigned char>(std::stoi(str_byte, nullptr, 16));
-        }
-        ofs.write(reinterpret_cast<const char*>(hash_bytes), 32);
+        // Write block hash (convert hex string to 32 bytes using HexToBytes)
+        std::vector<uint8_t> hash_bytes = HexToBytes(index.str_block_hash);
+        ofs.write(reinterpret_cast<const char*>(hash_bytes.data()), 32);
 
         // Write file number
         ofs.write(reinterpret_cast<const char*>(&index.n_file_number), sizeof(index.n_file_number));
@@ -155,18 +151,14 @@ bool CBlockFile::WriteHash(std::ofstream& ofs, const CHash& hash) const {
         char zero_bytes[32] = {0};
         ofs.write(zero_bytes, 32);
     } else {
-        // Write hash as 32-byte binary (convert hex string to bytes)
+        // Write hash as 32-byte binary (convert hex string to bytes using HexToBytes)
         if (str_hash.length() != 64) {
             LOG_ERROR("Invalid hash length: " + std::to_string(str_hash.length()));
             return false;
         }
 
-        unsigned char bytes[32];
-        for (size_t n_i = 0; n_i < 32; n_i++) {
-            std::string str_byte = str_hash.substr(n_i * 2, 2);
-            bytes[n_i] = static_cast<unsigned char>(std::stoi(str_byte, nullptr, 16));
-        }
-        ofs.write(reinterpret_cast<const char*>(bytes), 32);
+        std::vector<uint8_t> bytes = HexToBytes(str_hash);
+        ofs.write(reinterpret_cast<const char*>(bytes.data()), 32);
     }
 
     return ofs.good();
