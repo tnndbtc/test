@@ -18,13 +18,13 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
 
-    env:
-      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:malloc_context_size=10:log_path=/tmp/asan/asan.log:strict_string_checks=1
-      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
-      LSAN_OPTIONS: verbosity=2
-      CTEST_OUTPUT_ON_FAILURE: 1
-      # This will be set at runtime (see step below), but default it here
-      # ASAN_SYMBOLIZER_PATH: /usr/bin/llvm-symbolizer      
+    # env:
+    #   ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:malloc_context_size=10:log_path=/tmp/asan/asan.log:strict_string_checks=1
+    #   UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+    #   LSAN_OPTIONS: verbosity=2
+    #   CTEST_OUTPUT_ON_FAILURE: 1
+    #   # This will be set at runtime (see step below), but default it here
+    #   # ASAN_SYMBOLIZER_PATH: /usr/bin/llvm-symbolizer      
     strategy:
       fail-fast: false
       matrix:
@@ -175,8 +175,12 @@ jobs:
     - name: Unit Test (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: |
+        export ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:malloc_context_size=10:log_path=/tmp/asan/asan.log:strict_string_checks=1
+        export UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1
+        export LSAN_OPTIONS=verbosity=2
+        export CTEST_OUTPUT_ON_FAILURE=1
         cd build
-        CTEST_OUTPUT_ON_FAILURE=1 ctest -V
+        ctest -V
       shell: bash
       # continue-on-error: true
       
@@ -202,6 +206,10 @@ jobs:
     - name: Functional Test (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: |
+        export ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:malloc_context_size=10:log_path=/tmp/asan/asan.log:strict_string_checks=1
+        export UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1
+        export LSAN_OPTIONS=verbosity=2
+        export CTEST_OUTPUT_ON_FAILURE=1
         cd build
         test/functional/test_runner.py --tmpdir /tmp --nocleanup
       shell: bash
