@@ -8,9 +8,9 @@ using namespace UnitTest;
  * @brief Test CHash constructor and data retrieval
  */
 TEST(Hash_Constructor) {
-    CHash hash1("test_data");
-    CHash hash2("test_data");
-    CHash hash3("different_data");
+    CHash hash1 = CHash::ComputeSHA256("test_data");
+    CHash hash2 = CHash::ComputeSHA256("test_data");
+    CHash hash3 = CHash::ComputeSHA256("different_data");
 
     ASSERT_EQUAL(hash1.GetData(), hash2.GetData(), "Same input should produce same hash");
     ASSERT_NOT_EQUAL(hash1.GetData(), hash3.GetData(), "Different input should produce different hash");
@@ -20,7 +20,7 @@ TEST(Hash_Constructor) {
  * @brief Test CHash empty input
  */
 TEST(Hash_EmptyInput) {
-    CHash hash("");
+    CHash hash = CHash::ComputeSHA256("");
 
     ASSERT_TRUE(hash.GetData().length() > 0, "Hash of empty string should still produce output");
 }
@@ -91,7 +91,7 @@ TEST(Hash_BinaryConstructor_Empty) {
  */
 TEST(Hash_BinaryVsString) {
     // Create hash from string
-    CHash hash_string("test_data");
+    CHash hash_string = CHash::ComputeSHA256("test_data");
 
     // Get the binary representation
     const auto& bytes_string = hash_string.GetBytes();
@@ -109,7 +109,7 @@ TEST(Hash_BinaryVsString) {
  * @brief Test GetBytes() returns correct size
  */
 TEST(Hash_GetBytes_Size) {
-    CHash hash("test_data");
+    CHash hash = CHash::ComputeSHA256("test_data");
     const auto& bytes = hash.GetBytes();
 
     ASSERT_EQUAL(bytes.size(), 32, "GetBytes() should return 32 bytes");
@@ -137,7 +137,7 @@ TEST(Hash_GetBytes_Roundtrip) {
  * @brief Test GetBytes() is const (doesn't modify hash)
  */
 TEST(Hash_GetBytes_Const) {
-    CHash hash("test_data");
+    CHash hash = CHash::ComputeSHA256("test_data");
 
     const auto& bytes1 = hash.GetBytes();
     const auto& bytes2 = hash.GetBytes();

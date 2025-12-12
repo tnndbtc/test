@@ -627,8 +627,8 @@ class BlockweaveNode:
             Exception: If transaction submission fails with detailed error information
         """
         try:
-            self.logger.info(f"Submitting transaction to /transaction...")
-            response = self.post("/transaction", json_data=transaction, timeout=timeout)
+            self.logger.info(f"Submitting transaction to /rpc/transaction...")
+            response = self.post("/rpc/transaction", json_data=transaction, timeout=timeout)
 
             if response.status_code == 200:
                 tx_response = response.json()

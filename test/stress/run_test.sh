@@ -214,5 +214,7 @@ if [ ${#FAILED_TESTS[@]} -gt 0 ]; then
     exit 1
 fi
 
+echo -e "Cleanup test_runner.py ..."
+rm ./test_runner.py
 echo -e "${GREEN}All tests passed!${NC}"
 exit 0

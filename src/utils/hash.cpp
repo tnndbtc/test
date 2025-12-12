@@ -24,16 +24,48 @@ CHash::CHash() {
 }
 
 /**
- * @brief Construct hash by computing SHA-256 of input
+ * @brief Compute SHA-256 hash of input string
  * @param input String to hash
- *
- * Computes SHA-256 hash using OpenSSL and stores the 32-byte
- * binary output directly in m_data array.
+ * @return CHash object containing the SHA-256 hash
  */
-CHash::CHash(const std::string& input) {
+CHash CHash::ComputeSHA256(const std::string& input) {
+    unsigned char hash_data[32];
     SHA256(reinterpret_cast<const unsigned char*>(input.c_str()),
            input.length(),
-           m_data.data());
+           hash_data);
+    return CHash(hash_data, 32);
+}
+
+/**
+ * @brief Construct hash from 64-character hexadecimal string
+ * @param str_hex Hex string representing the hash (must be exactly 64 characters)
+ * @throws std::invalid_argument if hex string is invalid (wrong length or invalid characters)
+ *
+ * Parses a 64-character hex string into binary hash data.
+ * Each pair of hex characters is converted to one byte.
+ */
+CHash::CHash(const std::string& str_hex) {
+    // Validate length (SHA-256 is 32 bytes = 64 hex characters)
+    if (str_hex.size() != 64) {
+        throw std::invalid_argument("Hex string must be exactly 64 characters (got " +
+                                    std::to_string(str_hex.size()) + ")");
+    }
+
+    // Convert hex string to binary
+    for (size_t i = 0; i < 32; i++) {
+        std::string str_byte = str_hex.substr(i * 2, 2);
+
+        // Validate hex characters and convert
+        char* end_ptr;
+        long value = std::strtol(str_byte.c_str(), &end_ptr, 16);
+
+        if (end_ptr != str_byte.c_str() + 2) {
+            throw std::invalid_argument("Invalid hex character at position " +
+                                        std::to_string(i * 2));
+        }
+
+        m_data[i] = static_cast<unsigned char>(value);
+    }
 }
 
 /**

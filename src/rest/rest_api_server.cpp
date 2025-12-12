@@ -24,6 +24,7 @@
 #include "blockcore/transaction.h"
 #include <iostream>
 #include <sstream>
+#include <iomanip>
 #include <cstring>
 #include <algorithm>
 #include <cctype>
@@ -198,6 +199,7 @@ static std::vector<uint8_t> DecodeBase64(const std::string& str_encoded) {
  * 3. Locates file data between headers and next boundary
  * 4. Returns binary file data and filename
  */
+/*
 static bool ParseMultipartFile(const std::string& str_body, const std::string& str_boundary,
                                std::string& str_filename, std::vector<uint8_t>& file_data) {
     // Find boundary markers
@@ -259,7 +261,7 @@ static bool ParseMultipartFile(const std::string& str_body, const std::string& s
 
     return !file_data.empty();
 }
-
+*/
 /**
  * @brief Generate UUID v4 string
  * @return UUID v4 string in format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
@@ -270,6 +272,7 @@ static bool ParseMultipartFile(const std::string& str_body, const std::string& s
  * - Sets variant bits to 10xx (RFC 4122)
  * - Returns lowercase hexadecimal UUID string
  */
+/*
 static std::string GenerateUUID() {
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -300,7 +303,7 @@ static std::string GenerateUUID() {
     }
     return ss.str();
 }
-
+*/
 /**
  * @brief Create directory recursively (like mkdir -p)
  * @param str_path Directory path to create
@@ -310,6 +313,7 @@ static std::string GenerateUUID() {
  * Uses Unix permissions 0755 (rwxr-xr-x).
  * Returns true if directory already exists.
  */
+/*
 static bool CreateDirectoryRecursive(const std::string& str_path) {
     if (str_path.empty()) return false;
 
@@ -335,7 +339,7 @@ static bool CreateDirectoryRecursive(const std::string& str_path) {
     return mkdir(str_path.c_str(), 0755) == 0;
 #endif
 }
-
+*/
 // ============= CRestApiServer Implementation =============
 
 /**
@@ -870,6 +874,155 @@ std::tuple<int, std::string> CRestApiServer::HandleGetChain() {
     return {HTTP_OK, oss.str()};
 }
 
+std::tuple<int, std::string> CRestApiServer::HandleGetTransaction(const std::string& str_endpoint) {
+    LOG_INFO("HandleGetTransaction: " + str_endpoint);
+
+    try {
+        // Parse query parameter: /transaction?hash=<hash>
+        size_t n_query_pos = str_endpoint.find('?');
+        if (n_query_pos == std::string::npos) {
+            LOG_ERROR("GET /transaction: Missing query parameter 'hash'");
+            return {HTTP_BAD_REQUEST,
+                    "{\"error\": \"Bad Request\", \"message\": \"Missing query parameter 'hash'\"}"};
+        }
+
+        std::string str_query = str_endpoint.substr(n_query_pos + 1);
+        std::string str_hash_param = "hash=";
+
+        if (str_query.substr(0, 5) != str_hash_param) {
+            LOG_ERROR("GET /transaction: Invalid query parameter");
+            return {HTTP_BAD_REQUEST,
+                    "{\"error\": \"Bad Request\", \"message\": \"Expected query parameter 'hash'\"}"};
+        }
+
+        std::string str_tx_hash = str_query.substr(5);
+
+        if (str_tx_hash.empty()) {
+            LOG_ERROR("GET /transaction: Empty hash value");
+            return {HTTP_BAD_REQUEST,
+                    "{\"error\": \"Bad Request\", \"message\": \"Hash value cannot be empty\"}"};
+        }
+
+        // Create CHash from hex string using repurposed constructor
+        try {
+            CHash tx_hash(str_tx_hash);
+
+            // Try to get transaction data (scans all blocks)
+            std::vector<uint8_t> tx_data = p_blockweave->GetData(tx_hash);
+
+            if (tx_data.empty()) {
+                LOG_WARN("GET /transaction: Transaction not found: " + str_tx_hash);
+                return {HTTP_NOT_FOUND,
+                        "{\"error\": \"Not Found\", \"message\": \"Transaction not found\"}"};
+            }
+
+            // Convert binary data to hex string
+            std::ostringstream hex_stream;
+            for (uint8_t byte : tx_data) {
+                hex_stream << std::hex << std::setw(2) << std::setfill('0')
+                           << static_cast<int>(byte);
+            }
+            std::string str_data_hex = hex_stream.str();
+
+            // Build JSON response
+            std::ostringstream oss;
+            oss << "{\n";
+            oss << "  \"status\": \"success\",\n";
+            oss << "  \"transaction_hash\": \"" << str_tx_hash << "\",\n";
+            oss << "  \"data_hex\": \"" << str_data_hex << "\",\n";
+            oss << "  \"data_size\": " << tx_data.size() << "\n";
+            oss << "}";
+
+            LOG_INFO("Transaction retrieved: " + str_tx_hash);
+            return {HTTP_OK, oss.str()};
+
+        } catch (const std::invalid_argument& e) {
+            LOG_ERROR("GET /transaction: Invalid hex string: " + std::string(e.what()));
+            return {HTTP_BAD_REQUEST,
+                    "{\"error\": \"Bad Request\", \"message\": \"" + std::string(e.what()) + "\"}"};
+        }
+
+    } catch (const std::exception& e) {
+        LOG_ERROR("GET /transaction: Exception: " + std::string(e.what()));
+        return {HTTP_BAD_REQUEST,
+                "{\"error\": \"Bad Request\", \"message\": \"Invalid hash format\"}"};
+    }
+}
+
+std::tuple<int, std::string> CRestApiServer::HandleGetBlock(const std::string& str_endpoint) {
+    LOG_INFO("HandleGetBlock: " + str_endpoint);
+
+    try {
+        // Parse query parameter: /block?hash=<hash>
+        size_t n_query_pos = str_endpoint.find('?');
+        if (n_query_pos == std::string::npos) {
+            LOG_ERROR("GET /block: Missing query parameter 'hash'");
+            return {HTTP_BAD_REQUEST,
+                    "{\"error\": \"Bad Request\", \"message\": \"Missing query parameter 'hash'\"}"};
+        }
+
+        std::string str_query = str_endpoint.substr(n_query_pos + 1);
+        std::string str_hash_param = "hash=";
+
+        if (str_query.substr(0, 5) != str_hash_param) {
+            LOG_ERROR("GET /block: Invalid query parameter");
+            return {HTTP_BAD_REQUEST,
+                    "{\"error\": \"Bad Request\", \"message\": \"Expected query parameter 'hash'\"}"};
+        }
+
+        std::string str_block_hash = str_query.substr(5);
+
+        if (str_block_hash.empty()) {
+            LOG_ERROR("GET /block: Empty hash value");
+            return {HTTP_BAD_REQUEST,
+                    "{\"error\": \"Bad Request\", \"message\": \"Hash value cannot be empty\"}"};
+        }
+
+        // Create CHash from hex string using repurposed constructor
+        try {
+            CHash block_hash(str_block_hash);
+
+            // Get block from blockweave (checks memory, then disk)
+            auto p_block = p_blockweave->GetBlock(block_hash);
+
+            if (!p_block) {
+                LOG_WARN("GET /block: Block not found: " + str_block_hash);
+                return {HTTP_NOT_FOUND,
+                        "{\"error\": \"Not Found\", \"message\": \"Block not found\"}"};
+            }
+
+            // Build JSON response with block information
+            std::ostringstream oss;
+            oss << "{\n";
+            oss << "  \"status\": \"success\",\n";
+            oss << "  \"block_hash\": \"" << str_block_hash << "\",\n";
+            oss << "  \"height\": " << p_block->GetHeight() << ",\n";
+            oss << "  \"timestamp\": " << p_block->GetTimestamp() << ",\n";
+            oss << "  \"nonce\": " << p_block->GetNonce() << ",\n";
+            oss << "  \"transaction_count\": " << p_block->GetTransactions().size() << ",\n";
+            oss << "  \"miner\": \"" << p_block->GetMiner() << "\",\n";
+            oss << "  \"difficulty\": " << p_block->GetDifficulty() << ",\n";
+            oss << "  \"cumulative_data_size\": " << p_block->GetCumulativeDataSize() << ",\n";
+            oss << "  \"previous_block\": \"" << p_block->GetPreviousBlock().GetData() << "\"\n";
+            oss << "}";
+
+            LOG_INFO("Block retrieved: " + str_block_hash +
+                     " (height: " + std::to_string(p_block->GetHeight()) + ")");
+            return {HTTP_OK, oss.str()};
+
+        } catch (const std::invalid_argument& e) {
+            LOG_ERROR("GET /block: Invalid hex string: " + std::string(e.what()));
+            return {HTTP_BAD_REQUEST,
+                    "{\"error\": \"Bad Request\", \"message\": \"" + std::string(e.what()) + "\"}"};
+        }
+
+    } catch (const std::exception& e) {
+        LOG_ERROR("GET /block: Exception: " + std::string(e.what()));
+        return {HTTP_BAD_REQUEST,
+                "{\"error\": \"Bad Request\", \"message\": \"Invalid hash format\"}"};
+    }
+}
+
 std::tuple<int, std::string> CRestApiServer::HandlePostTransaction(const std::string& str_body) {
     LOG_INFO("HandlePostTransaction: " + str_body);
     try {
@@ -924,116 +1077,6 @@ std::tuple<int, std::string> CRestApiServer::HandlePostTransaction(const std::st
     } catch (const std::exception& e) {
         LOG_ERROR("POST /transaction exception: " + std::string(e.what()));
         return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Internal Server Error\", \"message\": \"" + std::string(e.what()) + "\"}"};
-    }
-}
-
-std::tuple<int, std::string> CRestApiServer::HandlePostFiles(const CHttpRequest& request) {
-    try {
-        std::string str_filename;
-        std::vector<uint8_t> file_data;
-
-        // Check Content-Type to determine how to parse
-        if (request.str_content_type.find("multipart/form-data") != std::string::npos) {
-            // Extract boundary from Content-Type
-            size_t n_boundary_pos = request.str_content_type.find("boundary=");
-            if (n_boundary_pos == std::string::npos) {
-                LOG_ERROR("POST /files: Missing boundary in multipart/form-data");
-                return {HTTP_BAD_REQUEST, "{\"error\": \"Missing boundary in Content-Type\"}"};
-            }
-
-            std::string str_boundary = request.str_content_type.substr(n_boundary_pos + 9);
-            // Remove quotes if present
-            if (!str_boundary.empty() && str_boundary.front() == '"') {
-                str_boundary = str_boundary.substr(1);
-            }
-            if (!str_boundary.empty() && str_boundary.back() == '"') {
-                str_boundary.pop_back();
-            }
-
-            // Parse multipart data
-            if (!ParseMultipartFile(request.str_body, str_boundary, str_filename, file_data)) {
-                LOG_ERROR("POST /files: Failed to parse multipart data");
-                return {HTTP_BAD_REQUEST, "{\"error\": \"Failed to parse multipart data\"}"};
-            }
-
-            if (str_filename.empty()) {
-                str_filename = "uploaded_file";
-            }
-        } else {
-            // Raw file upload - use entire body as file data
-            str_filename = "raw_upload";
-            for (char c : request.str_body) {
-                file_data.push_back(static_cast<uint8_t>(c));
-            }
-        }
-
-        if (file_data.empty()) {
-            LOG_ERROR("POST /files: Empty file data");
-            return {HTTP_BAD_REQUEST, "{\"error\": \"Empty file data\"}"};
-        }
-
-        // Generate UUID for file name
-        std::string str_uuid = GenerateUUID();
-
-        // Get data directory from config
-        std::string str_data_dir = p_config->GetDataDir();
-
-        // Create data directory if it doesn't exist
-        if (!CreateDirectoryRecursive(str_data_dir)) {
-            LOG_ERROR("POST /files: Failed to create data directory: " + str_data_dir);
-            return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Failed to create data directory\"}"};
-        }
-
-        // Build full file path
-        std::string str_file_path = str_data_dir + "/" + str_uuid;
-
-        // Save file to disk
-        std::ofstream file(str_file_path, std::ios::binary);
-        if (!file.is_open()) {
-            LOG_ERROR("POST /files: Failed to open file for writing: " + str_file_path);
-            return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Failed to save file\"}"};
-        }
-
-        file.write(reinterpret_cast<const char*>(file_data.data()), file_data.size());
-        file.close();
-
-        if (file.fail()) {
-            LOG_ERROR("POST /files: Failed to write file data to: " + str_file_path);
-            return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Failed to write file\"}"};
-        }
-
-        // Create transaction with file data
-        // Use miner address as owner and a placeholder target
-        auto tx = std::make_shared<CTransaction>(
-            str_miner_address,
-            "file_storage",
-            file_data,
-            0  // No fee for file uploads
-        );
-
-        // Add to mempool
-        p_blockweave->AddTransaction(tx);
-
-        // Build response
-        std::ostringstream oss;
-        oss << "{\n";
-        oss << "  \"status\": \"success\",\n";
-        oss << "  \"transaction_id\": \"" << tx->m_id.GetData() << "...\",\n";
-        oss << "  \"uuid\": \"" << str_uuid << "\",\n";
-        oss << "  \"original_filename\": \"" << str_filename << "\",\n";
-        oss << "  \"saved_path\": \"" << str_file_path << "\",\n";
-        oss << "  \"size\": " << file_data.size() << ",\n";
-        oss << "  \"message\": \"File uploaded and saved to disk\"\n";
-        oss << "}";
-
-        LOG_INFO("File uploaded: " + str_filename + " -> " + str_uuid + " (" +
-                 std::to_string(file_data.size()) + " bytes, TX: " +
-                 tx->m_id.GetData() + "...)");
-
-        return {HTTP_OK, oss.str()};
-    } catch (const std::exception& e) {
-        LOG_ERROR("POST /files exception: " + std::string(e.what()));
-        return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Internal server error\"}"};
     }
 }
 
@@ -1151,68 +1194,6 @@ std::tuple<int, std::string> CRestApiServer::HandleRpcGetPeer() {
         return {HTTP_OK, oss.str()};
     } catch (const std::exception& e) {
         LOG_ERROR("POST /rpc/getpeer exception: " + std::string(e.what()));
-        return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Internal Server Error\", \"message\": \"" + std::string(e.what()) + "\"}"};
-    }
-}
-
-std::tuple<int, std::string> CRestApiServer::HandleRpcMineStart() {
-    LOG_INFO("HandleRpcMineStart");
-    try {
-        // Check if we're on localnet
-        std::string str_network = p_config->GetNetwork();
-        if (str_network != "localnet") {
-            LOG_WARN("Mining control attempted on non-localnet network: " + str_network);
-            return {HTTP_FORBIDDEN,
-                    "{\"error\": \"Forbidden\", \"message\": \"Mining control is only available on localnet. Current network: " + str_network + "\"}"};
-        }
-
-        // Start mining
-        p_blockweave->StartMining();
-
-        // Build JSON response
-        std::ostringstream oss;
-        oss << "{\n";
-        oss << "  \"status\": \"success\",\n";
-        oss << "  \"mining_enabled\": true,\n";
-        oss << "  \"message\": \"Mining started\"\n";
-        oss << "}";
-
-        LOG_INFO("RPC minestart: Mining enabled");
-
-        return {HTTP_OK, oss.str()};
-    } catch (const std::exception& e) {
-        LOG_ERROR("POST /rpc/minestart exception: " + std::string(e.what()));
-        return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Internal Server Error\", \"message\": \"" + std::string(e.what()) + "\"}"};
-    }
-}
-
-std::tuple<int, std::string> CRestApiServer::HandleRpcMineStop() {
-    LOG_INFO("HandleRpcMineStop");
-    try {
-        // Check if we're on localnet
-        std::string str_network = p_config->GetNetwork();
-        if (str_network != "localnet") {
-            LOG_WARN("Mining control attempted on non-localnet network: " + str_network);
-            return {HTTP_FORBIDDEN,
-                    "{\"error\": \"Forbidden\", \"message\": \"Mining control is only available on localnet. Current network: " + str_network + "\"}"};
-        }
-
-        // Stop mining
-        p_blockweave->StopMining();
-
-        // Build JSON response
-        std::ostringstream oss;
-        oss << "{\n";
-        oss << "  \"status\": \"success\",\n";
-        oss << "  \"mining_enabled\": false,\n";
-        oss << "  \"message\": \"Mining stopped\"\n";
-        oss << "}";
-
-        LOG_INFO("RPC minestop: Mining disabled");
-
-        return {HTTP_OK, oss.str()};
-    } catch (const std::exception& e) {
-        LOG_ERROR("POST /rpc/minestop exception: " + std::string(e.what()));
         return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Internal Server Error\", \"message\": \"" + std::string(e.what()) + "\"}"};
     }
 }
@@ -1372,6 +1353,12 @@ std::tuple<int, std::string> CRestApiServer::HandleGET(const std::string& str_en
     else if (str_endpoint == "/rpc/getpeer") {
         return HandleRpcGetPeer();
     }
+    else if (str_endpoint.substr(0, 12) == "/transaction") {
+        return HandleGetTransaction(str_endpoint);
+    }
+    else if (str_endpoint.substr(0, 6) == "/block") {
+        return HandleGetBlock(str_endpoint);
+    }
     else {
         LOG_ERROR("GET endpoint not found: " + str_endpoint);
         return {HTTP_NOT_FOUND, "{\"error\": \"Not found\"}"};
@@ -1382,23 +1369,14 @@ std::tuple<int, std::string> CRestApiServer::HandlePOST(const std::string& str_e
     LOG_INFO("Handling POST request for endpoint: " + str_endpoint);
 
     // Route based on endpoint
-    if (str_endpoint == "/transaction") {
+    if (str_endpoint == "/rpc/transaction") {
         return HandlePostTransaction(request.str_body);
-    }
-    else if (str_endpoint == "/files") {
-        return HandlePostFiles(request);
     }
     else if (str_endpoint == "/rpc/addpeer") {
         return HandleRpcAddPeer(request.str_body);
     }
     else if (str_endpoint == "/rpc/ping") {
         return HandleRpcPing();
-    }
-    else if (str_endpoint == "/rpc/minestart") {
-        return HandleRpcMineStart();
-    }
-    else if (str_endpoint == "/rpc/minestop") {
-        return HandleRpcMineStop();
     }
     else if (str_endpoint == "/rpc/minetrigger") {
         return HandleRpcMineTrigger();

@@ -15,17 +15,22 @@
  * hash values. Hash data is stored as a 32-byte binary array internally.
  *
  * Features:
- * - Automatic SHA-256 computation on construction
+ * - SHA-256 computation via ComputeSHA256() static method
+ * - Hex string parsing via constructor
  * - Comparison operators for equality and ordering
  * - Immutable hash value after construction
  * - Binary storage for efficient network transmission
  *
  * Example usage:
- *   CHash hash1("Hello, World!");
- *   CHash hash2("Hello, World!");
+ *   // Compute new hash
+ *   CHash hash1 = CHash::ComputeSHA256("Hello, World!");
+ *   CHash hash2 = CHash::ComputeSHA256("Hello, World!");
  *   if (hash1 == hash2) {
  *       std::cout << "Hashes match: " << hash1.GetData() << std::endl;
  *   }
+ *
+ *   // Parse hex string
+ *   CHash hash3("a1b2c3d4e5f6...");  // 64-character hex string
  */
 class CHash {
 private:
@@ -40,13 +45,24 @@ public:
     CHash();
 
     /**
-     * @brief Construct hash from input string
-     * @param input String to hash using SHA-256
+     * @brief Compute SHA-256 hash of input string
+     * @param input String to hash
+     * @return CHash object containing the SHA-256 hash
      *
-     * Computes SHA-256 hash of input and stores as binary data.
-     * Uses OpenSSL SHA256 function for cryptographic hashing.
+     * Example: CHash hash = CHash::ComputeSHA256("hello world");
+     * This computes the SHA-256 hash of the input string.
      */
-    explicit CHash(const std::string& input);
+    static CHash ComputeSHA256(const std::string& input);
+
+    /**
+     * @brief Construct hash from 64-character hexadecimal string
+     * @param str_hex Hex string representing the hash (must be exactly 64 characters)
+     * @throws std::invalid_argument if hex string is invalid (wrong length or invalid characters)
+     *
+     * Example: CHash("a1b2c3d4...") parses the hex string into binary hash.
+     * Note: This does NOT compute a hash - it parses an existing hash in hex format.
+     */
+    explicit CHash(const std::string& str_hex);
 
     /**
      * @brief Construct hash from binary data

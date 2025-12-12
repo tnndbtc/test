@@ -115,18 +115,25 @@ private:
     std::tuple<int, std::string> HandleGetChain();
 
     /**
+     * @brief Handle GET /transaction?hash=<hash> endpoint
+     * @param str_endpoint Full endpoint string including query parameters
+     * @return Tuple of (HTTP status code, JSON response with transaction data)
+     */
+    std::tuple<int, std::string> HandleGetTransaction(const std::string& str_endpoint);
+
+    /**
+     * @brief Handle GET /block?hash=<hash> endpoint
+     * @param str_endpoint Full endpoint string including query parameters
+     * @return Tuple of (HTTP status code, JSON response with block information)
+     */
+    std::tuple<int, std::string> HandleGetBlock(const std::string& str_endpoint);
+
+    /**
      * @brief Handle POST /transaction endpoint
      * @param str_body Request body containing transaction data
      * @return Tuple of (HTTP status code, JSON response with transaction ID)
      */
     std::tuple<int, std::string> HandlePostTransaction(const std::string& str_body);
-
-    /**
-     * @brief Handle POST /files endpoint (multipart/form-data)
-     * @param request HTTP request with file upload
-     * @return Tuple of (HTTP status code, JSON response with transaction ID)
-     */
-    std::tuple<int, std::string> HandlePostFiles(const CHttpRequest& request);
 
     /**
      * @brief Handle POST /rpc/addpeer endpoint
@@ -146,18 +153,6 @@ private:
      * @return Tuple of (HTTP status code, JSON response with result)
      */
     std::tuple<int, std::string> HandleRpcPing();
-
-    /**
-     * @brief Handle POST /rpc/minestart endpoint - enable continuous mining (localnet only)
-     * @return Tuple of (HTTP status code, JSON response with result)
-     */
-    std::tuple<int, std::string> HandleRpcMineStart();
-
-    /**
-     * @brief Handle POST /rpc/minestop endpoint - disable mining (localnet only)
-     * @return Tuple of (HTTP status code, JSON response with result)
-     */
-    std::tuple<int, std::string> HandleRpcMineStop();
 
     /**
      * @brief Handle POST /rpc/minetrigger endpoint - mine one block immediately (localnet only)

@@ -250,8 +250,9 @@ src/
 
 **CRestApiServer** (src/rest/rest_api_server.h)
 - Multi-threaded HTTP server (1 listener + 5 workers)
-- Endpoints: /chain, /transaction, /files, /mine/start, /mine/stop
-- RPC: /rpc/addpeer, /rpc/getpeer
+- Public GET endpoints: /chain, /transaction?hash=X, /block?hash=X
+- Authenticated RPC endpoints: /rpc/transaction, /rpc/addpeer, /rpc/getpeer, /rpc/minetrigger
+- All /rpc/* endpoints require cookie-based HTTP Basic Auth
 
 **CPeerFilter** (src/peer/peer_filter.h)
 - Tracks which peers know about transactions/blocks

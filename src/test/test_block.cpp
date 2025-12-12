@@ -10,7 +10,7 @@ using namespace UnitTest;
  * @brief Test CBlock constructor
  */
 TEST(Block_Constructor) {
-    CHash previous_hash("previous_block_hash");
+    CHash previous_hash = CHash::ComputeSHA256("previous_block_hash");
     CBlock block(previous_hash, 1, "miner_address");
 
     ASSERT_EQUAL(block.GetHeight(), (int64_t)1, "Height should be 1");
@@ -23,7 +23,7 @@ TEST(Block_Constructor) {
  * @brief Test CBlock hash computation after mining
  */
 TEST(Block_HashComputation) {
-    CHash previous_hash("previous");
+    CHash previous_hash = CHash::ComputeSHA256("previous");
     CBlock block1(previous_hash, 1, "miner1");
     CBlock block2(previous_hash, 2, "miner1");
 
@@ -41,7 +41,7 @@ TEST(Block_HashComputation) {
  * @brief Test CBlock with transactions
  */
 TEST(Block_WithTransactions) {
-    CHash previous_hash("previous");
+    CHash previous_hash = CHash::ComputeSHA256("previous");
     CBlock block(previous_hash, 1, "miner");
 
     // Create some test transactions
@@ -61,7 +61,7 @@ TEST(Block_WithTransactions) {
  * @brief Test CBlock mining
  */
 TEST(Block_Mining) {
-    CHash previous_hash("previous");
+    CHash previous_hash = CHash::ComputeSHA256("previous");
     CBlock block(previous_hash, 1, "miner");
 
     // Add a transaction
@@ -80,7 +80,7 @@ TEST(Block_Mining) {
  * @brief Test CBlock serialization
  */
 TEST(Block_Serialize) {
-    CHash previous_hash("previous_block");
+    CHash previous_hash = CHash::ComputeSHA256("previous_block");
     CBlock block(previous_hash, 5, "test_miner");
 
     // Add transactions
@@ -106,7 +106,7 @@ TEST(Block_Serialize) {
  */
 TEST(Block_Deserialize) {
     // Create and mine original block
-    CHash previous_hash("prev_block");
+    CHash previous_hash = CHash::ComputeSHA256("prev_block");
     CBlock block_orig(previous_hash, 10, "miner_address");
 
     std::vector<uint8_t> data1 = {'d', 'a', 't', 'a', '1'};
@@ -160,7 +160,7 @@ TEST(Block_Deserialize_Invalid) {
  * @brief Test CBlock serialization roundtrip with multiple transactions
  */
 TEST(Block_Serialize_Roundtrip_MultipleTransactions) {
-    CHash previous_hash("test_prev");
+    CHash previous_hash = CHash::ComputeSHA256("test_prev");
     CBlock block_orig(previous_hash, 42, "test_miner_addr");
 
     // Add multiple transactions
@@ -225,7 +225,7 @@ TEST(Block_CreateGenesisBlock) {
  * @brief Test CBlock with no transactions and GetTransactions() returns empty vector
  */
 TEST(Block_NoTransactions_GetTransactions) {
-    CHash previous_hash("previous");
+    CHash previous_hash = CHash::ComputeSHA256("previous");
     CBlock block(previous_hash, 1, "miner");
 
     block.Mine();
@@ -245,7 +245,7 @@ TEST(Block_NoTransactions_GetTransactions) {
  * @brief Test CBlock AddTransaction ignores duplicates
  */
 TEST(Block_AddTransaction_IgnoreDuplicates) {
-    CHash previous_hash("previous");
+    CHash previous_hash = CHash::ComputeSHA256("previous");
     CBlock block(previous_hash, 1, "miner");
 
     // Create a transaction

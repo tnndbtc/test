@@ -109,7 +109,7 @@ class BlockcoreTest(TestFramework):
             "data": "Test transaction with missing fields"
         }
 
-        endpoint = "/transaction"
+        endpoint = "/rpc/transaction"
         self.log_info(f"Attempting to submit invalid transaction to {endpoint}...")
         response = self.node.post(endpoint, json_data=invalid_transaction_data)
 
@@ -117,7 +117,7 @@ class BlockcoreTest(TestFramework):
         self.assert_equal(
             response.status_code,
             400,
-            "POST /transaction with missing 'from' and 'to' returns 400 Bad Request"
+            "POST /rpc/transaction with missing 'from' and 'to' returns 400 Bad Request"
         )
 
         # Parse error response

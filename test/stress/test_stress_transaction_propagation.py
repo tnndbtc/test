@@ -36,7 +36,7 @@ def get_utc_timestamp():
     return f"[{now.strftime('%Y-%m-%d %H:%M:%S')}.{now.microsecond // 1000:03d} UTC]"
 
 
-def worker_process(process_id, node_ports, f_stop_requested, tx_counter, tx_counter_lock,
+def worker_process(process_id, node_ports, node_credentials, f_stop_requested, tx_counter, tx_counter_lock,
                    node_idx, node_idx_lock, process_tx_counts, process_errors, per_node_tx_counts):
     """Worker process that submits transactions until stop signal."""
     local_tx_count = 0
@@ -53,6 +53,7 @@ def worker_process(process_id, node_ports, f_stop_requested, tx_counter, tx_coun
             node_idx.value += 1
 
         target_port = node_ports[target_node_idx]
+        target_auth = node_credentials[target_node_idx]
 
         # Generate transaction
         tx_data = {
@@ -65,7 +66,8 @@ def worker_process(process_id, node_ports, f_stop_requested, tx_counter, tx_coun
         try:
             # because transaction creation is too fast and caused socket
             # read congestion, increase timeout from 5s to 20s
-            response = requests.post(f"http://127.0.0.1:{target_port}/transaction", json=tx_data, timeout=20)
+            response = requests.post(f"http://127.0.0.1:{target_port}/rpc/transaction",
+                                    json=tx_data, auth=target_auth, timeout=20)
             if response.status_code == 200:
                 local_tx_count += 1
                 # Atomically increment per-node counter
@@ -269,8 +271,14 @@ class TransactionPropagationStressTest(TestFramework):
         process_errors = manager.list([0] * n_processes)  # Per-process error counts
         per_node_tx_counts = manager.list([0] * len(self.nodes))  # Track txs sent to each node
 
-        # Get node ports for workers
+        # Get node ports and credentials for workers
         node_ports = [node.port for node in self.nodes]
+        node_credentials = []
+        for i, node in enumerate(self.nodes):
+            creds = node.get_cookie_credentials()
+            if creds is None:
+                raise RuntimeError(f"Failed to get authentication credentials from node{i}")
+            node_credentials.append(creds)
 
         # Start worker processes
         start_time = time.time()
@@ -280,7 +288,7 @@ class TransactionPropagationStressTest(TestFramework):
         for i in range(n_processes):
             p = multiprocessing.Process(
                 target=worker_process,
-                args=(i, node_ports, f_stop_requested, tx_counter, tx_counter_lock,
+                args=(i, node_ports, node_credentials, f_stop_requested, tx_counter, tx_counter_lock,
                       node_idx, node_idx_lock, process_tx_counts, process_errors, per_node_tx_counts),
                 daemon=True
             )

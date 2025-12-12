@@ -28,7 +28,7 @@ from test_framework import TestFramework
 from metrics_collector import MetricsCollector, AggregateMetrics
 
 
-def worker_process(process_id, rest_port, f_stop_requested, tx_counter, tx_counter_lock,
+def worker_process(process_id, rest_port, node_credentials, f_stop_requested, tx_counter, tx_counter_lock,
                    process_tx_counts, process_errors):
     """Worker process that submits transactions until stop signal."""
     local_tx_count = 0
@@ -36,6 +36,9 @@ def worker_process(process_id, rest_port, f_stop_requested, tx_counter, tx_count
 
     # Base URL for REST API
     base_url = f"http://127.0.0.1:{rest_port}"
+
+    # Use pre-loaded credentials passed from main process
+    auth = node_credentials
 
     while not f_stop_requested.is_set():
         # Get transaction ID atomically
@@ -51,7 +54,7 @@ def worker_process(process_id, rest_port, f_stop_requested, tx_counter, tx_count
                 "data": f"stress_tx_process{process_id}_{tx_id}",
                 "fee": 1
             }
-            response = requests.post(f"{base_url}/transaction", json=tx_data, timeout=5)
+            response = requests.post(f"{base_url}/rpc/transaction", json=tx_data, auth=auth, timeout=5)
 
             if response.status_code == 200:
                 local_tx_count += 1
@@ -209,6 +212,11 @@ class TransactionStressTest(TestFramework):
         process_tx_counts = manager.list([0] * n_processes)  # Per-process transaction counts
         process_errors = manager.list([0] * n_processes)  # Per-process error counts
 
+        # Get credentials from node
+        node_credentials = node.get_cookie_credentials()
+        if node_credentials is None:
+            raise RuntimeError("Failed to get authentication credentials from node")
+
         # Start worker processes
         start_time = time.time()
         processes = []
@@ -217,7 +225,7 @@ class TransactionStressTest(TestFramework):
         for i in range(n_processes):
             p = multiprocessing.Process(
                 target=worker_process,
-                args=(i, rest_port, f_stop_requested, tx_counter, tx_counter_lock,
+                args=(i, rest_port, node_credentials, f_stop_requested, tx_counter, tx_counter_lock,
                       process_tx_counts, process_errors),
                 daemon=True
             )

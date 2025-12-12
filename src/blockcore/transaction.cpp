@@ -67,7 +67,7 @@ CTransaction::CTransaction(const std::string& str_owner, const std::string& str_
     str_id_input += std::to_string(m_n_timestamp);
     str_id_input += std::to_string(static_cast<uint8_t>(m_type));
 
-    m_id = CHash(str_id_input);
+    m_id = CHash::ComputeSHA256(str_id_input);
 }
 
 /**
@@ -109,7 +109,7 @@ CTransaction::CTransaction(const std::string& str_owner, const std::string& str_
     str_id_input += std::to_string(static_cast<uint8_t>(m_type));
     str_id_input += str_meta;
 
-    m_id = CHash(str_id_input);
+    m_id = CHash::ComputeSHA256(str_id_input);
 }
 
 std::string CTransaction::Serialize() const {
@@ -255,7 +255,7 @@ std::shared_ptr<CTransaction> CTransaction::Deserialize(const std::string& str_d
         str_id_input += std::to_string(n_timestamp);
         str_id_input += std::to_string(static_cast<uint8_t>(type));
         str_id_input += str_metadata;
-        p_tx->m_id = CHash(str_id_input);
+        p_tx->m_id = CHash::ComputeSHA256(str_id_input);
 
         return p_tx;
     } catch (...) {

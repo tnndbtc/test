@@ -62,7 +62,7 @@ std::shared_ptr<CBlock> CBlock::CreateGenesisBlock() {
     p_genesis_block->m_n_nonce=1106191456;
     std::string str_block_data = zero_hash.GetData() +
                                  std::to_string(0) + std::to_string(p_genesis_block->m_n_timestamp);
-    p_genesis_block->m_hash = CHash(str_block_data + std::to_string(p_genesis_block->m_n_nonce));
+    p_genesis_block->m_hash = CHash::ComputeSHA256(str_block_data + std::to_string(p_genesis_block->m_n_nonce));
 
     return p_genesis_block;
 }
@@ -101,7 +101,7 @@ void CBlock::Mine() {
 
     while(true) {
         m_n_nonce = dis(gen);
-        m_hash = CHash(str_block_data + std::to_string(m_n_nonce));
+        m_hash = CHash::ComputeSHA256(str_block_data + std::to_string(m_n_nonce));
 
         if(m_hash.GetData().substr(0, 4) < "0fff") {
             break;

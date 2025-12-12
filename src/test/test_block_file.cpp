@@ -79,7 +79,7 @@ std::shared_ptr<CBlock> CreateTestBlock(int64_t n_height, const std::string& str
                                         size_t n_tx_count = 0) {
     CHash prev_hash;
     if (n_height > 0) {
-        prev_hash = CHash("previous_block_hash_" + std::to_string(n_height));
+        prev_hash = CHash::ComputeSHA256("previous_block_hash_" + std::to_string(n_height));
     }
 
     auto p_block = std::make_shared<CBlock>(prev_hash, n_height, str_miner);
@@ -219,7 +219,7 @@ TEST(BlockFileLoadNonExistentBlock) {
     CBlockFile blockfile(str_test_dir);
 
     // Try to load block that doesn't exist
-    CHash fake_hash("nonexistent_hash_12345678");
+    CHash fake_hash = CHash::ComputeSHA256("nonexistent_hash_12345678");
     auto p_loaded = blockfile.LoadBlock(fake_hash);
 
     ASSERT_NULL(p_loaded, "Should be null");
@@ -237,7 +237,7 @@ TEST(BlockFileBlockExists) {
     CBlockFile blockfile(str_test_dir);
 
     // Test non-existent block
-    CHash fake_hash("fake_hash_123");
+    CHash fake_hash = CHash::ComputeSHA256("fake_hash_123");
     ASSERT_FALSE(blockfile.BlockExists(fake_hash), "Assertion should be true");
 
     // Save a block

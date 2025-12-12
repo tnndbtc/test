@@ -31,26 +31,174 @@ curl http://localhost:28443/chain
 
 ---
 
-#### POST /transaction
+#### GET /transaction
 
-Submit a new transaction to the mempool.
+Retrieve transaction data by hash.
 
 **Request:**
 ```bash
-curl -X POST http://localhost:28443/transaction \
+curl "http://localhost:28443/transaction?hash=a1b2c3d4e5f6..."
+```
+
+**Query Parameters:**
+- `hash` (string, required) - Transaction hash (hex string)
+
+**Response (Success):**
+```json
+{
+  "status": "success",
+  "transaction_hash": "a1b2c3d4e5f6...",
+  "data_hex": "48656c6c6f20426c6f636b636861696e206461746121",
+  "data_size": 23
+}
+```
+
+**Response (Error - Missing Hash):**
+```json
+{
+  "error": "Bad Request",
+  "message": "Missing query parameter 'hash'"
+}
+```
+
+**Response (Error - Not Found):**
+```json
+{
+  "error": "Not Found",
+  "message": "Transaction not found"
+}
+```
+
+**Fields:**
+- `status` (string) - "success"
+- `transaction_hash` (string) - Transaction hash
+- `data_hex` (string) - Transaction data encoded as hex string
+- `data_size` (integer) - Size of transaction data in bytes
+
+**Status Codes:**
+- 200 OK - Transaction found
+- 400 Bad Request - Missing or invalid hash parameter
+- 404 Not Found - Transaction not found
+- 500 Internal Server Error - Server error
+
+**Notes:**
+- No authentication required
+- Transaction data is hex-encoded to safely handle binary data
+- Searches all blocks in the blockchain
+
+---
+
+#### GET /block
+
+Retrieve block information by hash.
+
+**Request:**
+```bash
+curl "http://localhost:28443/block?hash=b1c2d3e4f5a6..."
+```
+
+**Query Parameters:**
+- `hash` (string, required) - Block hash (hex string)
+
+**Response (Success):**
+```json
+{
+  "status": "success",
+  "block_hash": "b1c2d3e4f5a6...",
+  "height": 42,
+  "timestamp": 1234567890,
+  "nonce": 123456,
+  "transaction_count": 5,
+  "miner": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
+  "difficulty": 1000,
+  "cumulative_data_size": 1048576,
+  "previous_block": "a1b2c3d4e5f6..."
+}
+```
+
+**Response (Error - Missing Hash):**
+```json
+{
+  "error": "Bad Request",
+  "message": "Missing query parameter 'hash'"
+}
+```
+
+**Response (Error - Not Found):**
+```json
+{
+  "error": "Not Found",
+  "message": "Block not found"
+}
+```
+
+**Fields:**
+- `status` (string) - "success"
+- `block_hash` (string) - Block hash
+- `height` (integer) - Block height in chain
+- `timestamp` (integer) - UNIX timestamp
+- `nonce` (integer) - Mining nonce
+- `transaction_count` (integer) - Number of transactions in block
+- `miner` (string) - Miner address
+- `difficulty` (integer) - Block difficulty
+- `cumulative_data_size` (integer) - Total data size up to this block
+- `previous_block` (string) - Previous block hash
+
+**Status Codes:**
+- 200 OK - Block found
+- 400 Bad Request - Missing or invalid hash parameter
+- 404 Not Found - Block not found
+- 500 Internal Server Error - Server error
+
+**Notes:**
+- No authentication required
+- Checks memory first, then loads from disk if needed
+
+---
+
+## RPC API
+
+**Authentication Required:** All `/rpc/*` endpoints require HTTP Basic Authentication using credentials from the `.cookie` file located in `{data_dir}/{network}/.cookie`. The cookie file format is `__cookie__:<64 hex characters>`.
+
+**Example with authentication:**
+```bash
+# Load credentials
+COOKIE=$(cat data/localnet/.cookie)
+
+# Make authenticated request
+curl -u "$COOKIE" -X POST http://localhost:48443/rpc/transaction \
+  -H "Content-Type: application/json" \
+  -d '{"from":"addr1","to":"addr2","data":"test","fee":1}'
+```
+
+RPC endpoints for transaction submission, peer management, and mining control.
+
+---
+
+### POST /rpc/transaction
+
+Submit a new transaction to the mempool (requires authentication).
+
+**Request:**
+```bash
+# Load credentials from cookie file
+COOKIE=$(cat data/localnet/.cookie)
+
+# Submit transaction
+curl -u "$COOKIE" -X POST http://localhost:48443/rpc/transaction \
   -H "Content-Type: application/json" \
   -d '{
     "from": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
     "to": "bc1qw508d6qejxtdg4y5r3zarvaryv98gj9p8t5z6",
-    "data": "SGVsbG8gQmxvY2tjaGFpbiBkYXRhIQ==",
-    "fee": 0.00012
+    "data": "Hello Blockchain data!",
+    "fee": 1
   }'
 ```
 
 **Request Body:**
 - `from` (string, required) - Sender address
 - `to` (string, required) - Recipient address
-- `data` (string, required) - Transaction data (treated as plain text, not base64)
+- `data` (string, required) - Transaction data (plain text string)
 - `fee` (number, optional) - Transaction fee, default: 0
 
 **Response (Success):**
@@ -61,11 +209,19 @@ curl -X POST http://localhost:28443/transaction \
   "from": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
   "to": "bc1qw508d6qejxtdg4y5r3zarvaryv98gj9p8t5z6",
   "data_size": 23,
-  "fee": 0
+  "fee": 1
 }
 ```
 
-**Response (Error):**
+**Response (Error - Missing Authentication):**
+```json
+{
+  "error": "Unauthorized",
+  "message": "Authentication required"
+}
+```
+
+**Response (Error - Missing Fields):**
 ```json
 {
   "error": "Bad Request",
@@ -76,79 +232,31 @@ curl -X POST http://localhost:28443/transaction \
 **Status Codes:**
 - 200 OK - Transaction accepted
 - 400 Bad Request - Missing or invalid fields
+- 401 Unauthorized - Missing or invalid authentication
 - 500 Internal Server Error - Server error
 
----
-
-#### POST /files
-
-Upload a file as a transaction.
-
-**Request (Multipart Form Data):**
-```bash
-curl -X POST http://localhost:28443/files \
-  -F "file=@/tmp/test_upload.txt"
-```
-
-**Request (Raw Binary):**
-```bash
-curl -X POST http://localhost:28443/files \
-  -H "Content-Type: application/octet-stream" \
-  --data-binary "@/tmp/test_upload.txt"
-```
-
-**Response (Success):**
-```json
-{
-  "status": "success",
-  "transaction_id": "a1b2c3d4e5f6...",
-  "uuid": "550e8400-e29b-41d4-a716-446655440000",
-  "original_filename": "test_upload.txt",
-  "saved_path": "./data/550e8400-e29b-41d4-a716-446655440000",
-  "size": 1024,
-  "message": "File uploaded and saved to disk"
-}
-```
-
-**Response (Error):**
-```json
-{
-  "error": "Bad Request",
-  "message": "Empty file data"
-}
-```
-
-**Behavior:**
-- File is saved to `data_dir` with UUID filename
-- Transaction created with file data
-- Owner: miner address (from config)
-- Target: "file_storage"
-- Fee: 0
-
-**Status Codes:**
-- 200 OK - File uploaded successfully
-- 400 Bad Request - Empty file or invalid format
-- 500 Internal Server Error - Failed to save file
+**Notes:**
+- **Authentication required** - Must provide HTTP Basic Auth with cookie credentials
+- Transaction is added to mempool
+- Will be included in next mined block
 
 ---
-
----
-
-## RPC API
-
-RPC endpoints for peer management (also HTTP POST requests).
 
 ### POST /rpc/addpeer
 
-Add an outbound peer connection.
+Add an outbound peer connection (requires authentication).
 
 **Request:**
 ```bash
-curl -X POST http://localhost:28443/rpc/addpeer \
+# Load credentials from cookie file
+COOKIE=$(cat data/localnet/.cookie)
+
+# Add peer
+curl -u "$COOKIE" -X POST http://localhost:48443/rpc/addpeer \
   -H "Content-Type: application/json" \
   -d '{
     "address": "127.0.0.1",
-    "port": 28334
+    "port": 48334
   }'
 ```
 
@@ -206,11 +314,15 @@ curl -X POST http://localhost:28443/rpc/addpeer \
 
 ### GET /rpc/getpeer
 
-Get list of all connected peers.
+Get list of all connected peers (requires authentication).
 
 **Request:**
 ```bash
-curl http://localhost:28443/rpc/getpeer
+# Load credentials from cookie file
+COOKIE=$(cat data/localnet/.cookie)
+
+# Get peer list
+curl -u "$COOKIE" http://localhost:48443/rpc/getpeer
 ```
 
 **Response:**
@@ -237,93 +349,22 @@ curl http://localhost:28443/rpc/getpeer
 
 **Status Codes:**
 - 200 OK - Peer list retrieved
+- 401 Unauthorized - Missing or invalid authentication
 - 500 Internal Server Error - Server error
-
----
-
-### POST /rpc/minestart
-
-Start continuous mining (localnet only).
-
-**Request:**
-```bash
-curl -X POST http://localhost:48443/rpc/minestart
-```
-
-**Response (Success):**
-```json
-{
-  "status": "success",
-  "mining_enabled": true,
-  "message": "Mining started"
-}
-```
-
-**Response (Forbidden - Wrong Network):**
-```json
-{
-  "error": "Forbidden",
-  "message": "Mining control is only available on localnet. Current network: mainnet"
-}
-```
-
-**Status Codes:**
-- 200 OK - Mining started
-- 403 Forbidden - Not running on localnet
-- 500 Internal Server Error - Server error
-
-**Notes:**
-- **Localnet only** - Returns 403 Forbidden on mainnet/testnet
-- Enables automatic continuous mining
-- Mining continues until explicitly stopped with /rpc/minestop
-
----
-
-### POST /rpc/minestop
-
-Stop continuous mining (localnet only).
-
-**Request:**
-```bash
-curl -X POST http://localhost:48443/rpc/minestop
-```
-
-**Response (Success):**
-```json
-{
-  "status": "success",
-  "mining_enabled": false,
-  "message": "Mining stopped"
-}
-```
-
-**Response (Forbidden - Wrong Network):**
-```json
-{
-  "error": "Forbidden",
-  "message": "Mining control is only available on localnet. Current network: mainnet"
-}
-```
-
-**Status Codes:**
-- 200 OK - Mining stopped
-- 403 Forbidden - Not running on localnet
-- 500 Internal Server Error - Server error
-
-**Notes:**
-- **Localnet only** - Returns 403 Forbidden on mainnet/testnet
-- Stops automatic mining
-- Does not affect /rpc/minetrigger (which works independently)
 
 ---
 
 ### POST /rpc/minetrigger
 
-Mine one block immediately (localnet only).
+Mine one block immediately (localnet only, requires authentication).
 
 **Request:**
 ```bash
-curl -X POST http://localhost:48443/rpc/minetrigger
+# Load credentials from cookie file
+COOKIE=$(cat data/localnet/.cookie)
+
+# Trigger block mining
+curl -u "$COOKIE" -X POST http://localhost:48443/rpc/minetrigger
 ```
 
 **Response (Success):**
@@ -359,11 +400,15 @@ curl -X POST http://localhost:48443/rpc/minetrigger
 
 ### POST /rpc/setmocktime
 
-Set mock time for testing time-dependent logic (localnet only).
+Set mock time for testing time-dependent logic (localnet only, requires authentication).
 
 **Request:**
 ```bash
-curl -X POST http://localhost:48443/rpc/setmocktime \
+# Load credentials from cookie file
+COOKIE=$(cat data/localnet/.cookie)
+
+# Set mock time
+curl -u "$COOKIE" -X POST http://localhost:48443/rpc/setmocktime \
   -H "Content-Type: application/json" \
   -d '{"time": 1234567890}'
 ```
@@ -444,11 +489,15 @@ curl -X POST http://localhost:48443/rpc/setmocktime -d '{"time": 0}'
 
 ### POST /rpc/triggerrotation
 
-Trigger immediate peer rotation check (localnet only).
+Trigger immediate peer rotation check (localnet only, requires authentication).
 
 **Request:**
 ```bash
-curl -X POST http://localhost:48443/rpc/triggerrotation
+# Load credentials from cookie file
+COOKIE=$(cat data/localnet/.cookie)
+
+# Trigger rotation
+curl -u "$COOKIE" -X POST http://localhost:48443/rpc/triggerrotation
 ```
 
 **Request Body:**
@@ -483,22 +532,29 @@ curl -X POST http://localhost:48443/rpc/triggerrotation
 
 **Example Usage in Tests:**
 ```bash
+# Load credentials
+COOKIE=$(cat data/localnet/.cookie)
+
 # Set mock time to trigger rotation interval
-curl -X POST http://localhost:48443/rpc/setmocktime -d '{"time": 11800}'
+curl -u "$COOKIE" -X POST http://localhost:48443/rpc/setmocktime -d '{"time": 11800}'
 
 # Force rotation check immediately (instead of waiting 5 seconds)
-curl -X POST http://localhost:48443/rpc/triggerrotation
+curl -u "$COOKIE" -X POST http://localhost:48443/rpc/triggerrotation
 ```
 
 ---
 
 ### POST /rpc/disconnectpeer
 
-Disconnect a specific peer connection (localnet only).
+Disconnect a specific peer connection (localnet only, requires authentication).
 
 **Request:**
 ```bash
-curl -X POST http://localhost:48443/rpc/disconnectpeer \
+# Load credentials from cookie file
+COOKIE=$(cat data/localnet/.cookie)
+
+# Disconnect peer
+curl -u "$COOKIE" -X POST http://localhost:48443/rpc/disconnectpeer \
   -H "Content-Type: application/json" \
   -d '{
     "address": "127.0.0.1",

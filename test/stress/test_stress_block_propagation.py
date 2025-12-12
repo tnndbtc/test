@@ -54,7 +54,7 @@ def worker_process(process_id, node_ports, node_credentials, f_stop_requested, b
                 "data": f"tx_process{process_id}_block{block_id}",
                 "fee": 1
             }
-            tx_response = requests.post(f"{base_url}/transaction", json=tx_data, timeout=5)
+            tx_response = requests.post(f"{base_url}/rpc/transaction", json=tx_data, auth=credentials, timeout=5)
 
             # Then trigger mining on the selected node
             mine_response = requests.post(
