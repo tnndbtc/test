@@ -328,7 +328,7 @@ class TransactionStressTest(TestFramework):
         # Step 8: Export metrics
         self.log_info("Step 8: Exporting metrics...")
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        output_file = os.path.join(results_dir, f"transaction_stress_{timestamp}.json")
+        output_file = os.path.join(results_dir, f"transaction_{timestamp}.json")
 
         # Add additional metadata
         aggregate.metadata['stress_stats'] = {

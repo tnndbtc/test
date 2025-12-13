@@ -75,10 +75,10 @@ def extract_test_name(filename):
     # Map common patterns
     if base == 'block':
         return 'test_stress_block'
-    elif base.startswith('transaction_stress'):
-        return 'test_stress_transaction'
     elif base.startswith('transaction_propagation'):
         return 'test_stress_transaction_propagation'
+    elif base.startswith('transaction'):
+        return 'test_stress_transaction'
     elif 'block_propagation' in base:
         return 'test_stress_block_propagation'
     elif 'orphan' in base or base == 'orphan_blocks':
