@@ -37,7 +37,7 @@ jobs:
           #   build_type: Debug
 
           - os: ubuntu-24.04-arm
-            label: x86_64
+            label: arm64
             c_compiler: clang
             cpp_compiler: clang++
             build_type: Debug
@@ -48,6 +48,13 @@ jobs:
           #   c_compiler: cl
           #   cpp_compiler: cl
           #   build_type: Debug
+
+          # Windows with MSVC ARM
+          - os: windows-11-arm
+            label: arm64
+            c_compiler: cl
+            cpp_compiler: cl
+            build_type: Debug
 
           # macOS ARM64 with Clang
           # - os: macos-latest
@@ -89,12 +96,12 @@ jobs:
 
     # -------- Windows: Setup MSVC env --------
     - name: Setup MSVC (Windows only)
-      if: matrix.os == 'windows-latest'
+      if: matrix.os == 'windows-latest' || matrix.os == 'windows-11-arm'
       uses: ilammy/msvc-dev-cmd@v1
 
     # Windows Boost (header-only)
     - name: Install Boost header-only (Windows)
-      if: matrix.os == 'windows-latest'
+      if: matrix.os == 'windows-latest' || matrix.os == 'windows-11-arm'
       shell: pwsh
       run: |
         C:\Windows\System32\curl.exe -L -o boost.zip https://sourceforge.net/projects/boost/files/boost/1.85.0/boost_1_85_0.tar.bz2/download
@@ -133,7 +140,7 @@ jobs:
       shell: bash
       
     - name: Configure CMake (Windows)
-      if: matrix.os == 'windows-latest'
+      if: matrix.os == 'windows-latest' || matrix.os == 'windows-11-arm'
       shell: pwsh
       run: |
         cmake -B build `
@@ -162,7 +169,7 @@ jobs:
       shell: bash
 
     - name: Build (Windows)
-      if: matrix.os == 'windows-latest'
+      if: matrix.os == 'windows-latest' || matrix.os == 'windows-11-arm'
       run: |
         echo Building with %BUILD_CORES% cores
         cmake --build build --config ${{ matrix.build_type }} -- /m:%BUILD_CORES%
@@ -191,7 +198,7 @@ jobs:
       # continue-on-error: true
       
     - name: Unit Test (Windows)
-      if: matrix.os == 'windows-latest'
+      if: matrix.os == 'windows-latest' || matrix.os == 'windows-11-arm'
       run: |
         cd build\src\test\Debug
         .\test_all.exe
@@ -244,7 +251,7 @@ jobs:
     #     if-no-files-found: ignore
 
     - name: Functional Test (Windows)
-      if: matrix.os == 'windows-latest'
+      if: matrix.os == 'windows-latest' || matrix.os == 'windows-11-arm'
       run: |
         cd build
         python3 test\\functional\\test_runner.py --tmpdir "C:\Temp" --nocleanup
@@ -262,7 +269,7 @@ jobs:
     # POST BUILD WITH DOCKER
     ############################################################
     - name: Run docker image (Linux only)
-      if: matrix.os == 'ubuntu-latest'
+      if: matrix.os == 'ubuntu-latest' || matrix.os == 'macos-latest' || matrix.os == 'ubuntu-24.04-arm'
       run: |
         cd test/docker
         ./test.sh
