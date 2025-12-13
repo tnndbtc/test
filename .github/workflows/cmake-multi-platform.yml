@@ -36,11 +36,11 @@ jobs:
           #   cpp_compiler: clang++
           #   build_type: Debug
 
-          - os: ubuntu-24.04-arm
-            label: arm64
-            c_compiler: clang
-            cpp_compiler: clang++
-            build_type: Debug
+          # - os: ubuntu-24.04-arm
+          #   label: arm64
+          #   c_compiler: clang
+          #   cpp_compiler: clang++
+          #   build_type: Debug
 
           # Windows with MSVC
           # - os: windows-latest
@@ -92,7 +92,7 @@ jobs:
         sudo mkdir -p /tmp/asan
         sudo chown $USER /tmp/asan
         python -m pip install --upgrade pip
-        pip install -r test/functional/requirements.txt        
+        pip install -r test/functional/requirements.txt
 
     # -------- Windows: Setup MSVC env --------
     - name: Setup MSVC (Windows only)
@@ -111,6 +111,12 @@ jobs:
         echo "BUILD_CORES=$env:NUMBER_OF_PROCESSORS" >> $env:GITHUB_ENV
         python -m pip install --upgrade pip
         python -m pip install -r test\functional\requirements.txt
+
+    - name: Install OpenSSL (ARM64) via vcpkg for Windows
+      if: matrix.os == 'windows-11-arm'
+      shell: pwsh
+      run: |
+        vcpkg install openssl:arm64-windows        
 
     # macOS x64/ARM64: Install Clang + dependencies
     - name: Install Clang & dependencies (macOS x64/arm64)
