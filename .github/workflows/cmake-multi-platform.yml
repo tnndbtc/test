@@ -30,45 +30,45 @@ jobs:
       matrix:
         include:
           # Ubuntu with Clang
-          # - os: ubuntu-latest
-          #   label: x86_64
-          #   c_compiler: clang
-          #   cpp_compiler: clang++
-          #   build_type: Debug
+          - os: ubuntu-latest
+            label: x86_64
+            c_compiler: clang
+            cpp_compiler: clang++
+            build_type: Debug
 
-          # - os: ubuntu-24.04-arm
-          #   label: arm64
-          #   c_compiler: clang
-          #   cpp_compiler: clang++
-          #   build_type: Debug
+          - os: ubuntu-24.04-arm
+            label: arm64
+            c_compiler: clang
+            cpp_compiler: clang++
+            build_type: Debug
 
           # Windows with MSVC
-          # - os: windows-latest
-          #   label: x86_64
-          #   c_compiler: cl
-          #   cpp_compiler: cl
-          #   build_type: Debug
-
-          # Windows with MSVC ARM
-          - os: windows-11-arm
-            label: arm64
+          - os: windows-latest
+            label: x86_64
             c_compiler: cl
             cpp_compiler: cl
             build_type: Debug
 
-          # macOS ARM64 with Clang
-          # - os: macos-latest
+          # Windows with MSVC ARM
+          # - os: windows-11-arm
           #   label: arm64
-          #   c_compiler: clang
-          #   cpp_compiler: clang++
+          #   c_compiler: cl
+          #   cpp_compiler: cl
           #   build_type: Debug
 
+          # macOS ARM64 with Clang
+          - os: macos-latest
+            label: arm64
+            c_compiler: clang
+            cpp_compiler: clang++
+            build_type: Debug
+
           # macOS x64 with Clang
-          # - os: macos-15
-          #   label: x86_64
-          #   c_compiler: clang
-          #   cpp_compiler: clang++
-          #   build_type: Debug
+          - os: macos-15
+            label: x86_64
+            c_compiler: clang
+            cpp_compiler: clang++
+            build_type: Debug
 
     steps:
     - uses: actions/checkout@v4
@@ -112,11 +112,11 @@ jobs:
         python -m pip install --upgrade pip
         python -m pip install -r test\functional\requirements.txt
 
-    - name: Install OpenSSL (ARM64) via vcpkg for Windows
-      if: matrix.os == 'windows-11-arm'
-      shell: pwsh
-      run: |
-        vcpkg install openssl:arm64-windows        
+    # - name: Install OpenSSL (ARM64) via vcpkg for Windows
+    #   if: matrix.os == 'windows-11-arm'
+    #   shell: pwsh
+    #   run: |
+    #     vcpkg install openssl:arm64-windows        
 
     # macOS x64/ARM64: Install Clang + dependencies
     - name: Install Clang & dependencies (macOS x64/arm64)
