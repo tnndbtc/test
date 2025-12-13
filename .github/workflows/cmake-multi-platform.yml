@@ -30,32 +30,38 @@ jobs:
       matrix:
         include:
           # Ubuntu with Clang
-          - os: ubuntu-latest
+          # - os: ubuntu-latest
+          #   label: x86_64
+          #   c_compiler: clang
+          #   cpp_compiler: clang++
+          #   build_type: Debug
+
+          - os: ubuntu-24.04-arm
             label: x86_64
             c_compiler: clang
             cpp_compiler: clang++
             build_type: Debug
 
           # Windows with MSVC
-          - os: windows-latest
-            label: x86_64
-            c_compiler: cl
-            cpp_compiler: cl
-            build_type: Debug
+          # - os: windows-latest
+          #   label: x86_64
+          #   c_compiler: cl
+          #   cpp_compiler: cl
+          #   build_type: Debug
 
           # macOS ARM64 with Clang
-          - os: macos-latest
-            label: arm64
-            c_compiler: clang
-            cpp_compiler: clang++
-            build_type: Debug
+          # - os: macos-latest
+          #   label: arm64
+          #   c_compiler: clang
+          #   cpp_compiler: clang++
+          #   build_type: Debug
 
           # macOS x64 with Clang
-          - os: macos-15
-            label: x86_64
-            c_compiler: clang
-            cpp_compiler: clang++
-            build_type: Debug
+          # - os: macos-15
+          #   label: x86_64
+          #   c_compiler: clang
+          #   cpp_compiler: clang++
+          #   build_type: Debug
 
     steps:
     - uses: actions/checkout@v4
@@ -70,7 +76,7 @@ jobs:
     #######################################################
     # -------- Linux: Install Clang --------
     - name: Install Clang (Linux only)
-      if: matrix.os == 'ubuntu-latest'
+      if: matrix.os == 'ubuntu-latest' || matrix.os == 'ubuntu-24.04-arm'
       run: |
         sudo apt update
         sudo apt install -y openssh-server net-tools git cmake llvm clang lldb lld \
@@ -117,7 +123,7 @@ jobs:
     # Configure
     #######################################################      
     - name: Configure CMake (Linux)
-      if: matrix.os == 'ubuntu-latest'
+      if: matrix.os == 'ubuntu-latest' || matrix.os == 'ubuntu-24.04-arm'
       run: |
         cmake -B build \
           -DBUILD_TESTS=ON \
@@ -149,7 +155,7 @@ jobs:
     #######################################################
 
     - name: Build (Linux)
-      if: matrix.os == 'ubuntu-latest'
+      if: matrix.os == 'ubuntu-latest' || matrix.os == 'ubuntu-24.04-arm'
       run: |
         echo "Building with cmake --build build -- -j$(nproc)"
         cmake --build build -- -j$(nproc)
@@ -173,7 +179,7 @@ jobs:
     #######################################################
 
     - name: Unit Test (Linux)
-      if: matrix.os == 'ubuntu-latest'
+      if: matrix.os == 'ubuntu-latest' || matrix.os == 'ubuntu-24.04-arm'
       run: |
         export ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:malloc_context_size=10:log_path=/tmp/asan/asan.log:strict_string_checks=1
         export UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1
@@ -204,7 +210,7 @@ jobs:
     #######################################################
 
     - name: Functional Test (Linux)
-      if: matrix.os == 'ubuntu-latest'
+      if: matrix.os == 'ubuntu-latest' || matrix.os == 'ubuntu-24.04-arm'
       run: |
         export ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:malloc_context_size=10:log_path=/tmp/asan/asan.log:strict_string_checks=1
         export UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1
