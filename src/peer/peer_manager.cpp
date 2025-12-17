@@ -23,6 +23,7 @@
 #include "utils/threadname.h"
 #include "utils/hash.h"
 #include "utils/network.h"
+#include "utils/address.h"
 #include "utils/config.h"
 #include "utils/get_public_ip.h"
 #include "logger/logger.h"
@@ -1455,7 +1456,7 @@ void CPeerManager::HandleTxMessage(std::shared_ptr<CPeerNode> p_peer_shared, con
     }
 
     LOG_INFO("Received TX from peer " + p_peer_shared->GetIdentifier() +
-             " (transaction ID: " + p_tx->m_id.GetData() + "from: " +  p_tx->m_str_owner + " to: " + p_tx->m_str_target + "...)");
+             " (transaction ID: " + p_tx->m_id.GetData() + " from: " + AddressToHex(p_tx->m_from) + "...)");
 
     // Add transaction to blockweave mempool
     if (p_blockweave) {
@@ -2120,7 +2121,7 @@ void CPeerManager::BroadcastInventoryByPeerKnowledge(const std::vector<std::pair
             if (item.first == ObjectType::TRANSACTION && p_blockweave) {
                 std::shared_ptr<CTransaction> p_tx = p_blockweave->GetTransactionFromMempool(hash_trace);
                 if (p_tx) {
-                    str_log += " from: " + p_tx->m_str_owner + " to: " + p_tx->m_str_target;
+                    str_log += " from: " + AddressToHex(p_tx->m_from);
                 }
             }
 

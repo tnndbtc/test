@@ -3,6 +3,7 @@
 #include "logger/logger.h"
 #include "peer/peer_message.h"
 #include "utils/settings.h"
+#include "utils/address.h"
 #include <iostream>
 #include <random>
 #include <algorithm>
@@ -89,7 +90,7 @@ CBlockweave::CBlockweave(const std::string& str_data_dir)
 
 void CBlockweave::AddTransaction(std::shared_ptr<CTransaction> tx) {
     std::string str_tx_id;
-    LOG_TRACE("Enter ::AddTransaction: transaction id: " + tx->m_id.GetData() + " from: " + tx->m_str_owner + " to: " + tx->m_str_target);
+    LOG_TRACE("Enter ::AddTransaction: transaction id: " + tx->m_id.GetData() + " from: " + AddressToHex(tx->m_from));
 
     {
         std::unique_lock<std::shared_mutex> lock(cs_rw_m_mempool);

@@ -123,25 +123,45 @@ class BlockUtils:
                 cumulative_data_size += len(data.encode('utf-8'))
 
         # Build transaction IDs string for mining
-        # Transaction ID is computed as hash of owner + target + data + reward + timestamp + type + metadata
+        # Transaction ID is computed from: version, nonce, from, type, data, fee, signature
+        # (matches C++ transaction.cpp:220-229)
         tx_ids_str = ""
         for tx in transactions:
-            tx_id_input = tx['owner'] + tx['target']
+            # Build ID input string matching C++ implementation
+            tx_id_input = b''
+
+            # Version (as string of integer)
+            tx_id_input += str(tx.get('version', 0)).encode('utf-8')
+
+            # Nonce (as string of integer)
+            tx_id_input += str(tx.get('nonce', 0)).encode('utf-8')
+
+            # From address (raw bytes)
+            from_bytes = tx.get('from', b'')
+            if isinstance(from_bytes, str):
+                from_bytes = bytes.fromhex(from_bytes.replace('0x', ''))
+            tx_id_input += from_bytes
+
+            # Type (as string of integer)
+            tx_id_input += str(tx['type']).encode('utf-8')
+
+            # Data (raw bytes)
             data = tx.get('data', b'')
-            if isinstance(data, bytes):
-                tx_id_input += data.decode('utf-8', errors='ignore')
-            else:
-                tx_id_input += data
-            tx_id_input += str(tx['reward'])
-            tx_id_input += str(tx['timestamp'])
-            tx_id_input += str(tx['type'])
-            # Include metadata if present (matches C++ transaction.cpp:110)
-            metadata = tx.get('metadata', '')
-            if metadata:
-                tx_id_input += metadata
+            if isinstance(data, str):
+                data = data.encode('utf-8')
+            tx_id_input += data
+
+            # Fee (as string of integer)
+            tx_id_input += str(tx.get('fee', 0)).encode('utf-8')
+
+            # Signature (raw bytes)
+            signature_bytes = tx.get('signature', b'')
+            if isinstance(signature_bytes, str):
+                signature_bytes = bytes.fromhex(signature_bytes.replace('0x', ''))
+            tx_id_input += signature_bytes
 
             # Compute hash (matching C++ implementation)
-            tx_id_hash = hashlib.sha256(tx_id_input.encode('utf-8')).digest()
+            tx_id_hash = hashlib.sha256(tx_id_input).digest()
             tx_ids_str += tx_id_hash.hex()
 
         block = {
@@ -174,46 +194,57 @@ class BlockUtils:
     @staticmethod
     def serialize_transaction(tx):
         """
-        Serialize a transaction to binary format matching C++ implementation.
+        Serialize a transaction to binary format matching NEW C++ implementation.
 
-        Format (from transaction.cpp:115-171):
-        [owner_len:4][owner][target_len:4][target][data_len:4][data]
-        [reward:8][timestamp:8][type:1][metadata_len:4][metadata]
+        Format (from transaction.cpp:69-134):
+        [version:1][nonce:8][from:20][type:1][data_len:4][data]
+        [fee:8][sig_len:4][signature][metadata_len:4][metadata]
 
         Args:
-            tx: Transaction dict with keys: owner, target, data, reward, timestamp, type, metadata
+            tx: Transaction dict with keys: version, nonce, from, type, data,
+                fee, signature, metadata
 
         Returns:
             bytes: Serialized transaction data
         """
         result = b''
 
-        # Owner (length + data)
-        owner_bytes = tx['owner'].encode('utf-8')
-        result += struct.pack('!I', len(owner_bytes))
-        result += owner_bytes
+        # Version (1 byte)
+        result += struct.pack('!B', tx.get('version', 0))
 
-        # Target (length + data)
-        target_bytes = tx['target'].encode('utf-8')
-        result += struct.pack('!I', len(target_bytes))
-        result += target_bytes
+        # Nonce (8 bytes, network byte order)
+        result += struct.pack('!Q', tx.get('nonce', 0))
+
+        # From address (20 bytes)
+        from_bytes = tx['from']
+        if isinstance(from_bytes, str):
+            # Convert hex string to bytes if needed
+            from_bytes = bytes.fromhex(from_bytes.replace('0x', ''))
+        # Pad or truncate to exactly 20 bytes
+        if len(from_bytes) < 20:
+            from_bytes = from_bytes + b'\x00' * (20 - len(from_bytes))
+        result += from_bytes[:20]
+
+        # Type (1 byte)
+        result += struct.pack('!B', tx['type'])
 
         # Data (length + data)
         data_bytes = tx['data'] if isinstance(tx['data'], bytes) else tx['data'].encode('utf-8')
         result += struct.pack('!I', len(data_bytes))
         result += data_bytes
 
-        # Reward (8 bytes, network byte order)
-        result += struct.pack('!Q', tx['reward'])
+        # Fee (8 bytes, network byte order)
+        result += struct.pack('!Q', tx.get('fee', 0))
 
-        # Timestamp (8 bytes, network byte order)
-        result += struct.pack('!Q', tx['timestamp'])
-
-        # Type (1 byte)
-        result += struct.pack('!B', tx['type'])
+        # Signature (length + data)
+        signature_bytes = tx.get('signature', b'')
+        if isinstance(signature_bytes, str):
+            signature_bytes = bytes.fromhex(signature_bytes.replace('0x', ''))
+        result += struct.pack('!I', len(signature_bytes))
+        result += signature_bytes
 
         # Metadata (length + data)
-        metadata_bytes = tx['metadata'].encode('utf-8')
+        metadata_bytes = tx.get('metadata', '').encode('utf-8')
         result += struct.pack('!I', len(metadata_bytes))
         result += metadata_bytes
 
@@ -286,6 +317,31 @@ class BlockUtils:
             result += tx_data
 
         return result
+
+    @staticmethod
+    def create_test_address(seed=0):
+        """
+        Create a deterministic 20-byte test address.
+
+        Args:
+            seed: Integer seed for deterministic address generation
+
+        Returns:
+            bytes: 20-byte address
+        """
+        import hashlib
+        hash_input = f"test_address_{seed}".encode('utf-8')
+        return hashlib.sha256(hash_input).digest()[:20]
+
+    @staticmethod
+    def create_empty_signature():
+        """
+        Create an empty signature for testing.
+
+        Returns:
+            bytes: Empty signature (empty bytes)
+        """
+        return b''
 
     @staticmethod
     def create_genesis_block():

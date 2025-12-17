@@ -611,11 +611,13 @@ class BlockweaveNode:
         Create and submit a transaction to the node.
 
         Args:
-            transaction: Dictionary with transaction data containing:
-                - from (str): Sender address
-                - to (str): Recipient address
-                - data (str): Transaction data/payload
-                - fee (int, optional): Transaction fee (default: 0)
+            transaction: Either:
+                - bytes: Binary serialized transaction data (preferred)
+                - dict: Transaction data dictionary containing:
+                    - from (str): Sender address
+                    - to (str): Recipient address
+                    - data (str): Transaction data/payload
+                    - fee (int, optional): Transaction fee (default: 0)
             timeout: Request timeout in seconds (default: 30)
 
         Returns:
@@ -626,7 +628,14 @@ class BlockweaveNode:
         """
         try:
             self.logger.info(f"Submitting transaction to /rpc/transaction...")
-            response = self.post("/rpc/transaction", json_data=transaction, timeout=timeout)
+
+            # Check if transaction is binary data or JSON dict
+            if isinstance(transaction, bytes):
+                # Binary transaction - send as raw data
+                response = self.post("/rpc/transaction", data=transaction, timeout=timeout)
+            else:
+                # JSON transaction - send as JSON (backward compatibility)
+                response = self.post("/rpc/transaction", json_data=transaction, timeout=timeout)
 
             if response.status_code == 200:
                 tx_response = response.json()

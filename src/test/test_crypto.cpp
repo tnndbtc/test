@@ -9,24 +9,24 @@
 using namespace UnitTest;
 
 // Test CKeccak256
-// NOTE: tiny-keccak implements NIST SHA3-256, not original Keccak-256
-// For Ethereum compatibility, would need original Keccak-256 (different padding)
+// NOTE: Uses original Keccak-256 (Ethereum standard with 0x01 padding)
+// NOT NIST SHA3-256 (which uses 0x06 padding)
 TEST(test_keccak256_empty) {
-    // Test empty string (known vector for SHA3-256)
+    // Test empty string (known vector for Keccak-256)
     auto hash = CKeccak256::Hash("");
     std::string hex = CKeccak256::ToHex(hash);
 
-    // SHA3-256("") = a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a
-    ASSERT_EQUAL(hex, std::string("a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a"), "Empty string hash");
+    // Keccak-256("") = c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470
+    ASSERT_EQUAL(hex, std::string("c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"), "Empty string hash");
 }
 
 TEST(test_keccak256_abc) {
-    // Test "abc" (known vector for SHA3-256)
+    // Test "abc" (known vector for Keccak-256)
     auto hash = CKeccak256::Hash("abc");
     std::string hex = CKeccak256::ToHex(hash);
 
-    // SHA3-256("abc") = 3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532
-    ASSERT_EQUAL(hex, std::string("3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532"), "ABC hash");
+    // Keccak-256("abc") = 4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45
+    ASSERT_EQUAL(hex, std::string("4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45"), "ABC hash");
 }
 
 TEST(test_keccak256_vector) {

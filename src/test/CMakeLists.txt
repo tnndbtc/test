@@ -152,12 +152,8 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         test_peer_message.cpp
         test_peer_filter.cpp
         test_request_queue.cpp
-        test_block.cpp
-        test_transaction.cpp
-        test_block_weave.cpp
         test_wallet.cpp
         test_hash.cpp
-        test_block_file.cpp
         test_logger.cpp
         test_network.cpp
         test_get_public_ip.cpp
@@ -210,12 +206,8 @@ else()
         test_peer_message.cpp
         test_peer_filter.cpp
         test_request_queue.cpp
-        test_block.cpp
-        test_transaction.cpp
-        test_block_weave.cpp
         test_wallet.cpp
         test_hash.cpp
-        test_block_file.cpp
         test_logger.cpp
         test_network.cpp
         test_get_public_ip.cpp

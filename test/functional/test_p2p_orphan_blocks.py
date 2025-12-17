@@ -18,9 +18,11 @@ import sys
 import time
 import unittest
 import json
+import os
 from test_framework import TestFramework
 from test_framework.block_utils import BlockUtils
 from test_framework.p2p_utils import MessageType, P2PMessage, P2PConnection
+from test_framework.transaction_utils import TransactionHelper
 
 
 # Removed duplicate MessageType, P2PMessage, and P2PConnection classes
@@ -43,6 +45,18 @@ class OrphanBlocksTest(TestFramework):
         """Setup test environment - single node."""
         self.log_info("Setup: Node started, ready for orphan blocks test")
         self.node = self.nodes[0]
+
+        # Initialize transaction helper with keystore
+        keystore_path = os.path.join(
+            os.path.dirname(__file__),
+            "test_1234.json"
+        )
+
+        if not os.path.exists(keystore_path):
+            raise FileNotFoundError(f"Keystore not found: {keystore_path}")
+
+        self.tx_helper = TransactionHelper(keystore_path, password="1234")
+        self.log_info(f"Initialized with account: {self.tx_helper.account.address}")
 
         # Initialize class-level attributes only once (first time setup() is called)
         if OrphanBlocksTest.next_block_height is None:
@@ -356,37 +370,45 @@ class OrphanBlocksTest(TestFramework):
         """
         self.log_info("test_4_block_with_tx: Testing orphan blocks with transactions...")
 
-        # Step 1: Create parent transaction (alice -> bob)
+        # Step 1: Create properly signed parent transaction using TransactionHelper
+        parent_tx_details, parent_tx_serialized = self.tx_helper.create_transaction(
+            data="parent_transaction_data",
+            fee=1000
+        )
+        self.log_info(f"Created properly signed parent transaction from {self.tx_helper.account.address}")
+
+        # Step 2: Create properly signed child transaction using TransactionHelper
+        child_tx_details, child_tx_serialized = self.tx_helper.create_transaction(
+            data="child_transaction_data",
+            fee=500
+        )
+        self.log_info(f"Created properly signed child transaction from {self.tx_helper.account.address}")
+
+        # Convert to dictionary format for BlockUtils (for block inclusion)
         parent_tx = {
-            'owner': 'test_4_alice',
-            'target': 'test_4_bob',
-            'data': b'parent_transaction_data',
-            'reward': 1000,
-            'timestamp': int(time.time() * 1e9),  # nanoseconds
-            'type': 0,  # TRANSFER type
-            'metadata': json.dumps({'test': 'parent_tx'})
+            'version': parent_tx_details['version'],
+            'nonce': parent_tx_details['nonce'],
+            'from': self.tx_helper.account.address_bytes,
+            'type': parent_tx_details['type'],
+            'data': parent_tx_details['data'],
+            'fee': parent_tx_details['fee'],
+            'signature': bytes.fromhex(parent_tx_details['signature']),
+            'metadata': ''
         }
-        self.log_info(f"Created parent transaction: alice -> bob")
 
-        # Step 2: Create child transaction (bob -> charlie, depends on parent)
         child_tx = {
-            'owner': 'test_4_bob',  # Same as parent's target (dependency)
-            'target': 'test_4_charlie',
-            'data': b'child_transaction_data',
-            'reward': 500,
-            'timestamp': int(time.time() * 1e9),
-            'type': 0,  # TRANSFER type
-            'metadata': json.dumps({
-                'test': 'child_tx',
-                'parent_tx_owner': 'test_4_alice',  # Reference to parent
-                'note': 'depends_on_parent'
-            })
+            'version': child_tx_details['version'],
+            'nonce': child_tx_details['nonce'],
+            'from': self.tx_helper.account.address_bytes,
+            'type': child_tx_details['type'],
+            'data': child_tx_details['data'],
+            'fee': child_tx_details['fee'],
+            'signature': bytes.fromhex(child_tx_details['signature']),
+            'metadata': ''
         }
-        self.log_info(f"Created child transaction: bob -> charlie (depends on parent)")
 
-        # Step 3: Send both transactions via P2P TX messages
-        parent_tx_serialized = BlockUtils.serialize_transaction(parent_tx)
-        child_tx_serialized = BlockUtils.serialize_transaction(child_tx)
+        # Step 3: Use already serialized transactions for P2P TX messages
+        # parent_tx_serialized and child_tx_serialized are already in binary format from TransactionHelper
 
         with P2PConnection("127.0.0.1", self.node.p2p_port, timeout=10) as conn:
             self.log_info("Connected to P2P port for sending transactions")

@@ -13,9 +13,8 @@ TEST(Transaction_Constructor) {
     std::vector<uint8_t> data = {'d', 'a', 't', 'a'};
     CTransaction tx("sender_addr", "receiver_addr", data, 100);
 
-    ASSERT_EQUAL(tx.m_str_owner, std::string("sender_addr"), "Owner address should match");
-    ASSERT_EQUAL(tx.m_str_target, std::string("receiver_addr"), "Target address should match");
-    ASSERT_EQUAL(tx.m_n_reward, (uint64_t)100, "Reward should be 100");
+    // Note: m_str_owner, m_str_target, and m_n_reward fields have been removed
+    // Constructor parameters are kept for backward compatibility but not stored
     ASSERT_EQUAL(tx.m_data.size(), (size_t)4, "Data size should be 4");
     ASSERT_EQUAL(tx.m_n_data_size, (size_t)4, "Cached data size should be 4");
 }
@@ -100,8 +99,10 @@ TEST(Transaction_Serialize) {
     // Check that serialized data is not empty
     ASSERT_TRUE(serialized.length() > 0, "Serialized data should not be empty");
 
-    // Minimum size check: 4 + owner + 4 + target + 4 + data + 8 + 8 + 1 + 4 + metadata
-    size_t expected_min_size = 4 + 5 + 4 + 3 + 4 + 5 + 8 + 8 + 1 + 4 + 15;
+    // New binary format minimum size:
+    // version (1) + nonce (8) + from (20) + type (1) + data_len (1) + data (5) +
+    // fee (8) + timestamp (8) + sig_len (1) + sig (0) + metadata_len (1) + metadata (15)
+    size_t expected_min_size = 1 + 8 + 20 + 1 + 1 + 5 + 8 + 8 + 1 + 0 + 1 + 15;
     ASSERT_TRUE(serialized.length() >= expected_min_size, "Serialized size should be at least minimum");
 }
 
@@ -123,10 +124,8 @@ TEST(Transaction_Deserialize) {
     ASSERT_TRUE(p_tx != nullptr, "Deserialization should succeed");
 
     // Verify all fields match
-    ASSERT_EQUAL(p_tx->m_str_owner, tx_orig.m_str_owner, "Owner should match");
-    ASSERT_EQUAL(p_tx->m_str_target, tx_orig.m_str_target, "Target should match");
+    // Note: m_str_owner, m_str_target, and m_n_reward fields have been removed
     ASSERT_EQUAL(p_tx->m_data.size(), tx_orig.m_data.size(), "Data size should match");
-    ASSERT_EQUAL(p_tx->m_n_reward, tx_orig.m_n_reward, "Reward should match");
     ASSERT_EQUAL(p_tx->m_n_timestamp, tx_orig.m_n_timestamp, "Timestamp should match");
     ASSERT_EQUAL(static_cast<int>(p_tx->m_type), static_cast<int>(tx_orig.m_type), "Type should match");
     ASSERT_EQUAL(p_tx->m_str_metadata, tx_orig.m_str_metadata, "Metadata should match");

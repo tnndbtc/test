@@ -27,8 +27,10 @@ import os
 import struct
 import psutil
 import multiprocessing
+from pathlib import Path
 from test_framework import TestFramework
 from test_framework.p2p_utils import MessageType, P2PMessage, P2PConnection
+from test_framework.transaction_utils import TransactionHelper
 from metrics_collector import MetricsCollector, AggregateMetrics
 
 
@@ -274,18 +276,34 @@ class MaliciousNodesStressTest(TestFramework):
         node0 = self.nodes[0]
         node1 = self.nodes[1]
 
-        # Step 3: Send legitimate transactions to verify normal operation
+        # Step 3: Send legitimate transactions to verify normal operation using TransactionHelper
         self.log_info(f"Step 3: Sending {n_legitimate_txs} legitimate transactions...")
-        for i in range(n_legitimate_txs):
-            tx_data = {
-                "from": f"legitimate_wallet_{i}",
-                "to": f"legitimate_receiver_{i}",
-                "data": f"legitimate_tx_{i}",
-                "fee": 1
-            }
 
+        # Get keystore path for TransactionHelper
+        keystore_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),  # Go up from stress/ to test/
+            "functional",
+            "test_1234.json"
+        )
+        keystore_password = "1234"
+
+        if not os.path.exists(keystore_path):
+            raise FileNotFoundError(f"Keystore not found: {keystore_path}")
+
+        # Create TransactionHelper instance
+        tx_helper = TransactionHelper(keystore_path, keystore_password)
+
+        for i in range(n_legitimate_txs):
             try:
-                node1.create_transaction(tx_data)
+                tx_details, serialized_tx = tx_helper.create_transaction(
+                    data=f"legitimate_tx_{i}",
+                    fee=1,
+                    custom_nonce=i + 1  # Use sequential nonces starting from 1
+                )
+                # Submit binary transaction
+                response = node1.post("/rpc/transaction", data=serialized_tx)
+                if response.status_code != 200:
+                    self.log_error(f"  Legitimate transaction {i} failed: {response.status_code}")
             except Exception as e:
                 self.log_error(f"  Legitimate transaction {i} failed: {e}")
 

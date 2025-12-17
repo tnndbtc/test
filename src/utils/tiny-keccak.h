@@ -16,4 +16,8 @@ decsha3(224)
 decsha3(256)
 decsha3(384)
 decsha3(512)
+
+// Original Keccak-256 (Ethereum standard, padding 0x01 instead of 0x06)
+int keccak_256(uint8_t*, size_t, const uint8_t*, size_t);
+
 #endif

@@ -9,7 +9,10 @@ the current state of the blockchain including mempool size and mining status.
 import sys
 import json
 import unittest
+import os
+from pathlib import Path
 from test_framework import TestFramework, BlockweaveNode
+from test_framework.transaction_utils import TransactionHelper
 
 
 class RestTest(TestFramework):
@@ -24,6 +27,19 @@ class RestTest(TestFramework):
         self.node = self.nodes[0] if self.nodes else None
         if not self.node:
             raise RuntimeError("Failed to start blockweave node")
+
+        # Initialize transaction helper with keystore
+        # Keystore location: test/functional/test_1234.json (moved by user)
+        keystore_path = os.path.join(
+            os.path.dirname(__file__),
+            "test_1234.json"
+        )
+
+        if not os.path.exists(keystore_path):
+            raise FileNotFoundError(f"Keystore not found: {keystore_path}")
+
+        self.tx_helper = TransactionHelper(keystore_path, password="1234")
+        self.log_info(f"Initialized with account: {self.tx_helper.account.address}")
 
     def test_chain_endpoint_full(self):
         """Test GET /chain endpoint - comprehensive test."""
@@ -144,18 +160,21 @@ class RestTest(TestFramework):
         """Test GET /transaction endpoint - retrieve transaction by hash."""
         self.log_info("Testing GET /transaction endpoint...")
 
-        # Step 1: Create a transaction
-        tx_data = {
-            "from": "test_sender",
-            "to": "test_receiver",
-            "data": "test_transaction_data",
-            "fee": 100
-        }
+        # Step 1: Create a properly signed transaction using keystore
+        tx_details, serialized_tx = self.tx_helper.create_transaction(
+            data="test_transaction_data",
+            fee=100
+        )
+        self.log_info(f"Created transaction from account: {self.tx_helper.account.address}")
+        self.log_info(f"Transaction ID: {tx_details['transaction_id']}")
+        self.log_info(f"Transaction details: {tx_details}")
 
-        success, tx_response = self.node.create_transaction(tx_data)
+        # Step 2: Submit binary transaction using node.create_transaction()
+        self.log_info("Submitting binary transaction...")
+        success, tx_response = self.node.create_transaction(serialized_tx)
         self.assert_true(
             success,
-            "Transaction creation should succeed"
+            "Transaction submission should succeed"
         )
         self.assert_in(
             "transaction_id",
@@ -163,7 +182,14 @@ class RestTest(TestFramework):
             "Transaction response contains transaction_id"
         )
         tx_hash = tx_response["transaction_id"]
-        self.log_info(f"Created transaction with hash: {tx_hash}")
+        self.log_info(f"Submitted transaction with hash: {tx_hash}")
+
+        # Verify transaction ID matches what we computed client-side
+        self.assert_equal(
+            tx_hash,
+            tx_details['transaction_id'],
+            "Server-computed transaction ID matches client-side ID"
+        )
 
         # Step 2: Retrieve the transaction using GET /transaction
         success, data = self.node.get_transaction(tx_hash)
@@ -194,14 +220,19 @@ class RestTest(TestFramework):
             "Response contains 'transaction_id' field"
         )
         self.assert_in(
-            "owner",
+            "from",
             data,
-            "Response contains 'owner' field"
+            "Response contains 'from' field"
         )
         self.assert_in(
-            "target",
+            "version",
             data,
-            "Response contains 'target' field"
+            "Response contains 'version' field"
+        )
+        self.assert_in(
+            "nonce",
+            data,
+            "Response contains 'nonce' field"
         )
         self.assert_in(
             "data_hex",
@@ -214,19 +245,24 @@ class RestTest(TestFramework):
             "Response contains 'data_size' field"
         )
         self.assert_in(
-            "reward",
+            "fee",
             data,
-            "Response contains 'reward' field"
+            "Response contains 'fee' field"
         )
         self.assert_in(
-            "timestamp",
+            "signature",
             data,
-            "Response contains 'timestamp' field"
+            "Response contains 'signature' field"
         )
         self.assert_in(
             "type",
             data,
             "Response contains 'type' field"
+        )
+        self.assert_in(
+            "metadata",
+            data,
+            "Response contains 'metadata' field"
         )
 
         # Validate transaction hash matches
@@ -272,17 +308,14 @@ class RestTest(TestFramework):
 
         # Try to get the genesis block hash or create a block
         # For now, let's create a transaction and mine a block
-        tx_data = {
-            "from": "block_test_sender",
-            "to": "block_test_receiver",
-            "data": "block_test_data",
-            "fee": 200
-        }
-
-        success, tx_response = self.node.create_transaction(tx_data)
+        tx_details, serialized_tx = self.tx_helper.create_transaction(
+            data="block_test_data",
+            fee=200
+        )
+        success, _ = self.node.create_transaction(serialized_tx)
         self.assert_true(
             success,
-            "Transaction creation should succeed"
+            "Binary transaction creation should succeed"
         )
 
         # Trigger mining to create a block

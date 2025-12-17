@@ -161,3 +161,13 @@ defsha3(224)
 defsha3(256)
 defsha3(384)
 defsha3(512)
+
+/*** Original Keccak-256 (Ethereum standard) ***/
+// Uses padding 0x01 instead of 0x06 (SHA3 standard)
+int keccak_256(uint8_t* out, size_t outlen,
+               const uint8_t* in, size_t inlen) {
+  if (outlen > 32) {
+    return -1;
+  }
+  return hash(out, outlen, in, inlen, 200 - (256 / 4), 0x01);
+}

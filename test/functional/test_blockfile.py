@@ -15,6 +15,7 @@ import os
 import unittest
 from pathlib import Path
 from test_framework import TestFramework
+from test_framework.transaction_utils import TransactionHelper
 
 
 class BlockfileTest(TestFramework):
@@ -34,6 +35,18 @@ class BlockfileTest(TestFramework):
         self.node = self.nodes[0] if self.nodes else None
         if not self.node:
             raise RuntimeError("Failed to start blockweave node")
+
+        # Initialize transaction helper with keystore
+        keystore_path = os.path.join(
+            os.path.dirname(__file__),
+            "test_1234.json"
+        )
+
+        if not os.path.exists(keystore_path):
+            raise FileNotFoundError(f"Keystore not found: {keystore_path}")
+
+        self.tx_helper = TransactionHelper(keystore_path, password="1234")
+        self.log_info(f"Initialized with account: {self.tx_helper.account.address}")
 
         # Get the data directory from the node's config (datadir is a string)
         self.data_dir = Path(self.node.datadir) / "data"
@@ -110,20 +123,19 @@ class BlockfileTest(TestFramework):
         initial_size = blk00000.stat().st_size if blk00000.exists() else 0
         self.log_info(f"Initial blk00000.dat size: {initial_size} bytes")
 
-        # Create a transaction
-        transaction_data = {
-            "from": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
-            "to": "bc1qw508d6qejxtdg4y5r3zarvaryv98gj9p8t5z6",
-            "data": "Test transaction for blockfile persistence",
-            "fee": 1000
-        }
+        # Create a properly signed binary transaction
+        self.log_info("Creating transaction...")
+        tx_details, serialized_tx = self.tx_helper.create_transaction(
+            data="Test transaction for blockfile persistence",
+            fee=1000
+        )
 
-        self.log_info("Submitting transaction...")
-        try:
-            success, _ = self.node.create_transaction(transaction_data)
-            self.assert_equal(success, True, "Transaction submission successful")
-        except Exception as e:
-            self.assert_true(False, f"Transaction submission failed: {e}")
+        self.log_info("Submitting binary transaction...")
+        success, tx_response = self.node.create_transaction(serialized_tx)
+        self.assert_true(
+            success,
+            "Transaction submission should succeed"
+        )
 
         # Verify transaction is in mempool
         time.sleep(0.5)
@@ -177,18 +189,18 @@ class BlockfileTest(TestFramework):
         # Submit multiple transactions
         num_transactions = 3
         for i in range(num_transactions):
-            transaction_data = {
-                "from": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
-                "to": "bc1qw508d6qejxtdg4y5r3zarvaryv98gj9p8t5z6",
-                "data": f"Test transaction {i+1} for multiple blocks persistence",
-                "fee": 1000
-            }
-            self.log_info(f"Submitting transaction {i+1}/{num_transactions}...")
-            try:
-                success, _ = self.node.create_transaction(transaction_data)
-                self.assert_equal(success, True, f"Transaction {i+1} submission successful")
-            except Exception as e:
-                self.assert_true(False, f"Transaction {i+1} submission failed: {e}")
+            self.log_info(f"Creating transaction {i+1}/{num_transactions}...")
+            tx_details, serialized_tx = self.tx_helper.create_transaction(
+                data=f"Test transaction {i+1} for multiple blocks persistence",
+                fee=1000
+            )
+
+            self.log_info(f"Submitting binary transaction {i+1}/{num_transactions}...")
+            success, tx_response = self.node.create_transaction(serialized_tx)
+            self.assert_true(
+                success,
+                f"Transaction {i+1} submission should succeed"
+            )
             # Small delay between transactions to ensure they're processed separately
             time.sleep(0.2)
 
@@ -218,19 +230,18 @@ class BlockfileTest(TestFramework):
 
         # Mine a block first
         self.log_info("Mining a block before restart...")
+        self.log_info("Creating transaction...")
+        tx_details, serialized_tx = self.tx_helper.create_transaction(
+            data="Test transaction before restart",
+            fee=1000
+        )
 
-        transaction_data = {
-            "from": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
-            "to": "bc1qw508d6qejxtdg4y5r3zarvaryv98gj9p8t5z6",
-            "data": "Test transaction before restart",
-            "fee": 1000
-        }
-
-        try:
-            success, _ = self.node.create_transaction(transaction_data)
-            self.assert_equal(success, True, "Transaction submission successful")
-        except Exception as e:
-            self.assert_true(False, f"Transaction submission failed: {e}")
+        self.log_info("Submitting binary transaction...")
+        success, tx_response = self.node.create_transaction(serialized_tx)
+        self.assert_true(
+            success,
+            "Transaction submission should succeed"
+        )
 
         self.assert_true(self.node.trigger_mining(), f"Block mining triggered successfully")
 

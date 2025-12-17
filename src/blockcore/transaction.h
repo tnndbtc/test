@@ -9,6 +9,14 @@
 #include <memory>
 
 /**
+ * @enum TxVersion
+ * @brief Transaction version for protocol versioning
+ */
+enum class TxVersion : uint8_t {
+    V0 = 0       ///< Version 0 (initial version)
+};
+
+/**
  * @enum TransactionType
  * @brief Types of transactions supported by the blockweave
  */
@@ -39,52 +47,36 @@ enum class TransactionType : uint8_t {
  */
 struct CTransaction {
     CHash m_id;                    ///< Unique transaction ID (SHA-256 hash of tx data)
-    std::string m_str_owner;       ///< Address of transaction creator/sender
-    std::string m_str_target;      ///< Address of transaction recipient
-    std::vector<uint8_t> m_data;   ///< Binary data payload (file contents, message, etc.)
+
+    // Core transaction fields
+    TxVersion m_n_version;              ///< Protocol version
+    uint64_t m_n_nonce;                 ///< Unique nonce to prevent replay attacks
+    std::vector<uint8_t> m_from;        ///< Sender address (20 bytes)
+    TransactionType m_type;             ///< Type of transaction (uint8_t enum)
+    std::vector<uint8_t> m_data;        ///< Typed payload (format depends on m_type)
+    uint64_t m_n_fee;                   ///< Transaction fee in smallest currency unit
+    std::vector<uint8_t> m_signature;   ///< Cryptographic signature over transaction fields
+
+    // Legacy fields (maintained for backward compatibility)
     size_t m_n_data_size;          ///< Size of data in bytes (cached for performance)
-    uint64_t m_n_reward;           ///< Mining reward/fee in smallest currency unit
-    int64_t m_n_timestamp;         ///< UTC timestamp (nanoseconds since Unix epoch) when transaction created
-    TransactionType m_type;        ///< Type of transaction
 
     // Service-specific metadata (stored as JSON string for flexibility)
     std::string m_str_metadata;    ///< Service-specific data in JSON format
 
     /**
-     * @brief Construct a new transaction
-     * @param str_owner Owner/sender address
-     * @param str_target Target/recipient address
-     * @param data Binary data payload
-     * @param n_reward Mining reward/fee
+     * @brief Default constructor for CTransaction
      *
-     * Automatically generates:
-     * - Transaction ID from hash of all transaction data
-     * - Timestamp from system clock
-     * - Data size from data vector
-     * - Sets type to TRANSFER by default
+     * Creates an empty transaction. Transactions should be populated
+     * via deserialization using the Deserialize() static method.
      */
-    CTransaction(const std::string& str_owner, const std::string& str_target,
-                 const std::vector<uint8_t>& data, uint64_t n_reward);
-
-    /**
-     * @brief Construct a new transaction with metadata
-     * @param str_owner Owner/sender address
-     * @param str_target Target/recipient address
-     * @param data Binary data payload
-     * @param n_reward Mining reward/fee
-     * @param type Transaction type (currently only TRANSFER is supported)
-     * @param str_meta Service-specific metadata (JSON string)
-     */
-    CTransaction(const std::string& str_owner, const std::string& str_target,
-                 const std::vector<uint8_t>& data, uint64_t n_reward,
-                 TransactionType type, const std::string& str_meta = "");
+    CTransaction() = default;
 
     /**
      * @brief Serialize transaction to binary format for network transmission
      * @return Binary string containing serialized transaction data
      *
-     * Format: [owner_len:4][owner][target_len:4][target][data_size:4][data]
-     *         [reward:8][timestamp:8][type:1][metadata_len:4][metadata]
+     * Format: [version:1][nonce:8][from:20][type:1][data_len:4][data]
+     *         [fee:8][sig_len:4][signature][metadata_len:4][metadata]
      */
     std::string Serialize() const;
 

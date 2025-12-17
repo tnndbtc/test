@@ -1,4 +1,6 @@
 --------------------------
+python3 -m bweave_account.examples.create_transaction bweave_account/examples/test_1234.json 1234
+--------------------------
 # to export sanitizer output
 export ASAN_OPTIONS=log_path=/tmp/asan/asan.log:detect_leaks=1
 export ASAN_OPTIONS=log_path=/tmp/asan/asan.log:detect_leaks=1:abort_on_error=1

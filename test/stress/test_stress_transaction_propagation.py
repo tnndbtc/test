@@ -26,7 +26,9 @@ import psutil
 import multiprocessing
 import requests
 from datetime import datetime
+from pathlib import Path
 from test_framework import TestFramework
+from test_framework.transaction_utils import TransactionHelper
 from metrics_collector import MetricsCollector, AggregateMetrics
 
 
@@ -36,11 +38,20 @@ def get_utc_timestamp():
     return f"[{now.strftime('%Y-%m-%d %H:%M:%S')}.{now.microsecond // 1000:03d} UTC]"
 
 
-def worker_process(process_id, node_ports, node_credentials, f_stop_requested, tx_counter, tx_counter_lock,
+def worker_process(process_id, node_ports, node_credentials, keystore_path, keystore_password,
+                   f_stop_requested, tx_counter, tx_counter_lock,
                    node_idx, node_idx_lock, process_tx_counts, process_errors, per_node_tx_counts):
     """Worker process that submits transactions until stop signal."""
     local_tx_count = 0
     local_error_count = 0
+
+    # Create TransactionHelper instance for this worker process
+    try:
+        tx_helper = TransactionHelper(keystore_path, keystore_password)
+    except Exception as e:
+        print(f"{get_utc_timestamp()} [Process {process_id}] Failed to initialize TransactionHelper: {str(e)}")
+        process_errors[process_id] = -1
+        return
 
     while not f_stop_requested.is_set():
         # Get transaction ID and target node atomically
@@ -55,19 +66,27 @@ def worker_process(process_id, node_ports, node_credentials, f_stop_requested, t
         target_port = node_ports[target_node_idx]
         target_auth = node_credentials[target_node_idx]
 
-        # Generate transaction
-        tx_data = {
-            "from": f"process{process_id}_wallet_{tx_id}",
-            "to": f"receiver_{tx_id % 100}",
-            "data": f"propagation_stress_tx_process{process_id}_{tx_id}",
-            "fee": 1
-        }
-
         try:
+            # Create properly signed binary transaction
+            # Use unique nonce: process_id * 1000000 + local_tx_count
+            custom_nonce = process_id * 1000000 + local_tx_count
+
+            tx_details, serialized_tx = tx_helper.create_transaction(
+                data=f"propagation_stress_tx_process{process_id}_{tx_id}",
+                fee=1,
+                custom_nonce=custom_nonce
+            )
+
+            # Submit binary transaction
             # because transaction creation is too fast and caused socket
             # read congestion, increase timeout from 5s to 20s
-            response = requests.post(f"http://127.0.0.1:{target_port}/rpc/transaction",
-                                    json=tx_data, auth=target_auth, timeout=20)
+            response = requests.post(
+                f"http://127.0.0.1:{target_port}/rpc/transaction",
+                data=serialized_tx,
+                auth=target_auth,
+                timeout=20
+            )
+
             if response.status_code == 200:
                 local_tx_count += 1
                 # Atomically increment per-node counter
@@ -78,7 +97,7 @@ def worker_process(process_id, node_ports, node_credentials, f_stop_requested, t
                 print(f"{get_utc_timestamp()} [Process {process_id}] Transaction response error: {response.status_code} - {response.text}")
         except Exception as e:
             local_error_count += 1
-            print(f"{get_utc_timestamp()} [Process {process_id}] Transaction exception: {str(e)} and Transaction detail: [{tx_data}]")
+            print(f"{get_utc_timestamp()} [Process {process_id}] Transaction exception: {str(e)}")
 
         # Small delay between transaction submissions
         time.sleep(0.01)
@@ -280,6 +299,19 @@ class TransactionPropagationStressTest(TestFramework):
                 raise RuntimeError(f"Failed to get authentication credentials from node{i}")
             node_credentials.append(creds)
 
+        # Get keystore path for TransactionHelper
+        keystore_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),  # Go up from stress/ to test/
+            "functional",
+            "test_1234.json"
+        )
+        keystore_password = "1234"
+
+        if not os.path.exists(keystore_path):
+            raise FileNotFoundError(f"Keystore not found: {keystore_path}")
+
+        self.log_info(f"  Using keystore: {keystore_path}")
+
         # Start worker processes
         start_time = time.time()
         processes = []
@@ -288,7 +320,8 @@ class TransactionPropagationStressTest(TestFramework):
         for i in range(n_processes):
             p = multiprocessing.Process(
                 target=worker_process,
-                args=(i, node_ports, node_credentials, f_stop_requested, tx_counter, tx_counter_lock,
+                args=(i, node_ports, node_credentials, keystore_path, keystore_password,
+                      f_stop_requested, tx_counter, tx_counter_lock,
                       node_idx, node_idx_lock, process_tx_counts, process_errors, per_node_tx_counts),
                 daemon=True
             )

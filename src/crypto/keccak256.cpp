@@ -13,9 +13,9 @@ extern "C" {
 std::array<uint8_t, CKeccak256::HASH_SIZE> CKeccak256::Hash(const uint8_t* data, size_t n_len) {
     std::array<uint8_t, HASH_SIZE> hash;
 
-    // Call sha3_256 from tiny-keccak library
-    // Note: tiny-keccak's sha3_256 is actually Keccak-256 (pre-NIST standard)
-    int result = sha3_256(hash.data(), HASH_SIZE, data, n_len);
+    // Call keccak_256 (original Keccak with 0x01 padding, Ethereum standard)
+    // NOT sha3_256 which is NIST SHA3 with 0x06 padding
+    int result = keccak_256(hash.data(), HASH_SIZE, data, n_len);
 
     if (result != 0) {
         throw std::runtime_error("Keccak-256 hash computation failed");

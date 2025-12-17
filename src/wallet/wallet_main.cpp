@@ -5,6 +5,8 @@
 #include <string>
 #include <filesystem>
 #include <stdexcept>
+#include <sstream>
+#include <iomanip>
 
 // Platform-specific headers for hidden password input
 #ifdef _WIN32
@@ -18,16 +20,27 @@
 void PrintUsage() {
     std::cout << "=== Blockweave Wallet ===\n\n";
     std::cout << "Usage:\n";
-    std::cout << "  wallet create <keystore_file> [password]  - Create new wallet\n";
-    std::cout << "  wallet load <keystore_file> [password]    - Load existing wallet\n";
-    std::cout << "  wallet show <keystore_file>               - Show address only\n";
+    std::cout << "  wallet create <keystore_file> [password]       - Create new wallet\n";
+    std::cout << "  wallet load <keystore_file> [password]         - Load existing wallet\n";
+    std::cout << "  wallet show <keystore_file> [password]         - Show private key (requires password)\n";
+    std::cout << "  wallet show_address <keystore_file>            - Show address only (no password needed)\n";
     std::cout << "\n";
     std::cout << "Examples:\n";
     std::cout << "  wallet create my_wallet.json\n";
     std::cout << "  wallet load my_wallet.json\n";
     std::cout << "  wallet show my_wallet.json\n";
+    std::cout << "  wallet show_address my_wallet.json\n";
     std::cout << "\n";
     std::cout << "Note: If password is not provided, you will be prompted interactively.\n";
+}
+
+std::string BytesToHex(const std::array<uint8_t, 32>& bytes) {
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (const auto& byte : bytes) {
+        oss << std::setw(2) << static_cast<int>(byte);
+    }
+    return oss.str();
 }
 
 std::string ReadPassword(const std::string& str_prompt = "Enter password: ") {
@@ -163,6 +176,40 @@ int main(int argc, char* argv[]) {
             std::cout << "Keystore: " << str_keystore_path << "\n";
 
         } else if (str_command == "show") {
+            if (argc < 3) {
+                std::cerr << "Error: Missing keystore file path\n";
+                PrintUsage();
+                return 1;
+            }
+
+            std::string str_keystore_path = argv[2];
+            std::string str_password;
+
+            // Check if file exists
+            if (!std::filesystem::exists(str_keystore_path)) {
+                std::cerr << "Error: Keystore file not found: " << str_keystore_path << "\n";
+                return 1;
+            }
+
+            // Get password
+            if (argc >= 4) {
+                str_password = argv[3];
+            } else {
+                str_password = ReadPassword();
+            }
+
+            // Load wallet
+            CWallet wallet(str_keystore_path, str_password);
+            std::string str_address = wallet.GetAddress();
+            const auto& private_key = wallet.GetKeyPair().GetPrivateKey();
+            std::string str_private_key_hex = BytesToHex(private_key);
+
+            std::cout << "Wallet loaded successfully!\n\n";
+            std::cout << "Address:     0x" << str_address << "\n";
+            std::cout << "Private Key: 0x" << str_private_key_hex << "\n\n";
+            std::cout << "WARNING: Keep your private key secret! Anyone with this key can access your wallet.\n";
+
+        } else if (str_command == "show_address") {
             if (argc < 3) {
                 std::cerr << "Error: Missing keystore file path\n";
                 PrintUsage();

@@ -13,7 +13,9 @@ Tests block propagation through a 3-node relay network:
 import sys
 import time
 import unittest
+import os
 from test_framework import TestFramework
+from test_framework.transaction_utils import TransactionHelper
 
 
 class P2PRelayTest(TestFramework):
@@ -35,6 +37,18 @@ class P2PRelayTest(TestFramework):
         - Node 2: REST API port 48445, P2P port 48335
         """
         self.log_info("setup: Establishing relay topology...")
+
+        # Initialize transaction helper with keystore
+        keystore_path = os.path.join(
+            os.path.dirname(__file__),
+            "test_1234.json"
+        )
+
+        if not os.path.exists(keystore_path):
+            raise FileNotFoundError(f"Keystore not found: {keystore_path}")
+
+        self.tx_helper = TransactionHelper(keystore_path, password="1234")
+        self.log_info(f"Initialized with account: {self.tx_helper.account.address}")
 
         node0 = self.nodes[0]
         node1 = self.nodes[1]
@@ -98,18 +112,17 @@ class P2PRelayTest(TestFramework):
 
         # Step 1: Send transaction to node0
         self.log_info("Step 1: Sending transaction to node0...")
-        tx_data = {
-            "from": "wallet_node0",
-            "to": "wallet_receiver",
-            "data": "test_relay_data"
-        }
+        tx_details, serialized_tx = self.tx_helper.create_transaction(
+            data="test_relay_data",
+            fee=100
+        )
 
-        try:
-            success, _ = node0.create_transaction(tx_data)
-            self.assert_equal(success, True, "Transaction submission should succeed")
-            self.log_info(f"Transaction submitted successfully")
-        except Exception as e:
-            self.assert_true(False, f"Transaction submission failed: {e}")
+        success, tx_response = node0.create_transaction(serialized_tx)
+        self.assert_true(
+            success,
+            "Transaction submission should succeed"
+        )
+        self.log_info(f"Transaction submitted successfully")
 
         # Wait for transaction to be added to mempool and propagate to node1 and node2
         time.sleep(0.5)
@@ -178,18 +191,17 @@ class P2PRelayTest(TestFramework):
 
         # Step 1: Send first transaction to node0
         self.log_info("Step 1: Sending first transaction to node0...")
-        tx1_data = {
-            "from": "wallet_node0_tx1",
-            "to": "wallet_receiver_tx1",
-            "data": "test_block_tx_data_1"
-        }
+        tx1_details, serialized_tx1 = self.tx_helper.create_transaction(
+            data="test_block_tx_data_1",
+            fee=100
+        )
 
-        try:
-            success, _ = node0.create_transaction(tx1_data)
-            self.assert_equal(success, True, "First transaction submission should succeed")
-            # self.log_info(f"First transaction submitted: {tx1_result}")
-        except Exception as e:
-            self.assert_true(False, f"First transaction submission failed: {e}")
+        success, tx_response = node0.create_transaction(serialized_tx1)
+        self.assert_true(
+            success,
+            "First transaction submission should succeed"
+        )
+        self.log_info("First transaction submitted successfully")
         time.sleep(1)
 
         # Step 2: Trigger Node0 to mine a block
@@ -199,14 +211,16 @@ class P2PRelayTest(TestFramework):
 
         # Step 3: Send second transaction to node0 (will stay in mempool)
         self.log_info("Step 3: Sending second transaction to node0 (will stay in mempool)...")
-        tx2_data = {
-            "from": "wallet_node0_tx2",
-            "to": "wallet_receiver_tx2",
-            "data": "test_block_tx_data_2"
-        }
+        tx2_details, serialized_tx2 = self.tx_helper.create_transaction(
+            data="test_block_tx_data_2",
+            fee=100
+        )
 
-        success, _ = node0.create_transaction(tx2_data)
-        self.assert_true(success, "Second transaction submission should succeed")
+        success, tx_response = node0.create_transaction(serialized_tx2)
+        self.assert_true(
+            success,
+            "Second transaction submission should succeed"
+        )
         self.log_info("Second transaction submitted successfully")
 
         # Verify node0 has transaction in mempool

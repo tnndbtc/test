@@ -163,15 +163,8 @@ TEST(BlockFileSaveAndLoadWithTransactions) {
 
     // Verify transaction data
     const auto& transactions = p_loaded->GetTransactions();
-    ASSERT_EQUAL(transactions[0]->m_str_owner, "owner_0", "Values should match");
-    ASSERT_EQUAL(transactions[0]->m_str_target, "target_0", "Values should match");
-    ASSERT_EQUAL(transactions[0]->m_n_reward, 100, "Values should match");
-
-    ASSERT_EQUAL(transactions[1]->m_str_owner, "owner_1", "Values should match");
-    ASSERT_EQUAL(transactions[1]->m_n_reward, 110, "Values should match");
-
-    ASSERT_EQUAL(transactions[2]->m_str_owner, "owner_2", "Values should match");
-    ASSERT_EQUAL(transactions[2]->m_n_reward, 120, "Values should match");
+    // Note: m_str_owner, m_str_target, and m_n_reward fields have been removed
+    // Transactions are verified by their count and data integrity
 
     CleanupDir(str_test_dir);
 }
@@ -481,8 +474,7 @@ TEST(BlockFileEmptyStringFields) {
 
     ASSERT_NOT_NULL(p_loaded, "Should not be null");
     ASSERT_EQUAL(p_loaded->GetMiner(), "", "Values should match");
-    ASSERT_EQUAL(p_loaded->GetTransactions()[0]->m_str_owner, "", "Values should match");
-    ASSERT_EQUAL(p_loaded->GetTransactions()[0]->m_str_target, "", "Values should match");
+    // Note: m_str_owner and m_str_target fields have been removed
 
     CleanupDir(str_test_dir);
 }
@@ -504,12 +496,8 @@ TEST(BlockFileManyTransactions) {
     ASSERT_EQUAL(p_loaded->GetTransactions().size(), 100, "Values should match");
 
     // Verify all transactions
-    for (size_t i = 0; i < 100; i++) {
-        ASSERT_EQUAL(p_loaded->GetTransactions()[i]->m_str_owner,
-                     "owner_" + std::to_string(i), "Owner should match");
-        ASSERT_EQUAL(p_loaded->GetTransactions()[i]->m_n_reward,
-                     100 + i * 10, "Reward should match");
-    }
+    // Note: m_str_owner, m_str_target, and m_n_reward fields have been removed
+    // Transaction count and data integrity are verified above
 
     CleanupDir(str_test_dir);
 }
@@ -602,7 +590,7 @@ TEST(BlockFileZeroRewardTransaction) {
     auto p_loaded = blockfile.LoadBlock(hash);
 
     ASSERT_NOT_NULL(p_loaded, "Should not be null");
-    ASSERT_EQUAL(p_loaded->GetTransactions()[0]->m_n_reward, 0, "Values should match");
+    // Note: m_n_reward field has been removed
 
     CleanupDir(str_test_dir);
 }
@@ -627,8 +615,7 @@ TEST(BlockFileSpecialCharactersInStrings) {
 
     ASSERT_NOT_NULL(p_loaded, "Should not be null");
     ASSERT_EQUAL(p_loaded->GetMiner(), str_special, "Values should match");
-    ASSERT_EQUAL(p_loaded->GetTransactions()[0]->m_str_owner, str_special, "Values should match");
-    ASSERT_EQUAL(p_loaded->GetTransactions()[0]->m_str_target, str_special, "Values should match");
+    // Note: m_str_owner and m_str_target fields have been removed
 
     CleanupDir(str_test_dir);
 }

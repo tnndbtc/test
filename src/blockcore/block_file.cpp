@@ -224,16 +224,6 @@ bool CBlockFile::WriteTransaction(std::ofstream& ofs, const std::shared_ptr<CTra
         return false;
     }
 
-    // Write owner
-    if (!WriteString(ofs, p_tx->m_str_owner)) {
-        return false;
-    }
-
-    // Write target
-    if (!WriteString(ofs, p_tx->m_str_target)) {
-        return false;
-    }
-
     // Write data size and data
     uint64_t n_data_size = p_tx->m_data.size();
     ofs.write(reinterpret_cast<const char*>(&n_data_size), sizeof(n_data_size));
@@ -241,11 +231,8 @@ bool CBlockFile::WriteTransaction(std::ofstream& ofs, const std::shared_ptr<CTra
         ofs.write(reinterpret_cast<const char*>(p_tx->m_data.data()), n_data_size);
     }
 
-    // Write reward
-    ofs.write(reinterpret_cast<const char*>(&p_tx->m_n_reward), sizeof(p_tx->m_n_reward));
-
-    // Write timestamp
-    ofs.write(reinterpret_cast<const char*>(&p_tx->m_n_timestamp), sizeof(p_tx->m_n_timestamp));
+    // Write fee
+    ofs.write(reinterpret_cast<const char*>(&p_tx->m_n_fee), sizeof(p_tx->m_n_fee));
 
     return ofs.good();
 }
@@ -253,12 +240,6 @@ bool CBlockFile::WriteTransaction(std::ofstream& ofs, const std::shared_ptr<CTra
 std::shared_ptr<CTransaction> CBlockFile::ReadTransaction(std::ifstream& ifs) const {
     // Read transaction ID
     CHash tx_id = ReadHash(ifs);
-
-    // Read owner
-    std::string str_owner = ReadString(ifs);
-
-    // Read target
-    std::string str_target = ReadString(ifs);
 
     // Read data
     uint64_t n_data_size = 0;
@@ -270,24 +251,27 @@ std::shared_ptr<CTransaction> CBlockFile::ReadTransaction(std::ifstream& ifs) co
         ifs.read(reinterpret_cast<char*>(data.data()), n_data_size);
     }
 
-    // Read reward
-    uint64_t n_reward = 0;
-    ifs.read(reinterpret_cast<char*>(&n_reward), sizeof(n_reward));
-
-    // Read timestamp
-    int64_t n_timestamp = 0;
-    ifs.read(reinterpret_cast<char*>(&n_timestamp), sizeof(n_timestamp));
+    // Read fee
+    uint64_t n_fee = 0;
+    ifs.read(reinterpret_cast<char*>(&n_fee), sizeof(n_fee));
 
     if (!ifs.good()) {
         return nullptr;
     }
 
-    // Create transaction (constructor will compute new ID, so we need to set it manually)
-    auto p_tx = std::make_shared<CTransaction>(str_owner, str_target, data, n_reward);
+    // Create transaction using default constructor
+    auto p_tx = std::make_shared<CTransaction>();
 
-    // Restore original ID and timestamp
+    // Populate transaction fields
+    p_tx->m_n_version = TxVersion::V0;
+    p_tx->m_n_nonce = 0;
+    p_tx->m_type = TransactionType::TRANSFER;
+    p_tx->m_data = data;
+    p_tx->m_n_fee = n_fee;
+    p_tx->m_n_data_size = data.size();
+
+    // Restore original ID
     const_cast<CHash&>(p_tx->m_id) = tx_id;
-    const_cast<int64_t&>(p_tx->m_n_timestamp) = n_timestamp;
 
     return p_tx;
 }

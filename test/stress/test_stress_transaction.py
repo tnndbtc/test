@@ -24,12 +24,14 @@ import os
 import psutil
 import multiprocessing
 import requests
+from pathlib import Path
 from test_framework import TestFramework
+from test_framework.transaction_utils import TransactionHelper
 from metrics_collector import MetricsCollector, AggregateMetrics
 
 
-def worker_process(process_id, rest_port, node_credentials, f_stop_requested, tx_counter, tx_counter_lock,
-                   process_tx_counts, process_errors):
+def worker_process(process_id, rest_port, node_credentials, keystore_path, keystore_password,
+                   f_stop_requested, tx_counter, tx_counter_lock, process_tx_counts, process_errors):
     """Worker process that submits transactions until stop signal."""
     local_tx_count = 0
     local_error_count = 0
@@ -40,6 +42,14 @@ def worker_process(process_id, rest_port, node_credentials, f_stop_requested, tx
     # Use pre-loaded credentials passed from main process
     auth = node_credentials
 
+    # Create TransactionHelper instance for this worker process
+    try:
+        tx_helper = TransactionHelper(keystore_path, keystore_password)
+    except Exception as e:
+        print(f"[Process {process_id}] Failed to initialize TransactionHelper: {str(e)}")
+        process_errors[process_id] = -1
+        return
+
     while not f_stop_requested.is_set():
         # Get transaction ID atomically
         with tx_counter_lock:
@@ -47,14 +57,24 @@ def worker_process(process_id, rest_port, node_credentials, f_stop_requested, tx
             tx_counter.value += 1
 
         try:
-            # Create transaction
-            tx_data = {
-                "from": f"process{process_id}_wallet_{tx_id}",
-                "to": f"receiver_{tx_id % 100}",
-                "data": f"stress_tx_process{process_id}_{tx_id}",
-                "fee": 1
-            }
-            response = requests.post(f"{base_url}/rpc/transaction", json=tx_data, auth=auth, timeout=5)
+            # Create properly signed binary transaction
+            # Use unique nonce: process_id * 1000000 + local_tx_count
+            # This ensures no nonce collisions across processes
+            custom_nonce = process_id * 1000000 + local_tx_count
+
+            tx_details, serialized_tx = tx_helper.create_transaction(
+                data=f"stress_tx_process{process_id}_{tx_id}",
+                fee=1,
+                custom_nonce=custom_nonce
+            )
+
+            # Submit binary transaction
+            response = requests.post(
+                f"{base_url}/rpc/transaction",
+                data=serialized_tx,
+                auth=auth,
+                timeout=5
+            )
 
             if response.status_code == 200:
                 local_tx_count += 1
@@ -217,6 +237,19 @@ class TransactionStressTest(TestFramework):
         if node_credentials is None:
             raise RuntimeError("Failed to get authentication credentials from node")
 
+        # Get keystore path for TransactionHelper
+        keystore_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),  # Go up from stress/ to test/
+            "functional",
+            "test_1234.json"
+        )
+        keystore_password = "1234"
+
+        if not os.path.exists(keystore_path):
+            raise FileNotFoundError(f"Keystore not found: {keystore_path}")
+
+        self.log_info(f"  Using keystore: {keystore_path}")
+
         # Start worker processes
         start_time = time.time()
         processes = []
@@ -225,8 +258,8 @@ class TransactionStressTest(TestFramework):
         for i in range(n_processes):
             p = multiprocessing.Process(
                 target=worker_process,
-                args=(i, rest_port, node_credentials, f_stop_requested, tx_counter, tx_counter_lock,
-                      process_tx_counts, process_errors),
+                args=(i, rest_port, node_credentials, keystore_path, keystore_password,
+                      f_stop_requested, tx_counter, tx_counter_lock, process_tx_counts, process_errors),
                 daemon=True
             )
             p.start()

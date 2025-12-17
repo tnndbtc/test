@@ -21,16 +21,27 @@ import os
 import psutil
 import multiprocessing
 import requests
+from pathlib import Path
 from test_framework import TestFramework
+from test_framework.transaction_utils import TransactionHelper
 from metrics_collector import MetricsCollector, AggregateMetrics
 
 
-def worker_process(process_id, node_ports, node_credentials, f_stop_requested, block_counter, block_counter_lock,
+def worker_process(process_id, node_ports, node_credentials, keystore_path, keystore_password,
+                   f_stop_requested, block_counter, block_counter_lock,
                    node_idx_counter, node_idx_lock, per_node_block_counts, per_node_lock,
                    process_block_counts, process_errors):
     """Worker process that creates transactions and mines blocks until stop signal."""
     local_block_count = 0
     local_error_count = 0
+
+    # Create TransactionHelper instance for this worker process
+    try:
+        tx_helper = TransactionHelper(keystore_path, keystore_password)
+    except Exception as e:
+        print(f"[Process {process_id}] Failed to initialize TransactionHelper: {str(e)}")
+        process_errors[process_id] = -1
+        return
 
     while not f_stop_requested.is_set():
         # Get block ID and target node atomically
@@ -47,14 +58,23 @@ def worker_process(process_id, node_ports, node_credentials, f_stop_requested, b
         base_url = f"http://127.0.0.1:{rest_port}"
 
         try:
-            # Create a transaction first
-            tx_data = {
-                "from": f"process{process_id}_wallet_{block_id}",
-                "to": f"receiver_{block_id % 20}",
-                "data": f"tx_process{process_id}_block{block_id}",
-                "fee": 1
-            }
-            tx_response = requests.post(f"{base_url}/rpc/transaction", json=tx_data, auth=credentials, timeout=5)
+            # Create properly signed binary transaction
+            # Use unique nonce: process_id * 1000000 + local_block_count
+            custom_nonce = process_id * 1000000 + local_block_count
+
+            tx_details, serialized_tx = tx_helper.create_transaction(
+                data=f"tx_process{process_id}_block{block_id}",
+                fee=1,
+                custom_nonce=custom_nonce
+            )
+
+            # Submit binary transaction
+            tx_response = requests.post(
+                f"{base_url}/rpc/transaction",
+                data=serialized_tx,
+                auth=credentials,
+                timeout=5
+            )
 
             # Then trigger mining on the selected node
             mine_response = requests.post(
@@ -243,19 +263,36 @@ class BlockPropagationStressTest(TestFramework):
             initial_blocks.append(blocks)
             self.log_info(f"  Node{i} initial blocks: {blocks}")
 
-        # Step 3: Pre-fill all nodes' mempools with transactions
+        # Step 3: Pre-fill all nodes' mempools with transactions using TransactionHelper
         self.log_info(f"Step 3: Pre-filling all nodes' mempools with {n_prefill_transactions} transactions each...")
+
+        # Get keystore path for TransactionHelper
+        keystore_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),  # Go up from stress/ to test/
+            "functional",
+            "test_1234.json"
+        )
+        keystore_password = "1234"
+
+        if not os.path.exists(keystore_path):
+            raise FileNotFoundError(f"Keystore not found: {keystore_path}")
+
+        # Create TransactionHelper instance for prefill
+        tx_helper = TransactionHelper(keystore_path, keystore_password)
+
         for node_idx, node in enumerate(self.nodes):
             for tx_idx in range(n_prefill_transactions):
-                tx_data = {
-                    "from": f"node{node_idx}_wallet_{tx_idx}",
-                    "to": f"receiver_{tx_idx % 20}",
-                    "data": f"prefill_tx_node{node_idx}_{tx_idx}",
-                    "fee": 1
-                }
+                # Use unique nonce: (node_idx + 1000) * 10000 + tx_idx
+                custom_nonce = (node_idx + 1000) * 10000 + tx_idx
 
                 try:
-                    node.create_transaction(tx_data)
+                    tx_details, serialized_tx = tx_helper.create_transaction(
+                        data=f"prefill_tx_node{node_idx}_{tx_idx}",
+                        fee=1,
+                        custom_nonce=custom_nonce
+                    )
+                    # Submit binary transaction
+                    response = node.post("/rpc/transaction", data=serialized_tx)
                 except Exception as e:
                     pass  # Ignore errors during prefill
 
@@ -279,6 +316,19 @@ class BlockPropagationStressTest(TestFramework):
             if not creds:
                 raise RuntimeError(f"Failed to get RPC credentials from node{i}")
             node_credentials.append(creds)
+
+        # Get keystore path for TransactionHelper
+        keystore_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),  # Go up from stress/ to test/
+            "functional",
+            "test_1234.json"
+        )
+        keystore_password = "1234"
+
+        if not os.path.exists(keystore_path):
+            raise FileNotFoundError(f"Keystore not found: {keystore_path}")
+
+        self.log_info(f"  Using keystore: {keystore_path}")
 
         # Step 5: Multi-process block mining with time limit
         self.log_info(f"Step 5: Starting {n_processes}-process block mining until {memory_threshold_percent}% memory or {max_duration_sec}s...")
@@ -305,7 +355,8 @@ class BlockPropagationStressTest(TestFramework):
         for i in range(n_processes):
             p = multiprocessing.Process(
                 target=worker_process,
-                args=(i, node_ports, node_credentials, f_stop_requested, block_counter, block_counter_lock,
+                args=(i, node_ports, node_credentials, keystore_path, keystore_password,
+                      f_stop_requested, block_counter, block_counter_lock,
                       node_idx_counter, node_idx_lock, per_node_block_counts, per_node_lock,
                       process_block_counts, process_errors),
                 daemon=True

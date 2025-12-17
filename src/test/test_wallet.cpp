@@ -31,9 +31,7 @@ TEST(Wallet_CreateTransaction) {
     auto tx = wallet.CreateTransaction(target_address, data, reward);
 
     ASSERT_NOT_NULL(tx.get(), "Transaction should be created");
-    ASSERT_EQUAL(tx->m_str_owner, wallet.GetAddress(), "Transaction owner address should match wallet");
-    ASSERT_EQUAL(tx->m_str_target, target_address, "Transaction target address should match");
-    ASSERT_EQUAL(tx->m_n_reward, reward, "Transaction reward should match");
+    // Note: m_str_owner, m_str_target, and m_n_reward fields have been removed
     ASSERT_EQUAL(tx->m_data.size(), data.size(), "Transaction data size should match");
 }
 
@@ -48,5 +46,5 @@ TEST(Wallet_CreateTransactionDefaultReward) {
     auto tx = wallet.CreateTransaction(target, data);
 
     ASSERT_NOT_NULL(tx.get(), "Transaction should be created");
-    ASSERT_EQUAL(tx->m_n_reward, (uint64_t)0, "Default reward should be 0");
+    // Note: m_n_reward field has been removed
 }

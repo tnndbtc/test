@@ -1018,56 +1018,114 @@ std::tuple<int, std::string> CRestApiServer::HandleGetBlock(const std::string& s
 }
 
 std::tuple<int, std::string> CRestApiServer::HandlePostTransaction(const std::string& str_body) {
-    LOG_INFO("HandlePostTransaction: " + str_body);
     try {
-        // Parse JSON body
-        std::string str_from = ExtractJsonValue(str_body, "from");
-        std::string str_to = ExtractJsonValue(str_body, "to");
-        std::string str_data = ExtractJsonValue(str_body, "data");
-        std::string str_fee = ExtractJsonValue(str_body, "fee");
+        std::shared_ptr<CTransaction> tx;
 
-        // Validate required fields: from, to, data
-        if (str_from.empty() || str_to.empty() || str_data.empty()) {
-            LOG_ERROR("POST /transaction: Missing required field 'from', 'to', or 'data'");
-            return {HTTP_BAD_REQUEST, "{\"error\": \"Bad Request\", \"message\": \"Missing required field: from, to, data\"}"};
-        }
+        // Detect format: JSON starts with '{', binary doesn't
+        bool is_binary = !str_body.empty() && str_body[0] != '{';
 
-        // Parse fee (optional, default to 0)
-        uint64_t n_fee = 0;
-        if (!str_fee.empty()) {
-            try {
-                n_fee = std::stoull(str_fee);
-            } catch (const std::exception&) {
-                LOG_ERROR("POST /transaction: Invalid fee value: " + str_fee);
-                return {HTTP_BAD_REQUEST, "{\"error\": \"Bad Request\", \"message\": \"Invalid fee value\"}"};
+        LOG_INFO("HandlePostTransaction: " + std::to_string(str_body.length()) + " bytes (format: " + (is_binary ? "binary" : "JSON") + ")");
+
+        if (is_binary) {
+            // Binary format - deserialize directly
+            LOG_INFO("Attempting to deserialize binary transaction of " + std::to_string(str_body.length()) + " bytes");
+
+            tx = CTransaction::Deserialize(str_body);
+
+            if (!tx) {
+                LOG_ERROR("POST /rpc/transaction: Failed to deserialize binary transaction");
+                return {HTTP_BAD_REQUEST, "{\"error\": \"Bad Request\", \"message\": \"Invalid transaction format\"}"};
             }
+
+            LOG_INFO("Binary transaction deserialized successfully");
+            LOG_INFO("Transaction ID: " + tx->m_id.GetData());
+            LOG_INFO("From address length: " + std::to_string(tx->m_from.size()));
+        }
+        else {
+            // JSON format - keep existing logic for backward compatibility
+            LOG_INFO("Parsing JSON transaction...");
+            std::string str_from = ExtractJsonValue(str_body, "from");
+            std::string str_to = ExtractJsonValue(str_body, "to");
+            std::string str_data = ExtractJsonValue(str_body, "data");
+            std::string str_fee = ExtractJsonValue(str_body, "fee");
+
+            // Validate required fields: from, to, data
+            if (str_from.empty() || str_to.empty() || str_data.empty()) {
+                LOG_ERROR("POST /transaction: Missing required field 'from', 'to', or 'data'");
+                return {HTTP_BAD_REQUEST, "{\"error\": \"Bad Request\", \"message\": \"Missing required field: from, to, data\"}"};
+            }
+
+            // Parse fee (optional, default to 0)
+            uint64_t n_fee = 0;
+            if (!str_fee.empty()) {
+                try {
+                    n_fee = std::stoull(str_fee);
+                } catch (const std::exception&) {
+                    LOG_ERROR("POST /transaction: Invalid fee value: " + str_fee);
+                    return {HTTP_BAD_REQUEST, "{\"error\": \"Bad Request\", \"message\": \"Invalid fee value\"}"};
+                }
+            }
+
+            // For now, treat data as plain text (not base64)
+            std::vector<uint8_t> data(str_data.begin(), str_data.end());
+
+            // Create transaction using default constructor
+            tx = std::make_shared<CTransaction>();
+
+            // Populate transaction fields
+            tx->m_n_version = TxVersion::V0;
+            tx->m_n_nonce = 0;
+
+            // Hash from address to create 20-byte address
+            CHash from_hash = CHash::ComputeSHA256(str_from);
+            auto from_bytes = from_hash.GetBytes();
+            tx->m_from.assign(from_bytes.begin(), from_bytes.begin() + std::min<size_t>(20, from_bytes.size()));
+            while (tx->m_from.size() < 20) {
+                tx->m_from.push_back(0);
+            }
+
+            tx->m_type = TransactionType::TRANSFER;
+            tx->m_data.assign(data.begin(), data.end());
+            tx->m_n_fee = n_fee;
+            tx->m_n_data_size = data.size();
+
+            // Compute transaction ID
+            std::string str_id_input;
+            str_id_input += std::to_string(static_cast<uint8_t>(tx->m_n_version));
+            str_id_input += std::to_string(tx->m_n_nonce);
+            str_id_input.insert(str_id_input.end(), tx->m_from.begin(), tx->m_from.end());
+            str_id_input += std::to_string(static_cast<uint8_t>(tx->m_type));
+            str_id_input.insert(str_id_input.end(), tx->m_data.begin(), tx->m_data.end());
+            str_id_input += std::to_string(tx->m_n_fee);
+            str_id_input.insert(str_id_input.end(), tx->m_signature.begin(), tx->m_signature.end());
+            tx->m_id = CHash::ComputeSHA256(str_id_input);
         }
 
-        // For now, treat data as plain text (not base64)
-        std::vector<uint8_t> data(str_data.begin(), str_data.end());
-
-        // Create transaction with provided addresses and fee
-        auto tx = std::make_shared<CTransaction>(str_from, str_to, data, n_fee);
-
-        // Add to mempool
+        // Add to mempool (works for both binary and JSON transactions)
+        LOG_INFO("Adding transaction to mempool");
         p_blockweave->AddTransaction(tx);
+        LOG_INFO("Transaction added to mempool");
 
-        // Build response
-        std::ostringstream oss;
-        oss << "{\n";
-        oss << "  \"status\": \"success\",\n";
-        oss << "  \"transaction_id\": \"" << tx->m_id.GetData() << "\",\n";
-        oss << "  \"from\": \"" << str_from << "\",\n";
-        oss << "  \"to\": \"" << str_to << "\",\n";
-        oss << "  \"data_size\": " << data.size() << ",\n";
-        oss << "  \"fee\": " << n_fee << "\n";
-        oss << "}";
+        // Build response using ToJson() and wrap with status for compatibility
+        LOG_INFO("Generating JSON response");
+        std::string tx_json;
+        try {
+            tx_json = tx->ToJson();
+            LOG_INFO("ToJson() completed, length: " + std::to_string(tx_json.length()));
+        } catch (const std::exception& json_ex) {
+            LOG_ERROR("Exception in ToJson(): " + std::string(json_ex.what()));
+            return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Internal Server Error\", \"message\": \"Failed to serialize transaction\"}"};
+        }
 
-        LOG_INFO("Transaction created: " + tx->m_id.GetData() + "... (from: " +
-                 str_from + ", to: " + str_to + ", size: " + std::to_string(data.size()) +
-                 " bytes, fee: " + std::to_string(n_fee) + ")");
+        // Remove the closing brace from tx_json and add status field
+        if (!tx_json.empty() && tx_json.back() == '}') {
+            tx_json.pop_back();  // Remove closing '}'
+            tx_json += ",\n  \"status\": \"success\"\n}";
+        }
 
-        return {HTTP_OK, oss.str()};
+        LOG_INFO("Returning response (ID: " + tx->m_id.GetData() + ")");
+
+        return {HTTP_OK, tx_json};
     } catch (const std::exception& e) {
         LOG_ERROR("POST /transaction exception: " + std::string(e.what()));
         return {HTTP_INTERNAL_SERVER_ERROR, "{\"error\": \"Internal Server Error\", \"message\": \"" + std::string(e.what()) + "\"}"};

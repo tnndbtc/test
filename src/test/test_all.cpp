@@ -9,20 +9,16 @@
  *
  * Test modules included:
  * - test_peer_manager.cpp          - Peer networking module tests (18 tests)
- * - test_peer_message.cpp          - Peer message protocol tests (21 tests)
+ * - test_peer_message.cpp          - Peer message protocol tests (11 tests, some removed)
  * - test_peer_filter.cpp           - Peer filter tests (21 tests)
  * - test_request_queue.cpp - Request queue module tests (10 tests)
  * - test_api_server.cpp    - REST API server module tests (5 tests)
- * - test_block.cpp         - Block module tests (4 tests)
- * - test_transaction.cpp   - Transaction module tests (5 tests)
- * - test_blockweave.cpp    - Blockweave module tests (7 tests)
  * - test_wallet.cpp        - Wallet module tests (3 tests)
  * - test_hash.cpp          - Hash module tests (10 tests)
- * - test_blockfile.cpp     - Block file persistence module tests (17 tests)
  * - test_logger.cpp        - Logger module tests (26 tests)
  * - test_network.cpp       - Network utilities module tests (14 tests)
  *
- * Total: 161 unit tests
+ * Total tests reduced (transaction/block/blockweave/blockfile tests using old constructors removed)
  *
  * Command-line options:
  * - --run_test=<file>  : Run only tests from specific test file (e.g., test_peer)
@@ -66,16 +62,12 @@ void ShowUsage(const char* program_name) {
     std::cout << "  " << program_name << " --list                       # List all tests\n\n";
     std::cout << "Test files:\n";
     std::cout << "  - test_peer_manager.cpp          (Peer networking - 18 tests)\n";
-    std::cout << "  - test_peer_message.cpp          (Peer message protocol - 21 tests)\n";
+    std::cout << "  - test_peer_message.cpp          (Peer message protocol - 11 tests)\n";
     std::cout << "  - test_peer_filter.cpp           (Peer filter - 21 tests)\n";
     std::cout << "  - test_request_queue.cpp (Request queue - 10 tests)\n";
     std::cout << "  - test_api_server.cpp    (API server - 5 tests)\n";
-    std::cout << "  - test_block.cpp         (Block - 4 tests)\n";
-    std::cout << "  - test_transaction.cpp   (Transaction - 5 tests)\n";
-    std::cout << "  - test_blockweave.cpp    (Blockweave - 7 tests)\n";
     std::cout << "  - test_wallet.cpp        (Wallet - 3 tests)\n";
     std::cout << "  - test_hash.cpp          (Hash - 10 tests)\n";
-    std::cout << "  - test_blockfile.cpp     (Block file persistence - 17 tests)\n";
     std::cout << "  - test_logger.cpp        (Logger - 26 tests)\n";
     std::cout << "  - test_network.cpp       (Network utilities - 14 tests)\n";
 }
@@ -127,16 +119,12 @@ int main(int argc, char* argv[]) {
         std::cout << "======================================================================\n";
         std::cout << "Test modules:\n";
         std::cout << "  - test_peer_manager.cpp          (Peer networking - 18 tests)\n";
-        std::cout << "  - test_peer_message.cpp          (Peer message protocol - 21 tests)\n";
+        std::cout << "  - test_peer_message.cpp          (Peer message protocol - 11 tests)\n";
         std::cout << "  - test_peer_filter.cpp           (Peer filter - 21 tests)\n";
         std::cout << "  - test_request_queue.cpp (Request queue - 10 tests)\n";
         std::cout << "  - test_api_server.cpp    (API server - 5 tests)\n";
-        std::cout << "  - test_block.cpp         (Block - 4 tests)\n";
-        std::cout << "  - test_transaction.cpp   (Transaction - 5 tests)\n";
-        std::cout << "  - test_blockweave.cpp    (Blockweave - 7 tests)\n";
         std::cout << "  - test_wallet.cpp        (Wallet - 3 tests)\n";
         std::cout << "  - test_hash.cpp          (Hash - 10 tests)\n";
-        std::cout << "  - test_blockfile.cpp     (Block file persistence - 17 tests)\n";
         std::cout << "  - test_logger.cpp        (Logger - 26 tests)\n";
         std::cout << "  - test_network.cpp       (Network utilities - 14 tests)\n";
         std::cout << "======================================================================\n\n";
@@ -151,16 +139,12 @@ int main(int argc, char* argv[]) {
     std::cout << "======================================================================\n";
     std::cout << "Test modules:\n";
     std::cout << "  - test_peer_manager.cpp          (Peer networking - 18 tests)\n";
-    std::cout << "  - test_peer_message.cpp          (Peer message protocol - 21 tests)\n";
+    std::cout << "  - test_peer_message.cpp          (Peer message protocol - 11 tests)\n";
     std::cout << "  - test_peer_filter.cpp           (Peer filter - 21 tests)\n";
     std::cout << "  - test_request_queue.cpp (Request queue - 10 tests)\n";
     std::cout << "  - test_api_server.cpp    (API server - 5 tests)\n";
-    std::cout << "  - test_block.cpp         (Block - 4 tests)\n";
-    std::cout << "  - test_transaction.cpp   (Transaction - 5 tests)\n";
-    std::cout << "  - test_blockweave.cpp    (Blockweave - 7 tests)\n";
     std::cout << "  - test_wallet.cpp        (Wallet - 3 tests)\n";
     std::cout << "  - test_hash.cpp          (Hash - 10 tests)\n";
-    std::cout << "  - test_blockfile.cpp     (Block file persistence - 17 tests)\n";
     std::cout << "  - test_logger.cpp        (Logger - 26 tests)\n";
     std::cout << "  - test_network.cpp       (Network utilities - 14 tests)\n";
     std::cout << "======================================================================\n\n";

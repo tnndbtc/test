@@ -9,7 +9,10 @@ mempool management, and block mining.
 import sys
 import time
 import unittest
+import os
+from pathlib import Path
 from test_framework import TestFramework
+from test_framework.transaction_utils import TransactionHelper
 
 
 class BlockcoreTest(TestFramework):
@@ -24,6 +27,18 @@ class BlockcoreTest(TestFramework):
         self.node = self.nodes[0] if self.nodes else None
         if not self.node:
             raise RuntimeError("Failed to start blockweave node")
+
+        # Initialize transaction helper with keystore
+        keystore_path = os.path.join(
+            os.path.dirname(__file__),
+            "test_1234.json"
+        )
+
+        if not os.path.exists(keystore_path):
+            raise FileNotFoundError(f"Keystore not found: {keystore_path}")
+
+        self.tx_helper = TransactionHelper(keystore_path, password="1234")
+        self.log_info(f"Initialized with account: {self.tx_helper.account.address}")
 
     def test_transaction_and_mining(self):
         """Create a transaction and verify a block is mined."""
@@ -44,28 +59,34 @@ class BlockcoreTest(TestFramework):
         # Step 2: Create and submit a transaction
         self.log_info("Step 2: Creating transaction...")
 
-        # Transaction data - simple text data for testing
-        # The /transaction endpoint requires 'from', 'to', and 'data' fields
-        # 'fee' is optional (defaults to 0)
-        transaction_data = {
-            "from": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
-            "to": "bc1qw508d6qejxtdg4y5r3zarvaryv98gj9p8t5z6",
-            "data": "Test transaction for blockcore mining verification",
-            "fee": 1000
-        }
+        # Create a properly signed binary transaction
+        tx_details, serialized_tx = self.tx_helper.create_transaction(
+            data="Test transaction for blockcore mining verification",
+            fee=1000
+        )
+        self.log_info(f"Created transaction from account: {self.tx_helper.account.address}")
+        self.log_info(f"Transaction ID: {tx_details['transaction_id']}")
 
-        # Submit transaction
-        tx_id = None
-        try:
-            success, _ = self.node.create_transaction(transaction_data)
-            self.assert_true(success, "Transaction submission should succeed")
+        # Submit binary transaction using node.create_transaction()
+        success, tx_response = self.node.create_transaction(serialized_tx)
+        self.assert_true(
+            success,
+            "Transaction submission should succeed"
+        )
+        self.assert_in(
+            "transaction_id",
+            tx_response,
+            "Transaction response contains transaction_id"
+        )
+        tx_id = tx_response["transaction_id"]
+        self.log_info(f"Submitted transaction with hash: {tx_id}")
 
-            # Extract transaction ID
-            # tx_id = tx_response.get("transaction_id")
-            # self.log_info(f"Transaction ID: {tx_id}")
-
-        except Exception as e:
-            self.assert_true(False, f"Error submitting transaction: {e}")
+        # Verify transaction ID matches what we computed client-side
+        self.assert_equal(
+            tx_id,
+            tx_details['transaction_id'],
+            "Server-computed transaction ID matches client-side ID"
+        )
 
         # Step 3: Verify mempool size increased
         self.log_info("Step 3: Verifying transaction is in mempool...")
