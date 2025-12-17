@@ -57,18 +57,18 @@ jobs:
           #   build_type: Debug
 
           # macOS ARM64 with Clang
-          # - os: macos-latest
-          #   label: arm64
-          #   c_compiler: clang
-          #   cpp_compiler: clang++
-          #   build_type: Debug
+          - os: macos-latest
+            label: arm64
+            c_compiler: clang
+            cpp_compiler: clang++
+            build_type: Debug
 
           # macOS x64 with Clang
-          # - os: macos-15
-          #   label: x86_64
-          #   c_compiler: clang
-          #   cpp_compiler: clang++
-          #   build_type: Debug
+          - os: macos-15
+            label: x86_64
+            c_compiler: clang
+            cpp_compiler: clang++
+            build_type: Debug
 
     steps:
     - uses: actions/checkout@v4
@@ -130,6 +130,7 @@ jobs:
         echo "Using bundled Clang (Apple Clang)"
         python -m pip install --upgrade pip
         pip install -r test/functional/requirements.txt
+        pip install -r test/functional/bweave_account/requirements.txt        
         
       shell: bash
 
