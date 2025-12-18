@@ -112,6 +112,7 @@ jobs:
         echo "BUILD_CORES=$env:NUMBER_OF_PROCESSORS" >> $env:GITHUB_ENV
         python -m pip install --upgrade pip
         python -m pip install -r test\functional\requirements.txt
+        python -m pip install -r test\functional\bweave_account\requirements.txt
 
     # - name: Install OpenSSL (ARM64) via vcpkg for Windows
     #   if: matrix.os == 'windows-11-arm'
