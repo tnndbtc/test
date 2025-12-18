@@ -10,6 +10,7 @@
 
 // Platform-specific byte order conversion
 #ifdef _WIN32
+    #define NOMINMAX  // Prevent Windows min/max macros from conflicting with std::min/std::max
     #include <winsock2.h>
     #define htole16(x) (x)
     #define htole32(x) (x)

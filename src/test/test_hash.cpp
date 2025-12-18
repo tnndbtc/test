@@ -142,8 +142,8 @@ TEST(Hash_GetBytes_Const) {
     const auto& bytes1 = hash.GetBytes();
     const auto& bytes2 = hash.GetBytes();
 
-    // Both should return the same reference
-    ASSERT_EQUAL(&bytes1, &bytes2, "GetBytes() should return same reference");
+    // Both should return the same reference (same address)
+    ASSERT_TRUE(&bytes1 == &bytes2, "GetBytes() should return same reference");
 
     // Verify data unchanged
     for (size_t i = 0; i < 32; i++) {
@@ -242,7 +242,7 @@ TEST(Hash_HexToBytes_OddLength) {
     try {
         HexToBytes("abc");  // Odd length should throw
         ASSERT_TRUE(false, "HexToBytes should throw for odd length");
-    } catch (const std::invalid_argument& e) {
+    } catch (const std::invalid_argument&) {
         ASSERT_TRUE(true, "HexToBytes correctly throws for odd length");
     }
 }
@@ -254,7 +254,7 @@ TEST(Hash_HexToBytes_InvalidChar) {
     try {
         HexToBytes("01zz");  // 'z' is not valid hex
         ASSERT_TRUE(false, "HexToBytes should throw for invalid hex character");
-    } catch (const std::invalid_argument& e) {
+    } catch (const std::invalid_argument&) {
         ASSERT_TRUE(true, "HexToBytes correctly throws for invalid character");
     }
 }
