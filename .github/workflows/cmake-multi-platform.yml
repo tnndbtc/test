@@ -50,11 +50,11 @@ jobs:
             build_type: Debug
 
           # Windows with MSVC ARM
-          # - os: windows-11-arm
-          #   label: arm64
-          #   c_compiler: cl
-          #   cpp_compiler: cl
-          #   build_type: Debug
+          - os: windows-11-arm
+            label: arm64
+            c_compiler: cl
+            cpp_compiler: cl
+            build_type: Debug
 
           # macOS ARM64 with Clang
           - os: macos-latest
