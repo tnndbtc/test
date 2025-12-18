@@ -122,17 +122,37 @@ if(WIN32)
 
     # For non-vcpkg OpenSSL with custom lib structure (e.g., lib/VC/x64/MD/ or lib/mingw/)
     if(DEFINED OPENSSL_ROOT_DIR AND NOT DEFINED OPENSSL_CRYPTO_LIBRARY)
-        # MSVC-style paths: lib/VC/x64/MD/
-        if(MSVC AND EXISTS "${OPENSSL_ROOT_DIR}/lib/VC/x64/MD/libssl.lib")
-            set(OPENSSL_SSL_LIBRARY "${OPENSSL_ROOT_DIR}/lib/VC/x64/MD/libssl.lib" CACHE FILEPATH "OpenSSL SSL library")
-            set(OPENSSL_CRYPTO_LIBRARY "${OPENSSL_ROOT_DIR}/lib/VC/x64/MD/libcrypto.lib" CACHE FILEPATH "OpenSSL Crypto library")
-            message(STATUS "Using MSVC-style OpenSSL libraries: ${OPENSSL_ROOT_DIR}/lib/VC/x64/MD/")
-        # MinGW-style paths: lib/mingw/
-        elseif(MINGW AND EXISTS "${OPENSSL_ROOT_DIR}/lib/mingw/libssl.dll.a")
-            set(OPENSSL_SSL_LIBRARY "${OPENSSL_ROOT_DIR}/lib/mingw/libssl.dll.a" CACHE FILEPATH "OpenSSL SSL library")
-            set(OPENSSL_CRYPTO_LIBRARY "${OPENSSL_ROOT_DIR}/lib/mingw/libcrypto.dll.a" CACHE FILEPATH "OpenSSL Crypto library")
-            message(STATUS "Using MinGW-style OpenSSL libraries: ${OPENSSL_ROOT_DIR}/lib/mingw/")
-        endif()
+        # Try various library directory patterns
+        set(LIB_SEARCH_PATHS
+            # Standard lib directory (most common)
+            "lib"
+            # MSVC ARM64 paths
+            "lib/VC/ARM64/MD"
+            "lib/VC/arm64/MD"
+            "lib/ARM64"
+            # MSVC x64 paths
+            "lib/VC/x64/MD"
+            # MinGW paths
+            "lib/mingw"
+        )
+
+        foreach(lib_path ${LIB_SEARCH_PATHS})
+            set(full_lib_path "${OPENSSL_ROOT_DIR}/${lib_path}")
+
+            # Check for .lib files (MSVC static libraries)
+            if(MSVC AND EXISTS "${full_lib_path}/libssl.lib")
+                set(OPENSSL_SSL_LIBRARY "${full_lib_path}/libssl.lib" CACHE FILEPATH "OpenSSL SSL library")
+                set(OPENSSL_CRYPTO_LIBRARY "${full_lib_path}/libcrypto.lib" CACHE FILEPATH "OpenSSL Crypto library")
+                message(STATUS "Using OpenSSL libraries from: ${full_lib_path}")
+                break()
+            # Check for .dll.a files (MinGW import libraries)
+            elseif(MINGW AND EXISTS "${full_lib_path}/libssl.dll.a")
+                set(OPENSSL_SSL_LIBRARY "${full_lib_path}/libssl.dll.a" CACHE FILEPATH "OpenSSL SSL library")
+                set(OPENSSL_CRYPTO_LIBRARY "${full_lib_path}/libcrypto.dll.a" CACHE FILEPATH "OpenSSL Crypto library")
+                message(STATUS "Using OpenSSL libraries from: ${full_lib_path}")
+                break()
+            endif()
+        endforeach()
     endif()
 endif()
 
