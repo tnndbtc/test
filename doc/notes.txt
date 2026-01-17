@@ -15,6 +15,12 @@ alignment:boost/asio/detail/impl/socket_ops.ipp
 then run ctest -V on unit test
 --------------------------
 install docker on CentOS AlmaLinux
+
+install claude
+curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
+sudo dnf install -y nodejs
+sudo npm install -g @anthropic-ai/claude-code
+
 sudo dnf install -y yum-utils
 sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
 yum repolist | grep docker
