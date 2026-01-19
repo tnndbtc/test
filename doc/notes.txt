@@ -71,6 +71,9 @@ sudo apt install -y openssh-server net-tools git cmake llvm clang lldb lld opens
 sudo apt install -y nodejs npm
 sudo npm install -g @anthropic-ai/claude-code
 
+# for python virtualenv
+sudo apt install -y python3-pip python3-virtualenv python3-virtualenvwrapper
+
 sudo systemctl enable --now ssh
 sudo systemctl status ssh
 
